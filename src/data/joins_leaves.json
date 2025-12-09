@@ -1,0 +1,167 @@
+{
+  "guilds": {
+    "1329307072378175488": {
+      "users": {
+        "1412621601845018777": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1756869272472,
+          "lastLeaveAt": null
+        }
+      },
+      "events": [
+        {
+          "userId": "1412621601845018777",
+          "type": "join",
+          "timestamp": 1756869272472
+        }
+      ]
+    },
+    "1373229681461170196": {
+      "users": {
+        "1154777872259629066": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756875891286
+        },
+        "445289277795074048": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756875918247
+        },
+        "1068868597398650971": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756877984066
+        },
+        "1412477269213053119": {
+          "joins": 1,
+          "leaves": 1,
+          "lastJoinAt": 1756897506963,
+          "lastLeaveAt": 1756915060250
+        },
+        "963891726567743580": {
+          "joins": 2,
+          "leaves": 1,
+          "lastJoinAt": 1756899058696,
+          "lastLeaveAt": 1756898709339
+        },
+        "410138706490425344": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756914545468
+        },
+        "1342632458012725308": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756941395943
+        },
+        "830134415803678751": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756941620140
+        }
+      },
+      "events": [
+        {
+          "userId": "1154777872259629066",
+          "type": "leave",
+          "timestamp": 1756875891286,
+          "reason": "kick"
+        },
+        {
+          "userId": "445289277795074048",
+          "type": "leave",
+          "timestamp": 1756875918247,
+          "reason": "kick"
+        },
+        {
+          "userId": "1068868597398650971",
+          "type": "leave",
+          "timestamp": 1756877984066,
+          "reason": "kick"
+        },
+        {
+          "userId": "1412477269213053119",
+          "type": "join",
+          "timestamp": 1756897506963
+        },
+        {
+          "userId": "963891726567743580",
+          "type": "join",
+          "timestamp": 1756898682572
+        },
+        {
+          "userId": "963891726567743580",
+          "type": "leave",
+          "timestamp": 1756898709339,
+          "reason": "left"
+        },
+        {
+          "userId": "963891726567743580",
+          "type": "join",
+          "timestamp": 1756899058696
+        },
+        {
+          "userId": "410138706490425344",
+          "type": "leave",
+          "timestamp": 1756914545468,
+          "reason": "kick"
+        },
+        {
+          "userId": "1412477269213053119",
+          "type": "leave",
+          "timestamp": 1756915060250,
+          "reason": "kick"
+        },
+        {
+          "userId": "1342632458012725308",
+          "type": "leave",
+          "timestamp": 1756941395943,
+          "reason": "kick"
+        },
+        {
+          "userId": "830134415803678751",
+          "type": "leave",
+          "timestamp": 1756941620140,
+          "reason": "left"
+        }
+      ]
+    },
+    "1396938626851406027": {
+      "users": {
+        "811652199100317726": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1756900715283,
+          "lastLeaveAt": null
+        },
+        "1412653262066159677": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756912869476
+        }
+      },
+      "events": [
+        {
+          "userId": "811652199100317726",
+          "type": "join",
+          "timestamp": 1756900715283
+        },
+        {
+          "userId": "1412653262066159677",
+          "type": "leave",
+          "timestamp": 1756912869476,
+          "reason": "left"
+        }
+      ]
+    }
+  }
+}
