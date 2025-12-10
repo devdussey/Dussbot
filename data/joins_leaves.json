@@ -1,0 +1,300 @@
+{
+  "guilds": {
+    "1329307072378175488": {
+      "users": {
+        "1412621601845018777": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1756869272472,
+          "lastLeaveAt": null
+        }
+      },
+      "events": [
+        {
+          "userId": "1412621601845018777",
+          "type": "join",
+          "timestamp": 1756869272472
+        }
+      ]
+    },
+    "1373229681461170196": {
+      "users": {
+        "1154777872259629066": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756875891286
+        },
+        "445289277795074048": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756875918247
+        },
+        "1068868597398650971": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756877984066
+        },
+        "1412477269213053119": {
+          "joins": 1,
+          "leaves": 1,
+          "lastJoinAt": 1756897506963,
+          "lastLeaveAt": 1756915060250
+        },
+        "963891726567743580": {
+          "joins": 2,
+          "leaves": 1,
+          "lastJoinAt": 1756899058696,
+          "lastLeaveAt": 1756898709339
+        },
+        "410138706490425344": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756914545468
+        },
+        "1342632458012725308": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756941395943
+        },
+        "830134415803678751": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756941620140
+        }
+      },
+      "events": [
+        {
+          "userId": "1154777872259629066",
+          "type": "leave",
+          "timestamp": 1756875891286,
+          "reason": "kick"
+        },
+        {
+          "userId": "445289277795074048",
+          "type": "leave",
+          "timestamp": 1756875918247,
+          "reason": "kick"
+        },
+        {
+          "userId": "1068868597398650971",
+          "type": "leave",
+          "timestamp": 1756877984066,
+          "reason": "kick"
+        },
+        {
+          "userId": "1412477269213053119",
+          "type": "join",
+          "timestamp": 1756897506963
+        },
+        {
+          "userId": "963891726567743580",
+          "type": "join",
+          "timestamp": 1756898682572
+        },
+        {
+          "userId": "963891726567743580",
+          "type": "leave",
+          "timestamp": 1756898709339,
+          "reason": "left"
+        },
+        {
+          "userId": "963891726567743580",
+          "type": "join",
+          "timestamp": 1756899058696
+        },
+        {
+          "userId": "410138706490425344",
+          "type": "leave",
+          "timestamp": 1756914545468,
+          "reason": "kick"
+        },
+        {
+          "userId": "1412477269213053119",
+          "type": "leave",
+          "timestamp": 1756915060250,
+          "reason": "kick"
+        },
+        {
+          "userId": "1342632458012725308",
+          "type": "leave",
+          "timestamp": 1756941395943,
+          "reason": "kick"
+        },
+        {
+          "userId": "830134415803678751",
+          "type": "leave",
+          "timestamp": 1756941620140,
+          "reason": "left"
+        }
+      ]
+    },
+    "1396938626851406027": {
+      "users": {
+        "811652199100317726": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1756900715283,
+          "lastLeaveAt": null
+        },
+        "1412653262066159677": {
+          "joins": 0,
+          "leaves": 1,
+          "lastJoinAt": null,
+          "lastLeaveAt": 1756912869476
+        }
+      },
+      "events": [
+        {
+          "userId": "811652199100317726",
+          "type": "join",
+          "timestamp": 1756900715283
+        },
+        {
+          "userId": "1412653262066159677",
+          "type": "leave",
+          "timestamp": 1756912869476,
+          "reason": "left"
+        }
+      ]
+    },
+    "1448087746596835571": {
+      "users": {
+        "692471909303976067": {
+          "joins": 2,
+          "leaves": 1,
+          "lastJoinAt": 1765330504731,
+          "lastLeaveAt": 1765330498802
+        },
+        "1374309175559196692": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765330587270,
+          "lastLeaveAt": null
+        },
+        "723867150959378453": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765330696792,
+          "lastLeaveAt": null
+        },
+        "515258983871676437": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765330962585,
+          "lastLeaveAt": null
+        },
+        "510560165993512962": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765330972086,
+          "lastLeaveAt": null
+        },
+        "113885475105669121": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765330977786,
+          "lastLeaveAt": null
+        },
+        "1213638330076368906": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765331040010,
+          "lastLeaveAt": null
+        },
+        "558095923276939267": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765331042042,
+          "lastLeaveAt": null
+        },
+        "706342037623930901": {
+          "joins": 1,
+          "leaves": 1,
+          "lastJoinAt": 1765331352716,
+          "lastLeaveAt": 1765331562428
+        },
+        "1390632369794318440": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765331658099,
+          "lastLeaveAt": null
+        }
+      },
+      "events": [
+        {
+          "userId": "692471909303976067",
+          "type": "join",
+          "timestamp": 1765330458795
+        },
+        {
+          "userId": "692471909303976067",
+          "type": "leave",
+          "timestamp": 1765330498802,
+          "reason": "left"
+        },
+        {
+          "userId": "692471909303976067",
+          "type": "join",
+          "timestamp": 1765330504731
+        },
+        {
+          "userId": "1374309175559196692",
+          "type": "join",
+          "timestamp": 1765330587270
+        },
+        {
+          "userId": "723867150959378453",
+          "type": "join",
+          "timestamp": 1765330696792
+        },
+        {
+          "userId": "515258983871676437",
+          "type": "join",
+          "timestamp": 1765330962585
+        },
+        {
+          "userId": "510560165993512962",
+          "type": "join",
+          "timestamp": 1765330972086
+        },
+        {
+          "userId": "113885475105669121",
+          "type": "join",
+          "timestamp": 1765330977786
+        },
+        {
+          "userId": "1213638330076368906",
+          "type": "join",
+          "timestamp": 1765331040010
+        },
+        {
+          "userId": "558095923276939267",
+          "type": "join",
+          "timestamp": 1765331042042
+        },
+        {
+          "userId": "706342037623930901",
+          "type": "join",
+          "timestamp": 1765331352716
+        },
+        {
+          "userId": "706342037623930901",
+          "type": "leave",
+          "timestamp": 1765331562428,
+          "reason": "ban"
+        },
+        {
+          "userId": "1390632369794318440",
+          "type": "join",
+          "timestamp": 1765331658099
+        }
+      ]
+    }
+  }
+}
