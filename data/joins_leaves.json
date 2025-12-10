@@ -272,6 +272,24 @@
           "leaves": 0,
           "lastJoinAt": 1765335569983,
           "lastLeaveAt": null
+        },
+        "467025975100833793": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765335835427,
+          "lastLeaveAt": null
+        },
+        "804740432575463434": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765336222783,
+          "lastLeaveAt": null
+        },
+        "855354657495973919": {
+          "joins": 1,
+          "leaves": 0,
+          "lastJoinAt": 1765336328596,
+          "lastLeaveAt": null
         }
       },
       "events": [
@@ -381,6 +399,21 @@
           "userId": "1380548702648664156",
           "type": "join",
           "timestamp": 1765335569983
+        },
+        {
+          "userId": "467025975100833793",
+          "type": "join",
+          "timestamp": 1765335835427
+        },
+        {
+          "userId": "804740432575463434",
+          "type": "join",
+          "timestamp": 1765336222783
+        },
+        {
+          "userId": "855354657495973919",
+          "type": "join",
+          "timestamp": 1765336328596
         }
       ]
     }

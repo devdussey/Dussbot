@@ -3,8 +3,8 @@ const { SlashCommandBuilder, ChannelType } = require('discord.js');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const { createFieldEmbeds } = require('../utils/embedFields');
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_API;
-const OPENAI_SUMMARY_MODEL = process.env.SUMMARIZE_MODEL || 'gpt-4o-mini';
+const HF_API_KEY = process.env.HF_API_KEY;
+const HF_MODEL = process.env.HF_SUMMARIZE_MODEL || 'facebook/bart-large-cnn';
 
 const MAX_INPUT_CHARS = 16000; // practical cap before sending to API
 
@@ -79,8 +79,8 @@ module.exports = {
       throw e;
     }
 
-    if (!OPENAI_API_KEY) {
-      return interaction.editReply('OpenAI API key not configured. Set OPENAI_API_KEY in your environment.');
+    if (!HF_API_KEY) {
+      return interaction.editReply('Hugging Face API key not configured. Set HF_API_KEY in your environment. Get one free at https://huggingface.co/settings/tokens');
     }
 
     const count = interaction.options.getInteger('count') ?? 50;
@@ -156,46 +156,37 @@ module.exports = {
       truncatedNote = `\n\n(Note: Input truncated to ${MAX_INPUT_CHARS} characters for processing.)`;
     }
 
-    const lengthHint = (
-      lengthPref === 'detailed' ? 'Aim for a detailed summary.' :
-      lengthPref === 'medium' ? 'Aim for a medium-length summary.' :
-      'Aim for a very short summary.'
-    );
-
-    const messages = [
-      {
-        role: 'system',
-        content: 'You are a helpful assistant that summarizes content faithfully and concisely. Do not invent facts.'
-      },
-      {
-        role: 'user',
-        content: `${lengthHint} Provide TWO sections:\n\n1) Bulleted Summary: concise bullet points (start each with '- ').\n2) Paragraph Summary: one concise paragraph.\n\nSummarize the following chat transcript. Focus on key topics, decisions, action items, and sentiment. Use user display names when referencing speakers and do not include user IDs.\n\n${truncated}`
-      }
-    ];
-
     try {
-      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: OPENAI_SUMMARY_MODEL,
-          messages,
-          temperature: 0.2,
-        })
-      });
+      // Use Hugging Face API for summarization
+      const resp = await fetch(
+        `https://api-inference.huggingface.co/models/${HF_MODEL}`,
+        {
+          headers: { Authorization: `Bearer ${HF_API_KEY}` },
+          method: 'POST',
+          body: JSON.stringify({
+            inputs: truncated,
+            parameters: {
+              max_length: lengthPref === 'detailed' ? 200 : lengthPref === 'medium' ? 150 : 100,
+              min_length: 50,
+              do_sample: false,
+            }
+          }),
+        }
+      );
 
       const text = await resp.text();
       if (!resp.ok) {
         let msg = text;
-        try { msg = JSON.parse(text)?.error?.message || msg; } catch (_) {}
+        try { msg = JSON.parse(text)?.error || msg; } catch (_) {}
         throw new Error(msg);
       }
+
       const data = JSON.parse(text);
-      const out = data?.choices?.[0]?.message?.content?.trim();
-      if (!out) throw new Error('No summary returned.');
+      const summary = Array.isArray(data) ? data[0]?.summary_text : data?.summary_text;
+      if (!summary) throw new Error('No summary returned.');
+
+      // Format the summary into sections for consistency
+      const out = `Bulleted Summary:\n- ${summary.split('. ').join('\n- ')}\n\nParagraph Summary:\n${summary}`;
 
       const sections = buildSummarySections(out);
       const embeds = createFieldEmbeds({
