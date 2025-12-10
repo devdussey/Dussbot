@@ -44,12 +44,13 @@ function run(cmd, args, options = {}) {
     }
   }
 
-  // Optional clean install on start
-  const npmCiOnStart = String(process.env.NPM_CI_ON_START || '').toLowerCase() === 'true';
+  // Clean install on start (always run by default, disable with NPM_CI_ON_START=false)
+  const npmCiOnStart = String(process.env.NPM_CI_ON_START || 'true').toLowerCase() !== 'false';
   if (npmCiOnStart && fs.existsSync(path.join(cwd, 'package.json'))) {
-    console.log('[runner] NPM_CI_ON_START=true → npm ci --omit=dev');
+    console.log('[runner] npm ci --omit=dev (clean install of dependencies)');
     try {
       await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci', '--omit=dev']);
+      console.log('[runner] npm ci completed successfully');
     } catch (err) {
       console.error('[runner] npm ci failed:', err?.message || err);
     }
