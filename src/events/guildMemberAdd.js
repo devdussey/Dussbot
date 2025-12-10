@@ -3,6 +3,7 @@ const store = require('../utils/autorolesStore');
 const jlStore = require('../utils/joinLeaveStore');
 const welcomeStore = require('../utils/welcomeStore');
 const blacklist = require('../utils/blacklistStore');
+const logSender = require('../utils/logSender');
 
 module.exports = {
     name: Events.GuildMemberAdd,
@@ -15,6 +16,24 @@ module.exports = {
                 } catch (_) {}
                 try {
                     await member.ban({ reason: `Blacklisted: ${info.reason || 'No reason provided'}` });
+
+                    // Log the auto-ban
+                    const embed = new EmbedBuilder()
+                        .setTitle('🚫 Member Auto-Banned (Blacklist)')
+                        .setColor(0xff0000)
+                        .addFields(
+                            { name: 'User', value: `${member.user.tag} (${member.id})`, inline: false },
+                            { name: 'Reason', value: info.reason || 'No reason provided', inline: false },
+                            { name: 'Guild', value: `${member.guild.name} (${member.guild.id})`, inline: false }
+                        )
+                        .setTimestamp();
+
+                    await logSender.sendLog({
+                        guildId: member.guild.id,
+                        logType: 'member',
+                        embed,
+                        client: member.client,
+                    });
                 } catch (err) {
                     console.error('Failed to auto-ban blacklisted user:', err);
                 }

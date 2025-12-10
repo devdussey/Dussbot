@@ -1,6 +1,7 @@
 const { Events, AuditLogEvent, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const jlStore = require('../utils/joinLeaveStore');
 const leaveStore = require('../utils/leaveStore');
+const logSender = require('../utils/logSender');
 
 module.exports = {
   name: Events.GuildMemberRemove,
@@ -22,6 +23,24 @@ module.exports = {
         } catch (_) { /* ignore */ }
       }
       jlStore.addEvent(guild.id, member.id, 'leave', Date.now(), { reason });
+
+      // Log the member removal
+      const logEmbed = new EmbedBuilder()
+        .setTitle(`👋 Member ${reason === 'ban' ? 'Banned' : reason === 'kick' ? 'Kicked' : 'Left'}`)
+        .setColor(reason === 'left' ? 0xffa500 : 0xff0000)
+        .addFields(
+          { name: 'User', value: `${member.user?.tag || member.user?.username || member.id} (${member.id})`, inline: false },
+          { name: 'Reason', value: reason, inline: true },
+          { name: 'Guild', value: `${guild.name} (${guild.id})`, inline: false }
+        )
+        .setTimestamp();
+
+      await logSender.sendLog({
+        guildId: guild.id,
+        logType: 'member',
+        embed: logEmbed,
+        client,
+      });
     } catch (e) {
       // swallow
     }

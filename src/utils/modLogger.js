@@ -1,13 +1,28 @@
 const { EmbedBuilder } = require('discord.js');
 const store = require('./modLogStore');
-const { parseOwnerIds } = require('./ownerIds');
 const { resolveEmbedColour } = require('./guildColourStore');
+const logSender = require('./logSender');
 
 async function send(interaction, embed) {
   const guild = interaction.guild;
   const client = interaction.client;
   if (!guild) return false;
   if ((await store.getEnabled(guild.id)) === false) return false;
+
+  const ownerFallbackOnChannelFail = String(process.env.OWNER_FALLBACK_ON_CHANNEL_FAIL || '').toLowerCase() === 'true';
+
+  // Try new unified log sender first (uses logChannelTypeStore)
+  const sent = await logSender.sendLog({
+    guildId: guild.id,
+    logType: 'moderation',
+    embed,
+    client,
+    ownerFallback: ownerFallbackOnChannelFail,
+  });
+
+  if (sent) return true;
+
+  // Fallback to old system if new system didn't send
   const mode = (await store.getMode(guild.id)) || 'channel';
   const channelId = (await store.get(guild.id)) || process.env.MOD_LOG_CHANNEL_ID;
 
@@ -31,34 +46,12 @@ async function send(interaction, embed) {
     }
     return false;
   };
-  const tryOwners = async () => {
-    const owners = parseOwnerIds();
-    let ok = false;
-    for (const id of owners) {
-      try {
-        const u = await client.users.fetch(id);
-        await u.send({ embeds: [embed] });
-        ok = true;
-      } catch (err) {
-        console.error(`Failed to notify owner ${id} about mod event`, err);
-      }
-    }
-    return ok;
-  };
-
-  const ownerFallbackOnChannelFail = String(process.env.OWNER_FALLBACK_ON_CHANNEL_FAIL || '').toLowerCase() === 'true';
 
   if (mode === 'channel') {
-    let s = await tryChannel();
-    if (!s && ownerFallbackOnChannelFail) s = await tryOwners();
-    return s;
-  } else if (mode === 'owners') {
-    return await tryOwners();
-  } else { // both
-    const a = await tryChannel();
-    const b = await tryOwners();
-    return a || b;
+    return await tryChannel();
   }
+
+  return false;
 }
 
 function baseEmbed(interaction, title, color = 0x5865f2) {

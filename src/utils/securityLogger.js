@@ -3,6 +3,7 @@ const logStore = require('./securityLogStore');
 const eventsStore = require('./securityEventsStore');
 const { parseOwnerIds } = require('./ownerIds');
 const { resolveEmbedColour } = require('./guildColourStore');
+const logSender = require('./logSender');
 
 async function sendEmbedToOwners(client, embed) {
   const owners = parseOwnerIds();
@@ -22,12 +23,29 @@ async function sendEmbedToOwners(client, embed) {
 async function sendToChannelOrOwners(interaction, embed) {
   const guild = interaction.guild;
   const client = interaction.client;
-  // Prefer per-guild configured channel, fallback to env
+
+  if (guild && (await logStore.getEnabled(guild.id)) === false) return false;
+
+  const ownerFallbackOnChannelFail = String(process.env.OWNER_FALLBACK_ON_CHANNEL_FAIL || '').toLowerCase() === 'true';
+
+  // Try new unified log sender first (uses logChannelTypeStore)
+  if (guild) {
+    const sent = await logSender.sendLog({
+      guildId: guild.id,
+      logType: 'security',
+      embed,
+      client,
+      ownerFallback: ownerFallbackOnChannelFail,
+    });
+
+    if (sent) return true;
+  }
+
+  // Fallback to old system if new system didn't send
   let channelId = null;
   if (guild) channelId = await logStore.get(guild.id);
   if (!channelId) channelId = process.env.SECURITY_LOG_CHANNEL_ID;
   const mode = guild ? await logStore.getMode(guild.id) : 'channel';
-  if (guild && (await logStore.getEnabled(guild.id)) === false) return false;
 
   let sent = false;
   const trySendChannel = async () => {
@@ -50,20 +68,11 @@ async function sendToChannelOrOwners(interaction, embed) {
     }
     return false;
   };
-  const trySendOwners = async () => sendEmbedToOwners(client, embed);
-
-  const ownerFallbackOnChannelFail = String(process.env.OWNER_FALLBACK_ON_CHANNEL_FAIL || '').toLowerCase() === 'true';
 
   if (mode === 'channel') {
     sent = await trySendChannel();
-    if (!sent && ownerFallbackOnChannelFail) sent = await trySendOwners();
-  } else if (mode === 'owners') {
-    sent = await trySendOwners();
-  } else { // both
-    const a = await trySendChannel();
-    const b = await trySendOwners();
-    sent = a || b;
   }
+
   return sent;
 }
 
