@@ -3,10 +3,18 @@ const { SlashCommandBuilder, ChannelType } = require('discord.js');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const { createFieldEmbeds } = require('../utils/embedFields');
 
-const HF_API_KEY = process.env.HF_API_KEY;
-const HF_MODEL = process.env.HF_SUMMARIZE_MODEL || 'facebook/bart-large-cnn';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_API;
+const OPENAI_SUMMARIZE_MODEL = process.env.OPENAI_SUMMARIZE_MODEL
+  || process.env.CHAT_MODEL
+  || 'gpt-4o-mini';
 
 const MAX_INPUT_CHARS = 16000; // practical cap before sending to API
+
+const SUMMARY_LENGTH_PROMPTS = {
+  short: 'Keep the response very concise: 2-3 clear bullet points and a paragraph of about 2 sentences.',
+  medium: 'Provide 3-5 bullet points and a paragraph of roughly 3 sentences, highlighting the most important themes.',
+  detailed: 'Give 5-7 bullet points and a 4-5 sentence paragraph with a touch more context and nuance.',
+};
 
 function buildSummarySections(text) {
   if (!text) return [];
@@ -79,8 +87,8 @@ module.exports = {
       throw e;
     }
 
-    if (!HF_API_KEY) {
-      return interaction.editReply('Hugging Face API key not configured. Set HF_API_KEY in your environment. Get one free at https://huggingface.co/settings/tokens');
+    if (!OPENAI_API_KEY) {
+      return interaction.editReply('OpenAI API key not configured. Set OPENAI_API_KEY in your environment to use /summarize.');
     }
 
     const count = interaction.options.getInteger('count') ?? 50;
@@ -157,38 +165,49 @@ module.exports = {
     }
 
     try {
-      // Use Hugging Face API for summarization
-      const resp = await fetch(
-        `https://api-inference.huggingface.co/models/${HF_MODEL}`,
-        {
-          headers: { Authorization: `Bearer ${HF_API_KEY}` },
-          method: 'POST',
-          body: JSON.stringify({
-            inputs: truncated,
-            parameters: {
-              max_length: lengthPref === 'detailed' ? 200 : lengthPref === 'medium' ? 150 : 100,
-              min_length: 50,
-              do_sample: false,
-            }
-          }),
-        }
-      );
+      const lengthInstruction = SUMMARY_LENGTH_PROMPTS[lengthPref] || SUMMARY_LENGTH_PROMPTS.medium;
+      const systemPrompt = [
+        'You are a concise summarization assistant.',
+        'Output must begin with "Bulleted Summary:" followed by bullet lines that start with "-" and no additional text on that heading line.',
+        'After the bullet section, include a blank line and then "Paragraph Summary:" followed by a short paragraph.',
+        'Do not invent headings beyond those two and focus only on the most important information.',
+      ].join(' ');
+
+      const userPrompt = [
+        `Length preference: ${lengthPref}. ${lengthInstruction}`,
+        'Transcript:',
+        truncated,
+      ].join('\n\n');
+
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: OPENAI_SUMMARIZE_MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 512,
+        }),
+      });
 
       const text = await resp.text();
       if (!resp.ok) {
         let msg = text;
-        try { msg = JSON.parse(text)?.error || msg; } catch (_) {}
+        try { msg = JSON.parse(text)?.error?.message || msg; } catch (_) {}
         throw new Error(msg);
       }
 
       const data = JSON.parse(text);
-      const summary = Array.isArray(data) ? data[0]?.summary_text : data?.summary_text;
+      const summary = data?.choices?.[0]?.message?.content?.trim();
       if (!summary) throw new Error('No summary returned.');
 
-      // Format the summary into sections for consistency
-      const out = `Bulleted Summary:\n- ${summary.split('. ').join('\n- ')}\n\nParagraph Summary:\n${summary}`;
-
-      const sections = buildSummarySections(out);
+      const sections = buildSummarySections(summary);
       const embeds = createFieldEmbeds({
         guildId: interaction.guildId,
         title: 'Channel Summary',
