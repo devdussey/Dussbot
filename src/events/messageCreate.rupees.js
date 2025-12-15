@@ -10,7 +10,7 @@ module.exports = {
 
       await messageLogStore.recordMessage(message.guild.id, message.author.id, message);
     } catch (err) {
-      console.error('Failed to update judgement message log', err);
+      console.error('Failed to update rupee message log', err);
     }
   },
 };

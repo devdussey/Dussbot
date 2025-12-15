@@ -30,8 +30,20 @@ function getSmiteCost() {
   return clampNonNegative(getNumberEnv('COIN_SMITE_COST', 200));
 }
 
+function getRupeeCost() {
+  const configured =
+    getNumberEnv('COIN_RUPEE_COST', undefined) ??
+    getNumberEnv('COIN_JUDGMENT_COST', undefined) ??
+    getNumberEnv('COIN_JUDGEMENT_COST', undefined);
+  return clampNonNegative(typeof configured === 'undefined' ? 500 : configured);
+}
+
+function getJudgmentCost() {
+  return getRupeeCost();
+}
+
 function getJudgementCost() {
-  return clampNonNegative(getNumberEnv('COIN_JUDGEMENT_COST', 500));
+  return getRupeeCost();
 }
 
 function getRaceEntryFee() {
@@ -60,6 +72,8 @@ module.exports = {
   getMessageCoinReward,
   getVoiceCoinRewardPerMinute,
   getSmiteCost,
+  getRupeeCost,
+  getJudgmentCost,
   getJudgementCost,
   getRaceEntryFee,
   getRaceRewards,

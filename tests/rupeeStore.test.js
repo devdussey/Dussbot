@@ -4,11 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const modulePath = require.resolve('../src/utils/judgementStore');
+const modulePath = require.resolve('../src/utils/rupeeStore');
 const { resetDataDirCache } = require('../src/utils/dataDir');
 
 async function withTempStore(fn) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'judgements-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rupees-'));
   delete require.cache[modulePath];
   process.env.DISPHORIABOT_DATA_DIR = tmpDir;
   resetDataDirCache();
@@ -23,7 +23,7 @@ async function withTempStore(fn) {
   }
 }
 
-test('awards a Judgement every 500 messages', async () => {
+test('awards a Rupee every 500 messages', async () => {
   await withTempStore(async store => {
     const guildId = 'guild';
     const userId = 'user';
@@ -43,14 +43,14 @@ test('awards a Judgement every 500 messages', async () => {
     assert.equal(stats.progress, 0);
     assert.equal(stats.messagesUntilNext, store.AWARD_THRESHOLD);
 
-    const file = path.join(process.env.DISPHORIABOT_DATA_DIR, 'judgement_tokens.json');
+    const file = path.join(process.env.DISPHORIABOT_DATA_DIR, 'rupee_tokens.json');
     assert.ok(fs.existsSync(file));
     const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.equal(saved.guilds[guildId].users[userId].tokens, 1);
   });
 });
 
-test('consuming and refunding Judgements updates balance', async () => {
+test('consuming and refunding Rupees updates balance', async () => {
   await withTempStore(async store => {
     const guildId = 'guild';
     const userId = 'user';

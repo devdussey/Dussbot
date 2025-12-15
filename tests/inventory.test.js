@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const inventory = require('../src/commands/inventory');
 const tokenStore = require('../src/utils/messageTokenStore');
-const judgementStore = require('../src/utils/judgementStore');
+const rupeeStore = require('../src/utils/rupeeStore');
 const smiteConfigStore = require('../src/utils/smiteConfigStore');
 const coinStore = require('../src/utils/coinStore');
 
@@ -24,13 +24,13 @@ function createInteraction() {
 
 test('inventory shows coin balance, item counts, and prayer status', async () => {
   const originalSmiteBalance = tokenStore.getBalance;
-  const originalJudgementBalance = judgementStore.getBalance;
+  const originalRupeeBalance = rupeeStore.getBalance;
   const originalIsEnabled = smiteConfigStore.isEnabled;
   const originalCoinSummary = coinStore.getSummary;
   const originalPrayStatus = coinStore.getPrayStatus;
 
   tokenStore.getBalance = () => 3;
-  judgementStore.getBalance = () => 1;
+  rupeeStore.getBalance = () => 1;
   smiteConfigStore.isEnabled = () => true;
   coinStore.getSummary = () => ({ coins: 321.5, lifetimeEarned: 0, lifetimeSpent: 0, lastPrayAt: null });
   coinStore.getPrayStatus = () => ({ canPray: false, cooldownMs: 3_600_000, nextAvailableAt: Date.now() + 3_600_000 });
@@ -60,16 +60,17 @@ test('inventory shows coin balance, item counts, and prayer status', async () =>
     assert.match(smiteField.value, /Cost:\*\* 200/);
     assert.match(smiteField.value, /Smite rewards are currently \*\*enabled\*\*/);
 
-    assert(judgementField, 'expected judgement field');
+    assert(judgementField, 'expected rupee field');
     assert.match(judgementField.value, /Owned:\*\* 1/);
     assert.match(judgementField.value, /Cost:\*\* 500/);
     assert.match(judgementField.value, /unlock the powerful \/analysis command/);
+    assert.match(judgementField.value, /\/giverupee/);
 
     assert(prayerField, 'expected prayer field');
     assert.match(prayerField.value, /Already blessed. You can pray again in 1 hour\./);
   } finally {
     tokenStore.getBalance = originalSmiteBalance;
-    judgementStore.getBalance = originalJudgementBalance;
+    rupeeStore.getBalance = originalRupeeBalance;
     smiteConfigStore.isEnabled = originalIsEnabled;
     coinStore.getSummary = originalCoinSummary;
     coinStore.getPrayStatus = originalPrayStatus;

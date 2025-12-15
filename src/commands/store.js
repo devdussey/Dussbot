@@ -7,9 +7,9 @@ const {
 } = require('discord.js');
 const coinStore = require('../utils/coinStore');
 const tokenStore = require('../utils/messageTokenStore');
-const judgementStore = require('../utils/judgementStore');
+const rupeeStore = require('../utils/rupeeStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
-const { getSmiteCost, getJudgementCost } = require('../utils/economyConfig');
+const { getSmiteCost, getRupeeCost } = require('../utils/economyConfig');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 function formatCoins(value) {
@@ -25,8 +25,8 @@ function buildStoreEmbed({
   coins,
   smiteBalance,
   smiteCost,
-  judgementBalance,
-  judgementCost,
+  rupeeBalance,
+  rupeeCost,
   smiteEnabled,
 }) {
   const embed = new EmbedBuilder()
@@ -47,8 +47,8 @@ function buildStoreEmbed({
         }\nOwned: ${smiteBalance}`,
       },
       {
-        name: '⚖️ Judgement Seals',
-        value: `Price: ${formatCoins(judgementCost)} coins each\nUnlock profound insights with /analysis or share wisdom with /givejudgement.\nOwned: ${judgementBalance}`,
+        name: '💎 Rupees',
+        value: `Price: ${formatCoins(rupeeCost)} coins each\nUnlock profound insights with /analysis or share wisdom with /giverupee.\nOwned: ${rupeeBalance}`,
       }
     )
     .setFooter({ text: 'Select an item below to purchase it with your coins.' });
@@ -61,7 +61,7 @@ function buildStoreEmbed({
   return embed;
 }
 
-function createMenu({ disabled = false, coins, smiteCost, judgementCost }) {
+function createMenu({ disabled = false, coins, smiteCost, rupeeCost }) {
   const options = [
     {
       label: 'Buy a Smite Tome',
@@ -70,10 +70,10 @@ function createMenu({ disabled = false, coins, smiteCost, judgementCost }) {
       emoji: '⚡',
     },
     {
-      label: 'Buy a Judgement Seal',
-      description: `Costs ${formatCoins(judgementCost)} coins` + (coins < judgementCost ? ' (insufficient coins)' : ''),
-      value: 'buy_judgement',
-      emoji: '⚖️',
+      label: 'Buy a Rupee',
+      description: `Costs ${formatCoins(rupeeCost)} coins` + (coins < rupeeCost ? ' (insufficient coins)' : ''),
+      value: 'buy_rupee',
+      emoji: '💎',
     },
   ];
 
@@ -95,7 +95,7 @@ async function handlePurchase({
   userId,
   coins,
   smiteCost,
-  judgementCost,
+  rupeeCost,
 }) {
   if (choice === 'buy_smite') {
     if (coins + 1e-6 < smiteCost) {
@@ -111,25 +111,25 @@ async function handlePurchase({
     return '⚡ You have purchased a Smite Tome!';
   }
 
-  if (choice === 'buy_judgement') {
-    if (coins + 1e-6 < judgementCost) {
-      await selection.reply({ content: 'You do not have enough coins to buy a Judgement Seal.', ephemeral: true });
+  if (choice === 'buy_rupee') {
+    if (coins + 1e-6 < rupeeCost) {
+      await selection.reply({ content: 'You do not have enough coins to buy a Rupee.', ephemeral: true });
       return null;
     }
-    const spent = await coinStore.spendCoins(guildId, userId, judgementCost);
+    const spent = await coinStore.spendCoins(guildId, userId, rupeeCost);
     if (!spent) {
       await selection.reply({ content: 'Purchase failed because your coin balance changed. Try again.', ephemeral: true });
       return null;
     }
-    await judgementStore.addTokens(guildId, userId, 1);
-    return '⚖️ You have purchased a Judgement Seal!';
+    await rupeeStore.addTokens(guildId, userId, 1);
+    return '💎 You have purchased a Rupee!';
   }
 
   return null;
 }
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('store').setDescription('Browse and purchase Judgements or Smites'),
+  data: new SlashCommandBuilder().setName('store').setDescription('Browse and purchase Rupees or Smites'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -143,9 +143,9 @@ module.exports = {
 
     let coins = coinStore.getBalance(guildId, userId);
     const smiteBalance = tokenStore.getBalance(guildId, userId);
-    const judgementBalance = judgementStore.getBalance(guildId, userId);
+    const rupeeBalance = rupeeStore.getBalance(guildId, userId);
     const smiteCost = getSmiteCost();
-    const judgementCost = getJudgementCost();
+    const rupeeCost = getRupeeCost();
     const smiteEnabled = smiteConfigStore.isEnabled(guildId);
 
     let message = await interaction.editReply({
@@ -156,17 +156,17 @@ module.exports = {
           coins,
           smiteBalance,
           smiteCost,
-          judgementBalance,
-          judgementCost,
+          rupeeBalance,
+          rupeeCost,
           smiteEnabled,
         }),
       ],
-      components: [createMenu({ coins, smiteCost, judgementCost })],
+      components: [createMenu({ coins, smiteCost, rupeeCost })],
     });
 
     if (typeof message.awaitMessageComponent !== 'function') {
       await interaction.editReply({
-        components: [createMenu({ disabled: true, coins, smiteCost, judgementCost })],
+        components: [createMenu({ disabled: true, coins, smiteCost, rupeeCost })],
       });
       return;
     }
@@ -191,13 +191,13 @@ module.exports = {
           userId,
           coins,
           smiteCost,
-          judgementCost,
+          rupeeCost,
         });
 
         if (purchaseMessage) {
           coins = coinStore.getBalance(guildId, userId);
           const updatedSmiteBalance = tokenStore.getBalance(guildId, userId);
-          const updatedJudgementBalance = judgementStore.getBalance(guildId, userId);
+          const updatedRupeeBalance = rupeeStore.getBalance(guildId, userId);
 
           message = await selection.update({
             embeds: [
@@ -207,12 +207,12 @@ module.exports = {
                 coins,
                 smiteBalance: updatedSmiteBalance,
                 smiteCost,
-                judgementBalance: updatedJudgementBalance,
-                judgementCost,
+                rupeeBalance: updatedRupeeBalance,
+                rupeeCost,
                 smiteEnabled,
               }),
             ],
-            components: [createMenu({ coins, smiteCost, judgementCost })],
+            components: [createMenu({ coins, smiteCost, rupeeCost })],
             content: purchaseMessage,
           });
         }
@@ -222,7 +222,7 @@ module.exports = {
     }
 
     await interaction.editReply({
-      components: [createMenu({ disabled: true, coins, smiteCost, judgementCost })],
+      components: [createMenu({ disabled: true, coins, smiteCost, rupeeCost })],
     });
   },
 };

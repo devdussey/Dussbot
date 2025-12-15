@@ -58,7 +58,7 @@ const categories = {
   ],
   'Media & Personalisation': [
     { cmd: '/chat', desc: 'Chat with GPT using selectable personas and context sizes', perm: null },
-    { cmd: '/analysis', desc: 'Spend a Judgement to analyse your recent messages for insights', perm: null },
+    { cmd: '/analysis', desc: 'Spend a Rupee to analyse your recent messages for insights', perm: null },
     { cmd: '/summarize', desc: 'Summarise recent channel messages into bullets and a paragraph', perm: null },
     { cmd: '/transcribe', desc: 'Transcribe an attached audio file using Whisper', perm: null },
     { cmd: '/removebg', desc: 'Remove the background from an image via remove.bg (2 free uses/day without Premium)', perm: 'Premium for unlimited access' },
@@ -79,8 +79,8 @@ const categories = {
     { cmd: '/brname', desc: 'Rename your booster custom role safely', perm: null },
   ],
   'Economy & Games': [
-    { cmd: '/inventory', desc: 'Check your coins plus available Smites and Judgements', perm: null },
-    { cmd: '/store', desc: 'Spend coins on Smite Tomes or Judgement Seals', perm: null },
+    { cmd: '/inventory', desc: 'Check your coins plus available Smites and Rupees', perm: null },
+    { cmd: '/store', desc: 'Spend coins on Smite Tomes or Rupees', perm: null },
     { cmd: '/pray', desc: 'Pray once per day to receive a coin blessing', perm: null },
     { cmd: '/horserace', desc: 'Host a chaotic horse race mini-game with your server', perm: null },
     { cmd: '/horseracestandings', desc: 'Review historical podium finishes or personal stats', perm: null },
@@ -100,7 +100,7 @@ const categories = {
     { cmd: '/adminlist', desc: 'Owner audit: list mutual guilds where a user has Administrator', perm: 'Bot Owner · Premium' },
     { cmd: '/wraith start/stop', desc: 'Isolate a member with relentless pings and Wraith embeds', perm: 'Bot Owner · Premium' },
     { cmd: '/tamperproof add/remove/list', desc: 'Monitor channels for deletion tampering alerts', perm: 'Manage Channels · Premium' },
-    { cmd: '/givejudgement', desc: 'Grant Judgements directly with a Premium token', perm: 'Bot Owner or Guild Owner · Premium' },
+    { cmd: '/giverupee', desc: 'Grant Rupees directly with a Premium token', perm: 'Bot Owner or Guild Owner · Premium' },
     { cmd: '/cloneall', desc: 'Bulk import emojis from another server', perm: 'Manage Emojis and Stickers · Premium' },
     { cmd: '/removebg', desc: 'Unlimited background removals (2 free/day without Premium)', perm: 'Premium for unlimited access' },
   ],
@@ -109,7 +109,7 @@ const categories = {
     { cmd: '/botlook', desc: 'Update the bot avatar, nickname, or bio', perm: 'Bot Owner' },
     { cmd: '/fetchmessage', desc: 'Backfill user messages from a channel for analysis tools', perm: 'Bot Owner' },
     { cmd: '/dmdiag test/role', desc: 'Run DM diagnostics for a member or role', perm: 'Bot Owner' },
-    { cmd: '/givejudgement', desc: 'Grant Judgements directly to a user', perm: 'Bot Owner or Guild Owner · Premium' },
+    { cmd: '/giverupee', desc: 'Grant Rupees directly to a user', perm: 'Bot Owner or Guild Owner · Premium' },
     { cmd: '/wraith start/stop', desc: 'Create a private spam channel and isolate a member', perm: 'Bot Owner · Premium' },
   ],
 };

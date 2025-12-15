@@ -1,8 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const judgementStore = require('../utils/judgementStore');
+const rupeeStore = require('../utils/rupeeStore');
 const messageLogStore = require('../utils/userMessageLogStore');
 const coinStore = require('../utils/coinStore');
-const { getJudgementCost } = require('../utils/economyConfig');
+const { getRupeeCost } = require('../utils/economyConfig');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { isOwner } = require('../utils/ownerIds');
 
@@ -171,7 +171,7 @@ function buildEmbed(interaction, analysis, count, subjectUser) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('analysis')
-    .setDescription('Spend a Judgement to analyse your recent messages')
+    .setDescription('Spend a Rupee to analyse your recent messages')
     .addStringOption((option) => option
       .setName('persona')
       .setDescription('Choose the analysis persona to apply')
@@ -229,17 +229,17 @@ module.exports = {
     const subjectLabel = subjectUser?.tag || subjectUser?.username || subjectUser?.globalName || subjectUser?.id || 'the user';
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
-    let balance = judgementStore.getBalance(guildId, userId);
-    const judgementCost = getJudgementCost();
+    let balance = rupeeStore.getBalance(guildId, userId);
+    const rupeeCost = getRupeeCost();
     let coinsSpent = false;
 
-    if (balance <= 0 && judgementCost > 0) {
+    if (balance <= 0 && rupeeCost > 0) {
       const coinsAvailable = coinStore.getBalance(guildId, userId);
-      if (coinsAvailable + 1e-6 >= judgementCost) {
-        const spent = await coinStore.spendCoins(guildId, userId, judgementCost);
+      if (coinsAvailable + 1e-6 >= rupeeCost) {
+        const spent = await coinStore.spendCoins(guildId, userId, rupeeCost);
         if (spent) {
-          await judgementStore.addTokens(guildId, userId, 1);
-          balance = judgementStore.getBalance(guildId, userId);
+          await rupeeStore.addTokens(guildId, userId, 1);
+          balance = rupeeStore.getBalance(guildId, userId);
           coinsSpent = true;
         }
       }
@@ -247,12 +247,12 @@ module.exports = {
 
     if (balance <= 0) {
       const coinsAvailable = coinStore.getBalance(guildId, userId);
-      const costText = judgementCost > 0
-        ? `${Number(judgementCost).toLocaleString()} coin${judgementCost === 1 ? '' : 's'}`
+      const costText = rupeeCost > 0
+        ? `${Number(rupeeCost).toLocaleString()} coin${rupeeCost === 1 ? '' : 's'}`
         : 'coins';
       const balanceText = `${Number(coinsAvailable).toLocaleString(undefined, { maximumFractionDigits: 2 })} coin${coinsAvailable === 1 ? '' : 's'}`;
       return interaction.editReply({
-        content: `You do not have any Judgements. You need ${costText} to buy one. Current balance: ${balanceText}. Ask an owner to use /givejudgement if needed.`,
+        content: `You do not have any Rupees. You need ${costText} to buy one. Current balance: ${balanceText}. Ask an owner to use /giverupee if needed.`,
       });
     }
 
@@ -271,17 +271,17 @@ module.exports = {
       return interaction.editReply({ content: targetName });
     }
 
-    const consumed = await judgementStore.consumeToken(guildId, userId);
+    const consumed = await rupeeStore.consumeToken(guildId, userId);
     if (!consumed) {
-      if (coinsSpent && judgementCost > 0) {
-        await coinStore.addCoins(guildId, userId, judgementCost);
+      if (coinsSpent && rupeeCost > 0) {
+        await coinStore.addCoins(guildId, userId, rupeeCost);
       }
-      return interaction.editReply({ content: 'You no longer have a Judgement to spend.' });
+      return interaction.editReply({ content: 'You no longer have a Rupee to spend.' });
     }
 
     const { text: formatted, usedCount } = formatMessages(logs, persona.messageLimit);
     if (usedCount === 0) {
-      await judgementStore.addTokens(interaction.guildId, interaction.user.id, 1);
+      await rupeeStore.addTokens(interaction.guildId, interaction.user.id, 1);
       const message = subjectUser.id === interaction.user.id
         ? 'Unable to find analysable messages yet. Try again later.'
         : `Unable to find analysable messages for ${subjectLabel} yet. Try again later.`;
@@ -328,9 +328,9 @@ module.exports = {
       const embed = buildEmbed(interaction, analysis, usedCount, subjectUser);
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
-      await judgementStore.addTokens(guildId, userId, 1);
-      if (coinsSpent && judgementCost > 0) {
-        await coinStore.addCoins(guildId, userId, judgementCost);
+      await rupeeStore.addTokens(guildId, userId, 1);
+      if (coinsSpent && rupeeCost > 0) {
+        await coinStore.addCoins(guildId, userId, rupeeCost);
       }
       const msg = err?.message || String(err);
       await interaction.editReply({ content: `Analysis failed: ${msg}` });

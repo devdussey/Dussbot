@@ -1,12 +1,12 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const coinStore = require('../utils/coinStore');
 const tokenStore = require('../utils/messageTokenStore');
-const judgementStore = require('../utils/judgementStore');
+const rupeeStore = require('../utils/rupeeStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const {
   getSmiteCost,
-  getJudgementCost,
+  getRupeeCost,
   getPrayReward,
 } = require('../utils/economyConfig');
 
@@ -35,8 +35,8 @@ function buildInventoryEmbed({
   coinSummary,
   smiteBalance,
   smiteCost,
-  judgementBalance,
-  judgementCost,
+  rupeeBalance,
+  rupeeCost,
   smiteEnabled,
   prayStatus,
   prayReward,
@@ -59,7 +59,7 @@ function buildInventoryEmbed({
           coinSummary.lifetimeEarned
         )} · Spent ${formatCoins(
           coinSummary.lifetimeSpent
-        )}\nCoins are the divine currency for all purchases, including empowering Smites and unlocking Judgements.`,
+        )}\nCoins are the divine currency for all purchases, including empowering Smites and unlocking Rupees.`,
       },
       {
         name: '⚡ Smites',
@@ -72,10 +72,10 @@ function buildInventoryEmbed({
         }`,
       },
       {
-        name: '⚖️ Judgements',
-        value: `**Owned:** ${judgementBalance}\n**Cost:** ${formatCoins(
-          judgementCost
-        )} coins each\nJudgements unlock the powerful /analysis command and can also be bestowed by moderators using /givejudgement.`,
+        name: '💎 Rupees',
+        value: `**Owned:** ${rupeeBalance}\n**Cost:** ${formatCoins(
+          rupeeCost
+        )} coins each\nRupees unlock the powerful /analysis command and can also be bestowed by moderators using /giverupee.`,
       }
     );
 
@@ -99,7 +99,7 @@ function buildInventoryEmbed({
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('inventory')
-    .setDescription('Check your coin balance, Smites, and Judgements'),
+    .setDescription('Check your coin balance, Smites, and Rupees'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -114,8 +114,8 @@ module.exports = {
     const coinSummary = coinStore.getSummary(guildId, userId);
     const smiteBalance = tokenStore.getBalance(guildId, userId);
     const smiteCost = getSmiteCost();
-    const judgementBalance = judgementStore.getBalance(guildId, userId);
-    const judgementCost = getJudgementCost();
+    const rupeeBalance = rupeeStore.getBalance(guildId, userId);
+    const rupeeCost = getRupeeCost();
     const smiteEnabled = smiteConfigStore.isEnabled(guildId);
     const prayStatus = coinStore.getPrayStatus(guildId, userId);
     const prayReward = getPrayReward();
@@ -126,8 +126,8 @@ module.exports = {
       coinSummary,
       smiteBalance,
       smiteCost,
-      judgementBalance,
-      judgementCost,
+      rupeeBalance,
+      rupeeCost,
       smiteEnabled,
       prayStatus,
       prayReward,

@@ -1,22 +1,22 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { isOwner } = require('../utils/ownerIds');
-const judgementStore = require('../utils/judgementStore');
+const rupeeStore = require('../utils/rupeeStore');
 const premiumManager = require('../utils/premiumManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('givejudgement')
-    .setDescription('Owners: grant Judgements to a user')
+    .setName('giverupee')
+    .setDescription('Owners: grant Rupees to a user')
     .addUserOption(opt =>
       opt
         .setName('user')
-        .setDescription('Member to receive Judgements')
+        .setDescription('Member to receive Rupees')
         .setRequired(true)
     )
     .addIntegerOption(opt =>
       opt
         .setName('amount')
-        .setDescription('How many Judgements to grant (default 1)')
+        .setDescription('How many Rupees to grant (default 1)')
         .setMinValue(1)
     )
     .addStringOption(opt =>
@@ -31,7 +31,7 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    if (!(await premiumManager.ensurePremium(interaction, 'Give Judgement'))) return;
+    if (!(await premiumManager.ensurePremium(interaction, 'Give Rupee'))) return;
 
     const isBotOwner = isOwner(interaction.user.id);
     let isGuildOwner = false;
@@ -58,13 +58,13 @@ module.exports = {
     const amount = Number.isFinite(amountInput) ? amountInput : 1;
     const reason = (interaction.options.getString('reason') || '').trim();
 
-    const total = await judgementStore.addTokens(interaction.guildId, target.id, amount);
+    const total = await rupeeStore.addTokens(interaction.guildId, target.id, amount);
 
-    const balanceLine = `They now have ${total} judgement${total === 1 ? '' : 's'}.`;
+    const balanceLine = `They now have ${total} rupee${total === 1 ? '' : 's'}.`;
     const reasonLine = reason ? `Reason: ${reason}` : '';
 
     const lines = [
-      `<@${interaction.user.id}> has given <@${target.id}> ${amount} judgement${amount === 1 ? '' : 's'}.`,
+      `<@${interaction.user.id}> has given <@${target.id}> ${amount} rupee${amount === 1 ? '' : 's'}.`,
       balanceLine,
       reasonLine,
     ]
@@ -77,3 +77,4 @@ module.exports = {
     });
   },
 };
+
