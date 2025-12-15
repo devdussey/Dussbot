@@ -3,12 +3,13 @@
 
 
 1. Clone this repository or download the files
-2. Install dependencies:
+2. Install Node.js 22+ (LTS recommended)
+3. Install dependencies:
    ```bash
    npm install
    ```
 
-3. Create a `.env` file based on `.env.example`:
+4. Create a `.env` file based on `.env.example`:
    ```env
    DISCORD_TOKEN=your_bot_token_here
    CLIENT_ID=your_client_id_here
@@ -20,7 +21,7 @@
    # BOT_OWNER_ID=123456789012345678
    ```
 
-4. Start the bot:
+5. Start the bot:
    ```bash
    npm start
    ```

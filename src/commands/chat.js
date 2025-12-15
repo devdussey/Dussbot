@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, ChannelType } = require('discord.js');
-// node-fetch v3 is ESM-only; dynamic import for CommonJS
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = globalThis.fetch;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_API;
 const OPENAI_CHAT_MODEL = process.env.CHAT_MODEL || 'gpt-4o-mini';

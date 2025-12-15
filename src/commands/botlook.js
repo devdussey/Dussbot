@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { isOwner } = require('../utils/ownerIds');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = globalThis.fetch;
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -74,4 +74,3 @@ module.exports = {
     return interaction.reply({ content: `Updated bot ${changes.join(', ')}.`, ephemeral: true });
   },
 };
-

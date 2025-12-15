@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
-// node-fetch v3 is ESM-only; use dynamic import in CommonJS
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = globalThis.fetch;
 
 const HF_API_KEY = process.env.HF_API_KEY || process.env.HUGGINGFACE_API_KEY;
 const MODEL_URL = process.env.HF_SUPERRES_MODEL_URL || 'https://api-inference.huggingface.co/models/ai-forever/Real-ESRGAN';

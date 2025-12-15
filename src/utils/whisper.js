@@ -1,17 +1,5 @@
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
-let FormDataCtor = null;
-try {
-  if (typeof FormData !== 'undefined') {
-    FormDataCtor = FormData;
-  }
-} catch (_) {}
-if (!FormDataCtor) {
-  try {
-    FormDataCtor = require('form-data');
-  } catch (err) {
-    // handled later
-  }
-}
+const fetch = globalThis.fetch;
+const { Blob } = require('node:buffer');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_API;
 const OPENAI_TRANSCRIBE_MODEL = process.env.TRANSCRIBE_MODEL || 'whisper-1';
@@ -22,11 +10,14 @@ async function transcribeAttachment(attachment, prompt) {
   if (!OPENAI_API_KEY) {
     throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your environment.');
   }
-  if (!FormDataCtor) {
-    throw new Error('Missing FormData implementation. Please install the "form-data" package or run on Node 18+.');
-  }
   if (!attachment?.url) {
     throw new Error('No attachment URL provided.');
+  }
+  if (typeof fetch !== 'function') {
+    throw new Error('Global fetch() is not available in this Node.js runtime.');
+  }
+  if (typeof FormData === 'undefined') {
+    throw new Error('Global FormData is not available in this Node.js runtime.');
   }
 
   const ct = (attachment.contentType || '').toLowerCase();
@@ -48,19 +39,9 @@ async function transcribeAttachment(attachment, prompt) {
   const fileName = attachment.name || 'audio';
   const mimeType = ct || 'application/octet-stream';
 
-  const form = new FormDataCtor();
-  if (form.append.length >= 3) {
-    form.append('file', audioBuffer, { filename: fileName, contentType: mimeType });
-  } else {
-    let blob;
-    try {
-      const { Blob } = require('buffer');
-      blob = new Blob([audioBuffer], { type: mimeType });
-    } catch (_) {
-      blob = audioBuffer;
-    }
-    form.append('file', blob, fileName);
-  }
+  const form = new FormData();
+  const blob = new Blob([audioBuffer], { type: mimeType });
+  form.append('file', blob, fileName);
   form.append('model', OPENAI_TRANSCRIBE_MODEL);
   if (prompt) form.append('prompt', prompt);
 

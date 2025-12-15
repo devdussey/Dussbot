@@ -3,8 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const boosterStore = require('./boosterRoleStore');
 const { resolveDataPath, ensureDir } = require('./dataDir');
-// node-fetch v3 is ESM-only; dynamic import for CommonJS
-const fetch = (...args) => import('node-fetch').then(({ default: fetchFn }) => fetchFn(...args));
+const fetch = globalThis.fetch;
 
 const ROLE_SUFFIX = "'s Custom Role";
 const ROLE_ICON_FEATURE = 'ROLE_ICONS';

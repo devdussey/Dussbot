@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
-// node-fetch v3 is ESM-only; use dynamic import in CommonJS
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = globalThis.fetch;
 
 // ----- Unicode emoji helpers (Twemoji) -----
 function cpArray(str) {

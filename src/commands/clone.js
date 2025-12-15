@@ -6,8 +6,7 @@ const {
     Routes,
 } = require('discord.js');
 const logger = require('../utils/securityLogger');
-// node-fetch v3 is ESM-only; use dynamic import in CommonJS
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = globalThis.fetch;
 
 function buildEmojiCdnUrl(id, animated, size = 128, extOverride) {
     const ext = extOverride || (animated ? 'gif' : 'png');

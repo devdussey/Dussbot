@@ -6,7 +6,7 @@ const { getJudgementCost } = require('../utils/economyConfig');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { isOwner } = require('../utils/ownerIds');
 
-const fetch = (...args) => import('node-fetch').then(({ default: fetchImpl }) => fetchImpl(...args));
+const fetch = globalThis.fetch;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_API;
 const OPENAI_CHAT_MODEL = process.env.ANALYSIS_MODEL || process.env.CHAT_MODEL || 'gpt-4o-mini';
