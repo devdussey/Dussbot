@@ -3,7 +3,7 @@ const smiteConfigStore = require('../utils/smiteConfigStore');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('smiteconfig')
+    .setName('rupeeconfig')
     .setDescription('Enable or disable Smite rewards and the /smite command')
     .addBooleanOption(opt =>
       opt

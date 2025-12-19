@@ -18,7 +18,7 @@ const categories = {
     { cmd: '/blacklist add/remove/list', desc: 'Maintain a join blacklist that automatically bans flagged users', perm: 'Ban Members' },
     { cmd: '/jail config/add/remove/status', desc: 'Temporarily strip roles, isolate members, and restore them later', perm: 'Manage Roles' },
     { cmd: '/smite', desc: 'Spend a Smite to silence a non-staff user for ten minutes', perm: null },
-    { cmd: '/smiteconfig', desc: 'Enable or disable Smite rewards and redemption', perm: 'Manage Server' },
+    { cmd: '/rupeeconfig', desc: 'Enable or disable Smite rewards and redemption', perm: 'Manage Server' },
   ],
   'Roles & Identity': [
     { cmd: '/role add/remove', desc: 'Grant or remove specific roles from a member', perm: 'Manage Roles' },
