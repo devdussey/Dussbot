@@ -1,5 +1,11 @@
-const { escapeMarkdown } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  escapeMarkdown,
+} = require('discord.js');
 const wordRushStatsStore = require('./wordRushStatsStore');
+const rupeeStore = require('./rupeeStore');
 const {
   pickLetters,
   formatLetters,
@@ -7,13 +13,13 @@ const {
   containsLettersInOrder,
 } = require('./wordRushLogic');
 
+const JOIN_WINDOW_MS = 30_000;
+const MIN_PLAYERS = 2;
+const LIVES_PER_PLAYER = 2;
+
 const DEFAULT_TURN_SECONDS = 10;
 const MIN_TURN_SECONDS = 5;
 const MAX_TURN_SECONDS = 60;
-
-const DEFAULT_TARGET_WINS = 5;
-const MIN_TARGET_WINS = 1;
-const MAX_TARGET_WINS = 50;
 
 const activeGames = new Map();
 
@@ -43,6 +49,9 @@ function getActiveGame(guildId, channelId) {
 
 function joinWordRushGame(game, user) {
   if (!game || !user) return { ok: false, error: 'No active WordRush game found.' };
+  if (game.stage !== 'waiting') {
+    return { ok: false, error: 'The join window is closed.' };
+  }
   if (game.playerSet.has(user.id)) {
     return { ok: true, joined: false };
   }
@@ -64,7 +73,7 @@ function leaveWordRushGame(game, userId) {
 
   game.playerSet.delete(userId);
   game.players = game.players.filter(id => id !== userId);
-  game.scores.delete(userId);
+  game.lives.delete(userId);
   game.profiles.delete(userId);
 
   if (game.hostId === userId) {
@@ -81,19 +90,19 @@ function leaveWordRushGame(game, userId) {
   return { ok: true, left: true };
 }
 
-function formatScoreboard(game) {
+function formatLivesBoard(game) {
   const entries = game.players
     .map(userId => ({
       userId,
-      score: game.scores.get(userId) || 0,
+      lives: game.lives.get(userId) ?? 0,
       profile: game.profiles.get(userId) || null,
     }))
     .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
+      if (b.lives !== a.lives) return b.lives - a.lives;
       return a.userId.localeCompare(b.userId);
     });
 
-  const lines = entries.map(entry => `- ${formatPlayerName(entry.profile, entry.userId)}: ${entry.score}`);
+  const lines = entries.map(entry => `- ${formatPlayerName(entry.profile, entry.userId)}: ${entry.lives} life${entry.lives === 1 ? '' : 's'}`);
   return lines.length ? lines.join('\n') : '_No scores yet._';
 }
 
@@ -136,13 +145,135 @@ async function waitForTurnWord(game, userId, letters) {
   });
 }
 
+function buildLobbyComponents({ joinButtonId, disabled }) {
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(joinButtonId)
+      .setLabel('Join WordRush')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(Boolean(disabled)),
+  );
+  return [row];
+}
+
+function renderLobbyState(game, joinDeadline) {
+  const now = Date.now();
+  const secondsLeft = Math.max(0, Math.ceil((joinDeadline - now) / 1000));
+  const roster = game.players.length
+    ? game.players.map(id => `<@${id}>`).join(', ')
+    : '_No players yet._';
+
+  const lines = [
+    '**WordRush Lobby**',
+    `Click **Join WordRush** to enter. Starting in **${secondsLeft}s**.`,
+    `Lives: **${LIVES_PER_PLAYER}** each  •  Turn timer: **${game.turnSeconds}s**`,
+    '',
+    `Players (${game.players.length}): ${roster}`,
+  ];
+  return lines.join('\n');
+}
+
 async function runWordRushGame(game) {
+  const joinDeadline = Date.now() + JOIN_WINDOW_MS;
+
+  const lobbyMessage = await game.channel.send({
+    content: renderLobbyState(game, joinDeadline),
+    components: buildLobbyComponents({ joinButtonId: game.joinButtonId }),
+    allowedMentions: { parse: [] },
+  }).catch(() => null);
+
+  if (!lobbyMessage) {
+    game.stop('error');
+    return;
+  }
+
+  game.lobbyMessageId = lobbyMessage.id;
+
+  const lobbyCollector = lobbyMessage.createMessageComponentCollector({
+    time: JOIN_WINDOW_MS,
+  });
+  game.currentCollector = lobbyCollector;
+
+  const lobbyTick = setInterval(() => {
+    if (game.isStopped || game.stage !== 'waiting') return;
+    if (Date.now() >= joinDeadline) return;
+    lobbyMessage.edit({
+      content: renderLobbyState(game, joinDeadline),
+      components: buildLobbyComponents({ joinButtonId: game.joinButtonId }),
+      allowedMentions: { parse: [] },
+    }).catch(() => {});
+  }, 5_000);
+
+  lobbyCollector.on('collect', async (componentInteraction) => {
+    if (componentInteraction.customId !== game.joinButtonId) return;
+    if (game.isStopped || game.stage !== 'waiting') {
+      await componentInteraction.reply({ content: 'The join window is closed.', ephemeral: true }).catch(() => {});
+      return;
+    }
+
+    const result = joinWordRushGame(game, componentInteraction.user);
+    if (!result.ok) {
+      await componentInteraction.reply({ content: result.error || 'Unable to join right now.', ephemeral: true }).catch(() => {});
+      return;
+    }
+    if (!result.joined) {
+      await componentInteraction.reply({ content: 'You are already in this WordRush game.', ephemeral: true }).catch(() => {});
+      return;
+    }
+
+    await componentInteraction.reply({ content: 'Joined WordRush!', ephemeral: true }).catch(() => {});
+    await lobbyMessage.edit({
+      content: renderLobbyState(game, joinDeadline),
+      components: buildLobbyComponents({ joinButtonId: game.joinButtonId }),
+      allowedMentions: { parse: [] },
+    }).catch(() => {});
+  });
+
+  await new Promise(resolve => {
+    lobbyCollector.on('end', () => resolve());
+  });
+
+  clearInterval(lobbyTick);
+  if (game.currentCollector === lobbyCollector) game.currentCollector = null;
+
+  if (game.isStopped) {
+    await lobbyMessage.edit({
+      components: buildLobbyComponents({ joinButtonId: game.joinButtonId, disabled: true }),
+    }).catch(() => {});
+    if (game.stopReason === 'stopped') {
+      await game.channel.send({ content: 'WordRush stopped.' }).catch(() => {});
+    } else if (game.stopReason === 'no-players') {
+      await game.channel.send({ content: 'WordRush ended: no players remaining.' }).catch(() => {});
+    } else if (game.stopReason) {
+      await game.channel.send({ content: 'WordRush ended.' }).catch(() => {});
+    }
+    return;
+  }
+
+  game.stage = 'playing';
+  game.startedPlayerIds = Array.from(game.playerSet);
+
+  await lobbyMessage.edit({
+    content: renderLobbyState(game, joinDeadline),
+    components: buildLobbyComponents({ joinButtonId: game.joinButtonId, disabled: true }),
+    allowedMentions: { parse: [] },
+  }).catch(() => {});
+
+  if (game.players.length < MIN_PLAYERS) {
+    await game.channel.send({ content: `Not enough players joined (need ${MIN_PLAYERS}). WordRush cancelled.` }).catch(() => {});
+    game.stop('not-enough-players');
+    return;
+  }
+
+  for (const userId of game.players) {
+    game.lives.set(userId, LIVES_PER_PLAYER);
+  }
+
   const introLines = [
     '**WordRush** starting!',
     `Players: ${game.players.map(id => `<@${id}>`).join(', ')}`,
-    `First to **${game.targetWins}** point${game.targetWins === 1 ? '' : 's'} wins.`,
+    `Lives: **${LIVES_PER_PLAYER}** each. Miss your turn and lose a life.`,
     `Each turn: **${game.turnSeconds}s** to respond with a single word that contains the 3 letters **in the same order**.`,
-    'Use `/wordrush join` to join, `/wordrush leave` to leave, `/wordrush stop` to end the game.',
   ];
 
   await game.channel.send({ content: introLines.join('\n') }).catch(() => {});
@@ -153,10 +284,26 @@ async function runWordRushGame(game) {
       break;
     }
 
+    if (game.players.length === 1) {
+      game.winnerId = game.players[0];
+      game.stop('winner');
+      break;
+    }
+
     if (game.turnIndex >= game.players.length) game.turnIndex = 0;
     const userId = game.players[game.turnIndex];
     if (!userId) {
       game.turnIndex = 0;
+      continue;
+    }
+
+    const previousTurnIndex = game.turnIndex;
+    const livesRemaining = game.lives.get(userId) ?? 0;
+    if (livesRemaining <= 0) {
+      game.players = game.players.filter(id => id !== userId);
+      game.playerSet.delete(userId);
+      game.profiles.delete(userId);
+      game.lives.delete(userId);
       continue;
     }
 
@@ -166,6 +313,7 @@ async function runWordRushGame(game) {
       `Turn: <@${userId}>`,
       `Letters: **${formatLetters(letters)}**`,
       `You have ${game.turnSeconds}s. Reply with a single word containing those letters in order.`,
+      `Lives remaining: **${livesRemaining}**`,
     ];
 
     await game.channel.send({ content: promptLines.join('\n') }).catch(() => {});
@@ -175,45 +323,72 @@ async function runWordRushGame(game) {
     if (game.isStopped) break;
 
     if (response.ok && response.word) {
-      const nextScore = (game.scores.get(userId) || 0) + 1;
-      game.scores.set(userId, nextScore);
-
-      const scoredLines = [
-        `<@${userId}> scored a point with **${escapeMarkdown(response.word)}**.`,
+      const okLines = [
+        `<@${userId}> survives with **${escapeMarkdown(response.word)}**.`,
         '',
-        '**Scoreboard**',
-        formatScoreboard(game),
+        '**Lives**',
+        formatLivesBoard(game),
       ];
 
-      await game.channel.send({ content: scoredLines.join('\n') }).catch(() => {});
+      await game.channel.send({ content: okLines.join('\n') }).catch(() => {});
+    } else {
+      const nextLives = (game.lives.get(userId) ?? 0) - 1;
+      game.lives.set(userId, Math.max(0, nextLives));
 
-      if (nextScore >= game.targetWins) {
-        game.winnerId = userId;
+      const eliminated = nextLives <= 0;
+      if (eliminated) {
+        game.players = game.players.filter(id => id !== userId);
+        game.playerSet.delete(userId);
+      }
+
+      const failLines = [
+        `<@${userId}> failed the turn and lost a life.`,
+        eliminated ? `Eliminated: <@${userId}>` : `Lives remaining: **${Math.max(0, nextLives)}**`,
+        '',
+        '**Lives**',
+        formatLivesBoard(game),
+      ];
+
+      await game.channel.send({ content: failLines.join('\n') }).catch(() => {});
+
+      if (game.players.length === 1) {
+        game.winnerId = game.players[0];
         game.stop('winner');
         break;
       }
-    } else {
-      const timeoutLines = [
-        `<@${userId}> ran out of time.`,
-        '',
-        '**Scoreboard**',
-        formatScoreboard(game),
-      ];
-      await game.channel.send({ content: timeoutLines.join('\n') }).catch(() => {});
     }
 
-    game.turnIndex = (game.turnIndex + 1) % game.players.length;
+    if (!game.players.length) {
+      game.stop('no-players');
+      break;
+    }
+
+    const currentIndex = game.players.indexOf(userId);
+    if (currentIndex !== -1) {
+      game.turnIndex = (currentIndex + 1) % game.players.length;
+    } else {
+      game.turnIndex = previousTurnIndex;
+      if (game.turnIndex >= game.players.length) game.turnIndex = 0;
+    }
   }
 
   const finishedAt = Date.now();
 
   if (game.stopReason === 'winner' && game.winnerId) {
-    await game.channel.send({ content: `Game over! Winner: <@${game.winnerId}>` }).catch(() => {});
+    const newBalance = await rupeeStore.addTokens(game.guildId, game.winnerId, 1).catch(() => null);
+    const rupeeLine = Number.isFinite(newBalance)
+      ? `Winner earned **1 Rupee**. New balance: **${newBalance}**.`
+      : 'Winner earned **1 Rupee**.';
+
+    await game.channel.send({
+      content: `Game over! Winner: <@${game.winnerId}>\n${rupeeLine}`,
+    }).catch(() => {});
+
     wordRushStatsStore.recordGame(game.guildId, {
       winnerId: game.winnerId,
-      playerIds: Array.from(game.playerSet),
-      targetWins: game.targetWins,
+      playerIds: Array.isArray(game.startedPlayerIds) ? game.startedPlayerIds : Array.from(game.playerSet),
       turnSeconds: game.turnSeconds,
+      livesPerPlayer: LIVES_PER_PLAYER,
       finishedAt,
     });
     return;
@@ -233,7 +408,7 @@ async function runWordRushGame(game) {
 }
 
 async function startWordRushGame(interaction, options) {
-  const { targetWins, turnSeconds } = options || {};
+  const { turnSeconds } = options || {};
   const guildId = interaction.guildId;
   const channelId = interaction.channelId;
 
@@ -249,7 +424,6 @@ async function startWordRushGame(interaction, options) {
   }
 
   const actualTurnSeconds = clampInt(turnSeconds, MIN_TURN_SECONDS, MAX_TURN_SECONDS, DEFAULT_TURN_SECONDS);
-  const actualTargetWins = clampInt(targetWins, MIN_TARGET_WINS, MAX_TARGET_WINS, DEFAULT_TARGET_WINS);
 
   const game = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -257,18 +431,21 @@ async function startWordRushGame(interaction, options) {
     channelId,
     channel,
     hostId: interaction.user.id,
+    stage: 'waiting',
+    joinButtonId: `wordrush-join-${interaction.id}-${Date.now()}`,
+    lobbyMessageId: null,
     players: [],
     playerSet: new Set(),
     profiles: new Map(),
-    scores: new Map(),
+    lives: new Map(),
     turnIndex: 0,
     turnSeconds: actualTurnSeconds,
-    targetWins: actualTargetWins,
     currentCollector: null,
     currentTurnUserId: null,
     isStopped: false,
     stopReason: null,
     winnerId: null,
+    startedPlayerIds: null,
     startedAt: Date.now(),
   };
 
@@ -310,4 +487,3 @@ module.exports = {
   joinWordRushGame,
   leaveWordRushGame,
 };
-

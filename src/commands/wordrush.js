@@ -28,13 +28,7 @@ module.exports = {
     .addSubcommand(sub =>
       sub
         .setName('start')
-        .setDescription('Start a WordRush game in this channel')
-        .addIntegerOption(option =>
-          option
-            .setName('target_wins')
-            .setDescription('Points needed to win (default 5)')
-            .setMinValue(1)
-            .setMaxValue(50))
+        .setDescription('Start a WordRush lobby in this channel (30s join button)')
         .addIntegerOption(option =>
           option
             .setName('turn_seconds')
@@ -44,7 +38,7 @@ module.exports = {
     .addSubcommand(sub =>
       sub
         .setName('join')
-        .setDescription('Join the active WordRush game in this channel'))
+        .setDescription('Join the active WordRush lobby in this channel'))
     .addSubcommand(sub =>
       sub
         .setName('leave')
@@ -84,16 +78,15 @@ module.exports = {
         return interaction.reply({ content: 'I need permission to send messages in this channel to host WordRush.', ephemeral: true });
       }
 
-      const targetWins = interaction.options.getInteger('target_wins');
       const turnSeconds = interaction.options.getInteger('turn_seconds');
 
-      const result = await wordRushGameManager.startWordRushGame(interaction, { targetWins, turnSeconds });
+      const result = await wordRushGameManager.startWordRushGame(interaction, { turnSeconds });
       if (!result.ok) {
         return interaction.reply({ content: result.error || 'Unable to start WordRush right now.', ephemeral: true });
       }
 
       return interaction.reply({
-        content: `WordRush started in ${channel}. Use \`/wordrush join\` to join. You’ll have **${result.game.turnSeconds}s** per turn, first to **${result.game.targetWins}** wins.`,
+        content: `WordRush lobby started in ${channel}. Click **Join WordRush** in chat (30s). Lives: **2** each. Turn timer: **${result.game.turnSeconds}s**.`,
         ephemeral: true,
       });
     }
@@ -209,4 +202,3 @@ module.exports = {
     return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
   },
 };
-

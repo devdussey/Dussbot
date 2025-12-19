@@ -74,6 +74,7 @@ function recordGame(guildId, summary) {
     playerIds,
     targetWins: toNumber(summary.targetWins),
     turnSeconds: toNumber(summary.turnSeconds),
+    livesPerPlayer: toNumber(summary.livesPerPlayer),
     finishedAt: toNumber(summary.finishedAt) || now,
   };
 
@@ -130,4 +131,3 @@ module.exports = {
   getLeaderboard,
   resetStatsCache,
 };
-
