@@ -42,6 +42,16 @@ function sanitisePoll(poll) {
   cleaned.updatedAt = Number.isFinite(cleaned.updatedAt) ? cleaned.updatedAt : cleaned.createdAt;
   const answers = Array.isArray(cleaned.answers) ? cleaned.answers : [];
   cleaned.answers = answers.map(sanitiseAnswer).filter(Boolean).slice(0, MAX_ANSWERS);
+  const voteByUser = cleaned.voteByUser && typeof cleaned.voteByUser === 'object' ? cleaned.voteByUser : {};
+  cleaned.voteByUser = {};
+  for (const [userId, answerIdx] of Object.entries(voteByUser)) {
+    const uid = String(userId || '').trim();
+    const idx = Number(answerIdx);
+    if (!uid) continue;
+    if (!Number.isInteger(idx)) continue;
+    if (idx < 0 || idx >= cleaned.answers.length) continue;
+    cleaned.voteByUser[uid] = idx;
+  }
   return cleaned.id && cleaned.creatorId && cleaned.question ? cleaned : null;
 }
 
@@ -155,6 +165,65 @@ function addAnswer(guildId, pollId, answer) {
   return { ok: true, poll: getPoll(guildId, pollId) };
 }
 
+function toggleVote(guildId, pollId, userId, answerIndex) {
+  const guild = ensureGuild(guildId);
+  const poll = guild.polls[String(pollId)];
+  if (!poll) return { ok: false, error: 'not_found' };
+  if (poll.open === false) return { ok: false, error: 'closed' };
+
+  const uid = String(userId || '').trim();
+  const idx = Number(answerIndex);
+  if (!uid) return { ok: false, error: 'invalid_user' };
+  if (!Number.isInteger(idx)) return { ok: false, error: 'invalid_answer' };
+
+  poll.answers = Array.isArray(poll.answers) ? poll.answers : [];
+  if (idx < 0 || idx >= poll.answers.length) return { ok: false, error: 'invalid_answer' };
+
+  poll.voteByUser = poll.voteByUser && typeof poll.voteByUser === 'object' ? poll.voteByUser : {};
+  const current = Number.isInteger(poll.voteByUser[uid]) ? poll.voteByUser[uid] : null;
+
+  let changed = false;
+  let removed = false;
+  if (current === idx) {
+    delete poll.voteByUser[uid];
+    changed = true;
+    removed = true;
+  } else {
+    poll.voteByUser[uid] = idx;
+    changed = true;
+  }
+
+  if (changed) {
+    poll.updatedAt = Date.now();
+    guild.polls[String(pollId)] = sanitisePoll(poll) || poll;
+    persist();
+  }
+
+  return { ok: true, poll: getPoll(guildId, pollId), changed, removed };
+}
+
+function clearVote(guildId, pollId, userId) {
+  const guild = ensureGuild(guildId);
+  const poll = guild.polls[String(pollId)];
+  if (!poll) return { ok: false, error: 'not_found' };
+  if (poll.open === false) return { ok: false, error: 'closed' };
+
+  const uid = String(userId || '').trim();
+  if (!uid) return { ok: false, error: 'invalid_user' };
+
+  poll.voteByUser = poll.voteByUser && typeof poll.voteByUser === 'object' ? poll.voteByUser : {};
+  const had = Object.prototype.hasOwnProperty.call(poll.voteByUser, uid);
+  if (had) delete poll.voteByUser[uid];
+
+  if (had) {
+    poll.updatedAt = Date.now();
+    guild.polls[String(pollId)] = sanitisePoll(poll) || poll;
+    persist();
+  }
+
+  return { ok: true, poll: getPoll(guildId, pollId), changed: had };
+}
+
 module.exports = {
   MAX_ANSWERS,
   createPoll,
@@ -163,5 +232,6 @@ module.exports = {
   setPollMessage,
   togglePollOpen,
   addAnswer,
+  toggleVote,
+  clearVote,
 };
-
