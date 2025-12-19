@@ -84,6 +84,7 @@ const categories = {
     { cmd: '/pray', desc: 'Pray once per day to receive a coin blessing', perm: null },
     { cmd: '/horserace', desc: 'Host a chaotic horse race mini-game with your server', perm: null },
     { cmd: '/horseracestandings', desc: 'Review historical podium finishes or personal stats', perm: null },
+    { cmd: '/wordrush start/join/leave/stop', desc: 'Play a turn-based word game using ordered letters', perm: null },
     { cmd: '/triviastart', desc: 'Start a multi-round trivia match in the channel', perm: null },
     { cmd: '/triviastop', desc: 'End an active trivia session early', perm: null },
     { cmd: '/triviacategories', desc: 'Browse the available trivia categories and difficulties', perm: null },
