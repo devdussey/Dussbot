@@ -65,7 +65,7 @@ function buildInventoryEmbed({
         name: '⚡ Smites',
         value: `**Owned:** ${smiteBalance}\n**Cost:** ${formatCoins(
           smiteCost
-        )} coins each\nCall down righteous lightning to discipline wrongdoers using the /smite command. ${
+        )} coins each\nCall down righteous lightning to discipline wrongdoers using the /stfu command. ${
           smiteEnabled
             ? 'Smite rewards are currently **enabled** on this server.'
             : 'Smite rewards are currently **disabled** on this server.'
@@ -99,7 +99,7 @@ function buildInventoryEmbed({
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('inventory')
-    .setDescription('Check your coin balance, Smites, and Rupees'),
+    .setDescription('Check your Rupees'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {

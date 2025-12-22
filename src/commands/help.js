@@ -16,7 +16,7 @@ const categories = {
     { cmd: '/purge', desc: 'Bulk delete 1–100 recent messages in the current channel', perm: 'Manage Messages' },
     { cmd: '/blacklist add/remove/list', desc: 'Maintain a join blacklist that automatically bans flagged users', perm: 'Ban Members' },
     { cmd: '/jail config/add/remove/status', desc: 'Temporarily strip roles, isolate members, and restore them later', perm: 'Manage Roles' },
-    { cmd: '/smite', desc: 'Spend a Smite to silence a non-staff user for ten minutes', perm: null },
+    { cmd: '/stfu', desc: 'Spend a Smite to silence a non-staff user for ten minutes', perm: null },
     { cmd: '/rupeeconfig', desc: 'Enable or disable Smite rewards and redemption', perm: 'Manage Server' },
   ],
   'Roles & Identity': [

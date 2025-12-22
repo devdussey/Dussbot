@@ -21,7 +21,7 @@ function formatDuration(ms) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('pray')
-    .setDescription('Offer a daily prayer to receive a coin blessing'),
+    .setDescription('Offer a daily prayer to receive a Rupee'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {

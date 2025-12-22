@@ -4,11 +4,11 @@ const smiteConfigStore = require('../utils/smiteConfigStore');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('rupeeconfig')
-    .setDescription('Enable or disable Smite rewards and the /smite command')
+    .setDescription('Enable or disable Rupee rewards')
     .addBooleanOption(opt =>
       opt
         .setName('enabled')
-        .setDescription('Turn Smite rewards on or off')
+        .setDescription('Turn Rupee rewards on or off')
         .setRequired(false)
     ),
 
@@ -20,7 +20,7 @@ module.exports = {
     await interaction.deferReply({ ephemeral: true });
 
     if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-      return interaction.editReply({ content: 'You need the Manage Server permission to configure Smites.' });
+      return interaction.editReply({ content: 'You need the Manage Server permission to configure Rupees.' });
     }
 
     const choice = interaction.options.getBoolean('enabled');
@@ -32,6 +32,6 @@ module.exports = {
 
     const result = await smiteConfigStore.setEnabled(interaction.guildId, choice);
     const status = result.enabled ? 'enabled' : 'disabled';
-    await interaction.editReply({ content: `Smite rewards have been **${status}**.` });
+    await interaction.editReply({ content: `Rupee rewards have been **${status}**.` });
   },
 };

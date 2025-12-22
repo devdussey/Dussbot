@@ -40,7 +40,7 @@ function buildStoreEmbed({
       },
       {
         name: '⚡ Smite Tomes',
-        value: `Price: ${formatCoins(smiteCost)} coins each\nCall down heavenly lightning to smite misbehaving mortals with the /smite command.${
+        value: `Price: ${formatCoins(smiteCost)} coins each\nCall down heavenly lightning to smite misbehaving mortals with the /stfu command.${
           smiteEnabled
             ? '\nSmite rewards are currently **enabled** on this server.'
             : '\nSmite rewards are currently **disabled** on this server.'
