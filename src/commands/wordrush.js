@@ -77,6 +77,12 @@ module.exports = {
       if (!mePermissions?.has(PermissionsBitField.Flags.SendMessages)) {
         return interaction.reply({ content: 'I need permission to send messages in this channel to host WordRush.', ephemeral: true });
       }
+      if (!mePermissions?.has(PermissionsBitField.Flags.EmbedLinks)) {
+        return interaction.reply({ content: 'I need the Embed Links permission in this channel to host WordRush.', ephemeral: true });
+      }
+      if (!mePermissions?.has(PermissionsBitField.Flags.AddReactions)) {
+        return interaction.reply({ content: 'I need the Add Reactions permission in this channel to mark answers with ✅/❌.', ephemeral: true });
+      }
 
       const turnSeconds = interaction.options.getInteger('turn_seconds');
 

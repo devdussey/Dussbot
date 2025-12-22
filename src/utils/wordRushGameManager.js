@@ -132,12 +132,22 @@ async function waitForTurnWord(game, userId, letters) {
     game.currentCollector = collector;
     game.currentTurnUserId = userId;
 
-    collector.on('collect', message => {
-      const candidate = normaliseCandidateWord(message.content);
-      if (!candidate) return;
-      if (!containsLettersInOrder(candidate, letters)) return;
+    collector.on('collect', async (message) => {
+      if (accepted) return;
 
-      accepted = candidate;
+      const candidate = normaliseCandidateWord(message.content);
+      const ok = Boolean(candidate && containsLettersInOrder(candidate, letters));
+
+      try {
+        await message.react(ok ? '✅' : '❌');
+      } catch (_) {}
+
+      if (!ok) return;
+
+      accepted = {
+        word: candidate,
+        messageId: message.id,
+      };
       try { collector.stop('answered'); } catch (_) {}
     });
 
@@ -145,7 +155,7 @@ async function waitForTurnWord(game, userId, letters) {
       if (game.currentCollector === collector) game.currentCollector = null;
       if (game.currentTurnUserId === userId) game.currentTurnUserId = null;
 
-      if (accepted) return resolve({ ok: true, word: accepted, reason: reason || 'answered' });
+      if (accepted) return resolve({ ok: true, word: accepted.word, messageId: accepted.messageId, reason: reason || 'answered' });
       return resolve({ ok: false, reason: reason || 'timeout' });
     });
   });
@@ -188,23 +198,11 @@ function buildLobbyEmbed(game, joinDeadline) {
     );
 }
 
-function buildTurnEmbed(game, { userId, letters, livesRemaining, lastResult }) {
-  const embed = new EmbedBuilder()
-    .setColor(getEmbedColour(game))
-    .setTitle('WordRush')
-    .setDescription(`Turn: <@${userId}>\nReply with a single word containing the letters **in order**.`)
-    .addFields(
-      { name: 'Letters', value: `**${formatLetters(letters)}**`, inline: true },
-      { name: 'Time', value: `**${game.turnSeconds}s**`, inline: true },
-      { name: 'Lives', value: `**${livesRemaining}**`, inline: true },
-      { name: 'Players', value: formatLivesBoard(game) },
-    );
-
-  if (lastResult) {
-    embed.addFields({ name: 'Last Result', value: lastResult });
-  }
-
-  return embed;
+function buildTurnPromptEmbed(game, { letters }) {
+  const compact = Array.isArray(letters) ? letters.map(letter => String(letter || '').toUpperCase()).join('') : '';
+  return new EmbedBuilder()
+    .setColor(0xED4245)
+    .setDescription(`↳ _Your word must contain:_ **${escapeMarkdown(compact)}**`);
 }
 
 function buildStatusEmbed(game, { title, description, fields }) {
@@ -375,13 +373,21 @@ async function runWordRushGame(game) {
 
     const letters = pickPlayableLetters();
 
+    await game.channel.send({
+      content: `<@${userId}>`,
+      embeds: [buildTurnPromptEmbed(game, { letters })],
+      allowedMentions: { users: [userId] },
+    }).catch(() => {});
+
     await lobbyMessage.edit({
       embeds: [
-        buildTurnEmbed(game, {
-          userId,
-          letters,
-          livesRemaining,
-          lastResult: game.lastResult || null,
+        buildStatusEmbed(game, {
+          title: 'WordRush',
+          description: `Turn: <@${userId}>`,
+          fields: [
+            { name: 'Players', value: formatLivesBoard(game) },
+            ...(game.lastResult ? [{ name: 'Last Result', value: game.lastResult }] : []),
+          ],
         }),
       ],
       allowedMentions: { parse: [] },
@@ -392,14 +398,16 @@ async function runWordRushGame(game) {
     if (game.isStopped) break;
 
     if (response.ok && response.word) {
-      game.lastResult = `<@${userId}> survives with **${escapeMarkdown(response.word)}**.`;
+      game.lastResult = `<@${userId}> ✅ **${escapeMarkdown(response.word)}**`;
       await lobbyMessage.edit({
         embeds: [
-          buildTurnEmbed(game, {
-            userId,
-            letters,
-            livesRemaining,
-            lastResult: game.lastResult,
+          buildStatusEmbed(game, {
+            title: 'WordRush',
+            description: `Turn complete.`,
+            fields: [
+              { name: 'Last Result', value: game.lastResult },
+              { name: 'Players', value: formatLivesBoard(game) },
+            ],
           }),
         ],
         allowedMentions: { parse: [] },
@@ -415,8 +423,8 @@ async function runWordRushGame(game) {
       }
 
       game.lastResult = eliminated
-        ? `<@${userId}> failed the turn and was eliminated.`
-        : `<@${userId}> failed the turn and lost a life. Lives remaining: **${Math.max(0, nextLives)}**.`;
+        ? `<@${userId}> ❌ eliminated.`
+        : `<@${userId}> ❌ lost a life. Lives remaining: **${Math.max(0, nextLives)}**.`;
 
       await lobbyMessage.edit({
         embeds: [

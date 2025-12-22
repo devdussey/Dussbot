@@ -1,15 +1,88 @@
 const LETTER_POOL = 'EEEEEEEEEEEEAAAAAAAAAIIIIIIIIOOOOOOOONNNNNNRRRRRRTTTTTTLLLLSSSSUUUUDDDDGGGGBBCCMMPPFFHHVVWWYYKJXQZ';
 
-// These 3-letter sequences are chosen because they appear in plenty of common words/names,
-// ensuring each round is realistically solvable (even though answers are not dictionary-checked).
+// A small built-in set of seed words/names so the described triplet is always derivable from at least one real word.
+// (We don't dictionary-check answers, but this ensures prompts are realistically solvable.)
+const SEED_WORDS = [
+  'alphabet',
+  'adventure',
+  'afterparty',
+  'amsterdam',
+  'anthology',
+  'apartment',
+  'astronaut',
+  'attention',
+  'beautiful',
+  'beginning',
+  'birmingham',
+  'blackbird',
+  'butterfly',
+  'california',
+  'celebration',
+  'chocolate',
+  'christopher',
+  'community',
+  'computer',
+  'connection',
+  'construction',
+  'conversation',
+  'dangerous',
+  'direction',
+  'elephant',
+  'entertainment',
+  'experience',
+  'fantastic',
+  'fireworks',
+  'foundation',
+  'friendship',
+  'generation',
+  'happiness',
+  'important',
+  'information',
+  'instrument',
+  'international',
+  'jennifer',
+  'jeremiah',
+  'jonathan',
+  'katherine',
+  'louisiana',
+  'management',
+  'marvellous',
+  'melancholy',
+  'microphone',
+  'mountains',
+  'newcastle',
+  'notorious',
+  'october',
+  'orchestra',
+  'parliament',
+  'pineapple',
+  'president',
+  'progress',
+  'revolution',
+  'sandwich',
+  'september',
+  'signature',
+  'something',
+  'sometimes',
+  'strawberry',
+  'submarine',
+  'technology',
+  'television',
+  'tournament',
+  'university',
+  'wonderful',
+  'yesterday',
+];
+
+// Backup triplets if the seed word list is ever emptied.
 const PLAYABLE_TRIPLETS = [
   'THE', 'AND', 'ING', 'ION', 'ENT', 'TIO', 'ATI', 'ERE', 'HER', 'HIS', 'THA', 'THI', 'NTH', 'YOU', 'ARE', 'FOR', 'NOT',
   'ONE', 'OUR', 'OUT', 'ALL', 'EAS', 'EST', 'RES', 'TER', 'VER', 'CON', 'PRO', 'STA', 'MEN', 'EVE', 'OVE', 'EAL', 'EAR',
   'EER', 'ERS', 'NES', 'NCE', 'SIO', 'SIN', 'TED', 'TES', 'PRE', 'PER', 'SUP', 'SUB', 'TRA', 'STR', 'GRA', 'GRO', 'GLO',
   'WOR', 'ORD', 'RUS', 'USH', 'ASH', 'SHE', 'HEA', 'ART', 'HOU', 'USE', 'HOM', 'OME', 'FAM', 'MIL', 'ILI', 'LIA', 'IAL',
-  'BLE', 'ABL', 'FUL', 'OUS', 'IVE', 'IZE', 'ISE', 'TION', // note: filtered below to keep only 3 chars
-  'CAT', 'DOG', 'MAN', 'WOM', 'KID', 'CAR', 'BUS', 'TRA', 'AIR', 'SEA', 'SKY', 'SUN', 'MOON', // filtered below
-  'ANA', 'ANN', 'SAM', 'BEN', 'MAX', 'LIA', 'MIA', 'EVA', 'AVA', 'NOA', 'LEO', 'KAI', 'ZOE', 'JAN', 'KIM', 'ALI', 'OMAR',
+  'BLE', 'ABL', 'FUL', 'OUS', 'IVE', 'IZE', 'ISE',
+  'CAT', 'DOG', 'MAN', 'KID', 'CAR', 'BUS', 'AIR', 'SEA', 'SKY', 'SUN',
+  'ANA', 'ANN', 'SAM', 'BEN', 'MAX', 'MIA', 'EVA', 'AVA', 'NOA', 'LEO', 'KAI', 'ZOE', 'JAN', 'KIM', 'ALI',
 ].filter(item => /^[A-Z]{3}$/.test(item));
 
 function pickLetters(count = 3) {
@@ -28,9 +101,25 @@ function formatLetters(letters) {
 }
 
 function pickPlayableLetters() {
-  if (!PLAYABLE_TRIPLETS.length) return pickLetters(3);
-  const triplet = PLAYABLE_TRIPLETS[Math.floor(Math.random() * PLAYABLE_TRIPLETS.length)];
-  return triplet.split('');
+  if (SEED_WORDS.length) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const seed = SEED_WORDS[Math.floor(Math.random() * SEED_WORDS.length)];
+      const clean = String(seed || '').toUpperCase().replace(/[^A-Z]/g, '');
+      if (clean.length < 3) continue;
+
+      const i = Math.floor(Math.random() * (clean.length - 2));
+      const j = i + 1 + Math.floor(Math.random() * (clean.length - i - 1));
+      const k = j + 1 + Math.floor(Math.random() * (clean.length - j - 1));
+      return [clean[i], clean[j], clean[k]];
+    }
+  }
+
+  if (PLAYABLE_TRIPLETS.length) {
+    const triplet = PLAYABLE_TRIPLETS[Math.floor(Math.random() * PLAYABLE_TRIPLETS.length)];
+    return triplet.split('');
+  }
+
+  return pickLetters(3);
 }
 
 function normaliseCandidateWord(input) {
