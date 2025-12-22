@@ -144,13 +144,11 @@ async function updatePollMessage(client, poll) {
   } catch (_) {}
   if (!channel || !channel.isTextBased?.()) return { ok: false, error: 'missing_channel' };
 
-  let message = null;
   try {
-    message = await channel.messages.fetch(messageId);
-  } catch (_) {}
-  if (!message) return { ok: false, error: 'missing_message' };
-
-  await message.edit(buildPollView(poll, guildId));
+    await channel.messages.edit(messageId, buildPollView(poll, guildId));
+  } catch (_) {
+    return { ok: false, error: 'missing_message' };
+  }
   return { ok: true };
 }
 

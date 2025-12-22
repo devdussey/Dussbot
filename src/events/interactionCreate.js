@@ -317,12 +317,15 @@ module.exports = {
                 };
 
                 const safeUpdateOrReply = async (payload) => {
+                    const base = typeof payload === 'string' ? { content: payload } : (payload || {});
+                    const updatePayload = { ...base };
+                    delete updatePayload.ephemeral;
                     try {
-                        await interaction.update(payload);
+                        await interaction.update(updatePayload);
                         return true;
                     } catch (_) {
                         try {
-                            const data = { ...(payload || {}), ephemeral: true };
+                            const data = { ...base, ephemeral: true };
                             if (interaction.replied || interaction.deferred) await interaction.followUp(data);
                             else await interaction.reply(data);
                             return true;
