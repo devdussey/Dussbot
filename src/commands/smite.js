@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const tokenStore = require('../utils/messageTokenStore');
 const coinStore = require('../utils/coinStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
@@ -21,10 +21,16 @@ function formatCoins(value) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function formatMinutes(value) {
+  const minutes = Number(value);
+  const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? Math.floor(minutes) : MAX_MINUTES;
+  return `${safeMinutes} minute${safeMinutes === 1 ? '' : 's'}`;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('stfu')
-    .setDescription('Spend a Rupee to silence a non-staff user for 10 minutes')
+    .setDescription('Spend a Smite to silence a non-staff user for 10 minutes')
     .addUserOption(opt =>
       opt
         .setName('target')
@@ -165,6 +171,15 @@ module.exports = {
         parts.push(`Coins spent: ${formatCoins(smiteCost)}.`);
       }
       await interaction.editReply({ content: parts.join(' ') });
+
+      try {
+        const embed = new EmbedBuilder()
+          .setColor(0xe74c3c)
+          .setDescription(
+            `${interaction.user.username} is tired of ${targetUser.username} bullshit for ${formatMinutes(durationMinutes)}`
+          );
+        await interaction.channel?.send({ embeds: [embed] });
+      } catch (_) {}
 
       try {
         const extraFields = [
