@@ -72,11 +72,12 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
-
     if (!interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
-      return interaction.editReply({ content: 'Only server administrators can use this command.' });
+      return interaction.reply({ content: 'Only server administrators can use this command.', ephemeral: true });
     }
+
+    // Public leaderboard (admins only can invoke).
+    await interaction.deferReply();
 
     const entries = rupeeStore.listUserBalances(interaction.guildId, { minTokens: 1 });
     const perPage = 20;
