@@ -74,6 +74,7 @@ const categories = {
   ],
   'Economy & Games': [
     { cmd: '/inventory', desc: 'Check your coins plus available Smites and Rupees', perm: null },
+    { cmd: '/viewrupees', desc: "Admins: view a member's Rupee balance and progress", perm: 'Administrator' },
     { cmd: '/store', desc: 'Spend coins on Smite Tomes or Rupees', perm: null },
     { cmd: '/pray', desc: 'Pray once per day to receive a coin blessing', perm: null },
     { cmd: '/horserace', desc: 'Host a chaotic horse race mini-game with your server', perm: null },
