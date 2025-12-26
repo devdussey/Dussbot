@@ -44,11 +44,6 @@ const categories = {
     { cmd: '/autorespond toggle/add/remove/list', desc: 'Automate keyword replies with optional channel filters', perm: 'Administrator' },
     { cmd: '/repeat start/stop/list', desc: 'Schedule repeating messages every N seconds (≥ 60)', perm: 'Administrator' },
     { cmd: '/say', desc: 'Send a custom message as the bot in any channel you specify', perm: 'Administrator' },
-    { cmd: '/ticketconfig', desc: 'Define support roles, logging, and limits for tickets', perm: 'Manage Server' },
-    { cmd: '/panelsetup', desc: 'Create ticket panels with buttons or select menus', perm: 'Manage Server' },
-    { cmd: '/panellist', desc: 'Review configured ticket panels and their settings', perm: 'Manage Server' },
-    { cmd: '/panelremove', desc: 'Delete a ticket panel template by name or ID', perm: 'Manage Server' },
-    { cmd: '/ticketsend', desc: 'Post a ticket panel embed and controls to a channel', perm: 'Manage Server' },
   ],
   'Media & Personalisation': [
     { cmd: '/chat', desc: 'Chat with GPT using selectable personas and context sizes', perm: null },
