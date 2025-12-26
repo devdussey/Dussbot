@@ -12,7 +12,6 @@ const logConfigManager = require('../utils/logConfigManager');
 const logConfigView = require('../utils/logConfigView');
 const openPollStore = require('../utils/openPollStore');
 const openPollManager = require('../utils/openPollManager');
-const reactionRoleStore = require('../utils/reactionRoleStore');
 
 async function logCommandUsage(interaction, status, details, color = 0x5865f2) {
     if (!interaction.guildId) return;
@@ -94,107 +93,6 @@ module.exports = {
 
         // Handle select menus
         if (interaction.isStringSelectMenu()) {
-            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('rr:panel:')) {
-                if (!interaction.inGuild()) {
-                    try { await interaction.reply({ content: 'Reaction roles can only be used in a server.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                const panelId = interaction.customId.split(':')[2];
-                if (!panelId) return;
-
-                const panel = reactionRoleStore.getPanel(interaction.guildId, panelId);
-                if (!panel) {
-                    try { await interaction.reply({ content: 'This reaction role panel no longer exists.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                const me = interaction.guild.members.me;
-                if (!me?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
-                    try { await interaction.reply({ content: 'I currently do not have Manage Roles, so I cannot update your roles.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                await interaction.deferReply({ ephemeral: true });
-
-                let member = interaction.member;
-                try {
-                    if (!member?.roles?.cache) member = await interaction.guild.members.fetch(interaction.user.id);
-                } catch (_) {}
-                if (!member?.roles?.cache) {
-                    await interaction.editReply({ content: 'Could not load your server member record. Please try again.' });
-                    return;
-                }
-
-                const panelRoleIds = panel.options.map(o => o.roleId);
-                const selected = Array.isArray(interaction.values) ? interaction.values.map(v => String(v)) : [];
-                const selectedRoleIds = selected.filter(id => panelRoleIds.includes(id));
-
-                const guildRoles = interaction.guild.roles;
-                const botTop = me.roles?.highest;
-
-                const manageable = (role) => {
-                    if (!role) return false;
-                    if (role.id === interaction.guildId) return false; // @everyone
-                    if (role.managed) return false;
-                    if (botTop && botTop.comparePositionTo(role) <= 0) return false;
-                    return true;
-                };
-
-                const wantedAdds = selectedRoleIds.filter(id => !member.roles.cache.has(id));
-                const wantedRemoves = panelRoleIds.filter(id => !selectedRoleIds.includes(id) && member.roles.cache.has(id));
-
-                const blocked = [];
-                const addIds = [];
-                const removeIds = [];
-
-                for (const rid of wantedAdds) {
-                    const role = guildRoles.cache.get(rid) || (await guildRoles.fetch(rid).catch(() => null));
-                    if (!role) {
-                        blocked.push(`Missing role (${rid})`);
-                        continue;
-                    }
-                    if (!manageable(role)) {
-                        blocked.push(`Cannot assign <@&${rid}> (role is managed or above my role)`);
-                        continue;
-                    }
-                    addIds.push(rid);
-                }
-
-                for (const rid of wantedRemoves) {
-                    const role = guildRoles.cache.get(rid) || (await guildRoles.fetch(rid).catch(() => null));
-                    if (!role) continue;
-                    if (!manageable(role)) {
-                        blocked.push(`Cannot remove <@&${rid}> (role is managed or above my role)`);
-                        continue;
-                    }
-                    removeIds.push(rid);
-                }
-
-                const changes = [];
-                try {
-                    if (addIds.length) {
-                        await member.roles.add(addIds, 'Reaction role panel selection');
-                        changes.push(`Added: ${addIds.map(id => `<@&${id}>`).join(', ')}`);
-                    }
-                    if (removeIds.length) {
-                        await member.roles.remove(removeIds, 'Reaction role panel selection');
-                        changes.push(`Removed: ${removeIds.map(id => `<@&${id}>`).join(', ')}`);
-                    }
-                } catch (err) {
-                    console.error('Reaction role update failed:', err);
-                    await interaction.editReply({ content: 'Failed to update your roles. Please try again or contact an admin.' });
-                    return;
-                }
-
-                const msg = [
-                    changes.length ? changes.join('\n') : 'No changes needed.',
-                    blocked.length ? `\nSkipped:\n- ${blocked.join('\n- ')}` : '',
-                ].join('');
-
-                await interaction.editReply({ content: msg.trim() });
-                return;
-            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('ticket:menu:')) {
                 if (!interaction.inGuild()) {
                     try { await interaction.reply({ content: 'Tickets can only be opened in a server.', ephemeral: true }); } catch (_) {}
