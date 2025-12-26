@@ -176,7 +176,7 @@ module.exports = {
         const embed = new EmbedBuilder()
           .setColor(0xe74c3c)
           .setDescription(
-            `${interaction.user.username} is tired of ${targetUser.username} bullshit for ${formatMinutes(durationMinutes)}`
+            `${interaction.user.username} is tired of ${targetUser.username} bullshit for ${formatMinutes(durationMinutes)}\nReason: ${humanReason}`
           );
         await interaction.channel?.send({ embeds: [embed] });
       } catch (_) {}
