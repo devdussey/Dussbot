@@ -14,6 +14,7 @@ const reactionRoleManager = require('../utils/reactionRoleManager');
 const boosterManager = require('../utils/boosterRoleManager');
 const boosterStore = require('../utils/boosterRoleStore');
 const boosterConfigStore = require('../utils/boosterRoleConfigStore');
+const vanityRoleCommand = require('../commands/vanityrole');
 
 async function logCommandUsage(interaction, status, details, color = 0x5865f2) {
     if (!interaction.guildId) return;
@@ -697,6 +698,30 @@ module.exports = {
 
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('vanityrole:modal:')) {
+                if (!interaction.inGuild()) return;
+
+                const parts = interaction.customId.split(':');
+                const ownerId = parts[2];
+                if (ownerId && interaction.user.id !== ownerId) {
+                    try { await interaction.reply({ content: 'This vanity role form is not for you.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                try { await interaction.deferReply({ ephemeral: true }); } catch (_) {}
+
+                try {
+                    if (typeof vanityRoleCommand.handleVanityRoleModalSubmit === 'function') {
+                        await vanityRoleCommand.handleVanityRoleModalSubmit(interaction);
+                    } else {
+                        await interaction.editReply({ content: 'Vanity role setup is unavailable right now.' });
+                    }
+                } catch (err) {
+                    console.error('Vanity role modal submit failed:', err);
+                    try { await interaction.editReply({ content: 'Failed to update your vanity role. Please try again.' }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('brconfig:modal:')) {
                 if (!interaction.inGuild()) return;
 

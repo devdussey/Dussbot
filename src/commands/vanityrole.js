@@ -1,4 +1,12 @@
-const { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  PermissionsBitField,
+  ModalBuilder,
+  ActionRowBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
 const modlog = require('../utils/modLogger');
 const { getUserRecord, upsertUserRecord } = require('../utils/vanityRoleStore');
 
@@ -99,6 +107,167 @@ async function ensureRolePositionAboveMember({ role, member, me, reason }) {
   return { desired, maxAllowed, memberHighestOtherPosition };
 }
 
+function buildVanityRoleModal(userId, rec) {
+  const modal = new ModalBuilder()
+    .setCustomId(`vanityrole:modal:${userId}`)
+    .setTitle('Vanity Role Setup');
+
+  const nameInput = new TextInputBuilder()
+    .setCustomId('vanityrole:name')
+    .setLabel('Role Name (optional)')
+    .setStyle(TextInputStyle.Short)
+    .setMaxLength(100)
+    .setRequired(false);
+
+  const primaryInput = new TextInputBuilder()
+    .setCustomId('vanityrole:primary')
+    .setLabel('Primary Colour')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('#ff0000')
+    .setMinLength(6)
+    .setMaxLength(7)
+    .setRequired(false);
+
+  const secondaryInput = new TextInputBuilder()
+    .setCustomId('vanityrole:secondary')
+    .setLabel('Secondary Colour (optional)')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('#00ff00')
+    .setMaxLength(7)
+    .setRequired(false);
+
+  if (rec?.primary) primaryInput.setValue(rec.primary);
+  if (rec?.secondary) secondaryInput.setValue(rec.secondary);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(nameInput),
+    new ActionRowBuilder().addComponents(primaryInput),
+    new ActionRowBuilder().addComponents(secondaryInput),
+  );
+
+  return modal;
+}
+
+async function handleVanityRoleSetup(interaction, inputs) {
+  try {
+    if (!interaction.inGuild()) {
+      return interaction.editReply({ content: 'Use this command in a server.' });
+    }
+
+    if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.editReply({ content: 'Administrator permission is required to use /vanityrole.' });
+    }
+
+    const me = interaction.guild.members.me;
+    if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+      return interaction.editReply({ content: 'I need the Manage Roles permission.' });
+    }
+
+    const member = interaction.member;
+    if (!member || !member.roles) {
+      return interaction.editReply({ content: 'Could not resolve your member record. Try again.' });
+    }
+
+    const rec = getUserRecord(interaction.guildId, interaction.user.id);
+    const name = inputs?.name ? inputs.name.trim() : '';
+    const primaryRaw = inputs?.primary ? inputs.primary.trim() : '';
+    const secondaryRaw = inputs?.secondary ? inputs.secondary.trim() : '';
+    const useRaw = inputs?.use ? inputs.use.trim().toLowerCase() : '';
+
+    const primaryIn = primaryRaw || null;
+    const secondaryIn = secondaryRaw || null;
+
+    const primary = primaryIn ? normalizeHex6(primaryIn) : null;
+    const secondary = secondaryIn ? normalizeHex6(secondaryIn) : null;
+    if (primaryIn && !primary) return interaction.editReply({ content: 'Invalid primary colour. Use a hex like `#5865F2`.' });
+    if (secondaryIn && !secondary) return interaction.editReply({ content: 'Invalid secondary colour. Use a hex like `#5865F2`.' });
+
+    const use = useRaw === 'secondary' ? 'secondary' : useRaw === 'primary' ? 'primary' : null;
+    const merged = {
+      roleId: rec?.roleId ?? null,
+      primary: primaryIn ? primary : rec?.primary ?? null,
+      secondary: secondaryIn ? secondary : rec?.secondary ?? null,
+      active: use || rec?.active || 'primary',
+    };
+
+    if (merged.active === 'secondary' && !merged.secondary) {
+      return interaction.editReply({ content: 'No secondary colour saved yet. Set it with `/vanityrole setup`.' });
+    }
+
+    const picked = pickActiveColors(merged, merged.active);
+    const { role, created, reason } = await getOrCreateVanityRole({
+      interaction,
+      member,
+      me,
+      rec: merged,
+      name: name || null,
+      colors: picked,
+    });
+
+    if (name) {
+      try { await role.setName(name.slice(0, 100), reason); } catch (_) {}
+    }
+    if (picked.primaryColor) {
+      try {
+        await role.setColors({
+          primaryColor: picked.primaryColor,
+          secondaryColor: picked.secondaryColor ?? null,
+        }, reason);
+      } catch (_) {}
+    }
+
+    if (!member.roles.cache.has(role.id)) {
+      try { await member.roles.add(role, reason); } catch (err) {
+        throw new Error(`I created the role, but couldn't assign it to you: ${err.message || 'Unknown error'}`);
+      }
+    }
+
+    const pos = await ensureRolePositionAboveMember({ role, member, me, reason });
+
+    const saved = await upsertUserRecord(interaction.guildId, interaction.user.id, {
+      roleId: role.id,
+      primary: merged.primary,
+      secondary: merged.secondary,
+      active: picked.active,
+    });
+
+    try { await modlog.log(interaction, created ? 'Vanity Role Created' : 'Vanity Role Updated', {
+      target: `${interaction.user.tag} (${interaction.user.id})`,
+      reason: created ? 'Created vanity role' : 'Updated vanity role',
+      extraFields: [
+        { name: 'Role', value: `${role} (${role.id})`, inline: false },
+        { name: 'Primary', value: saved.primary || 'not set', inline: true },
+        { name: 'Secondary', value: saved.secondary || 'not set', inline: true },
+        { name: 'Gradient Primary', value: saved.active, inline: true },
+        { name: 'Position', value: `${role.position} (desired ${pos.desired})`, inline: true },
+      ],
+    }); } catch (_) {}
+
+    const warning = (pos.desired < pos.memberHighestOtherPosition + 1)
+      ? `\nNote: I could only place it as high as possible under my highest role (max position ${pos.maxAllowed}).`
+      : '';
+
+    return interaction.editReply({
+      content: `${created ? 'Created' : 'Updated'} your vanity role: ${role}.${warning}`,
+    });
+  } catch (err) {
+    return interaction.editReply({ content: `Error: ${err.message || 'Unknown error'}` });
+  }
+}
+
+async function handleVanityRoleModalSubmit(interaction) {
+  const nameRaw = (interaction.fields.getTextInputValue('vanityrole:name') || '').trim();
+  const primaryRaw = (interaction.fields.getTextInputValue('vanityrole:primary') || '').trim();
+  const secondaryRaw = (interaction.fields.getTextInputValue('vanityrole:secondary') || '').trim();
+
+  return handleVanityRoleSetup(interaction, {
+    name: nameRaw || null,
+    primary: primaryRaw || null,
+    secondary: secondaryRaw || null,
+    use: null,
+  });
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('vanityrole')
@@ -107,31 +276,7 @@ module.exports = {
     .addSubcommand(sub =>
       sub
         .setName('setup')
-        .setDescription('Create or update your vanity role')
-        .addStringOption(opt =>
-          opt.setName('name')
-            .setDescription('Role name (optional)')
-            .setRequired(false)
-        )
-        .addStringOption(opt =>
-          opt.setName('primary')
-            .setDescription('Primary hex colour (used for gradient)')
-            .setRequired(false)
-        )
-        .addStringOption(opt =>
-          opt.setName('secondary')
-            .setDescription('Secondary hex colour (enables gradient)')
-            .setRequired(false)
-        )
-        .addStringOption(opt =>
-          opt.setName('use')
-            .setDescription('Flip which colour is primary in the gradient')
-            .addChoices(
-              { name: 'primary', value: 'primary' },
-              { name: 'secondary', value: 'secondary' },
-            )
-            .setRequired(false)
-        )
+        .setDescription('Open the vanity role setup form')
     )
     .addSubcommand(sub =>
       sub
@@ -161,6 +306,10 @@ module.exports = {
   async execute(interaction) {
     if (!interaction.inGuild()) return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
 
+    if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: 'Administrator permission is required to use /vanityrole.', ephemeral: true });
+    }
+
     const me = interaction.guild.members.me;
     if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
       return interaction.reply({ content: 'I need the Manage Roles permission.', ephemeral: true });
@@ -171,92 +320,22 @@ module.exports = {
       return interaction.reply({ content: 'Could not resolve your member record. Try again.', ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
     const sub = interaction.options.getSubcommand();
 
     const rec = getUserRecord(interaction.guildId, interaction.user.id);
 
     try {
       if (sub === 'setup') {
-        const name = interaction.options.getString('name')?.trim() || null;
-        const primaryIn = interaction.options.getString('primary');
-        const secondaryIn = interaction.options.getString('secondary');
-        const use = interaction.options.getString('use') || null;
-
-        const primary = primaryIn ? normalizeHex6(primaryIn) : null;
-        const secondary = secondaryIn ? normalizeHex6(secondaryIn) : null;
-        if (primaryIn && !primary) return interaction.editReply({ content: 'Invalid primary colour. Use a hex like `#5865F2`.' });
-        if (secondaryIn && !secondary) return interaction.editReply({ content: 'Invalid secondary colour. Use a hex like `#5865F2`.' });
-
-        const merged = {
-          roleId: rec?.roleId ?? null,
-          primary: primary ?? rec?.primary ?? null,
-          secondary: secondary ?? rec?.secondary ?? null,
-          active: (use === 'secondary' ? 'secondary' : use === 'primary' ? 'primary' : rec?.active) || 'primary',
-        };
-
-        if (merged.active === 'secondary' && !merged.secondary) {
-          return interaction.editReply({ content: 'No secondary colour saved yet. Set it with `/vanityrole setup secondary:#...`.' });
+        const modal = buildVanityRoleModal(interaction.user.id, rec);
+        try {
+          await interaction.showModal(modal);
+        } catch (_) {
+          return interaction.reply({ content: 'Could not open the vanity role form. Please try again.', ephemeral: true });
         }
-
-        const picked = pickActiveColors(merged, merged.active);
-        const { role, created, reason } = await getOrCreateVanityRole({
-          interaction,
-          member,
-          me,
-          rec: merged,
-          name,
-          colors: picked,
-        });
-
-        if (name) {
-          try { await role.setName(name.slice(0, 100), reason); } catch (_) {}
-        }
-        if (picked.primaryColor) {
-          try {
-            await role.setColors({
-              primaryColor: picked.primaryColor,
-              secondaryColor: picked.secondaryColor ?? null,
-            }, reason);
-          } catch (_) {}
-        }
-
-        // Ensure assignment
-        if (!member.roles.cache.has(role.id)) {
-          try { await member.roles.add(role, reason); } catch (err) {
-            throw new Error(`I created the role, but couldn't assign it to you: ${err.message || 'Unknown error'}`);
-          }
-        }
-
-        const pos = await ensureRolePositionAboveMember({ role, member, me, reason });
-
-        const saved = await upsertUserRecord(interaction.guildId, interaction.user.id, {
-          roleId: role.id,
-          primary: merged.primary,
-          secondary: merged.secondary,
-          active: picked.active,
-        });
-
-        try { await modlog.log(interaction, created ? 'Vanity Role Created' : 'Vanity Role Updated', {
-          target: `${interaction.user.tag} (${interaction.user.id})`,
-          reason: created ? 'Created vanity role' : 'Updated vanity role',
-          extraFields: [
-            { name: 'Role', value: `${role} (${role.id})`, inline: false },
-            { name: 'Primary', value: saved.primary || 'not set', inline: true },
-            { name: 'Secondary', value: saved.secondary || 'not set', inline: true },
-            { name: 'Gradient Primary', value: saved.active, inline: true },
-            { name: 'Position', value: `${role.position} (desired ${pos.desired})`, inline: true },
-          ],
-        }); } catch (_) {}
-
-        const warning = (pos.desired < pos.memberHighestOtherPosition + 1)
-          ? `\nNote: I could only place it as high as possible under my highest role (max position ${pos.maxAllowed}).`
-          : '';
-
-        return interaction.editReply({
-          content: `${created ? 'Created' : 'Updated'} your vanity role: ${role}.${warning}`,
-        });
+        return;
       }
+
+      await interaction.deferReply({ ephemeral: true });
 
       if (sub === 'colour') {
         if (!rec?.roleId) return interaction.editReply({ content: 'No vanity role found. Run `/vanityrole setup` first.' });
@@ -266,9 +345,7 @@ module.exports = {
         if (me.roles.highest.comparePositionTo(role) <= 0) return interaction.editReply({ content: 'My highest role must be above your vanity role.' });
 
         const use = interaction.options.getString('use', true);
-        if (use === 'secondary' && !rec?.secondary) {
-          return interaction.editReply({ content: 'No secondary colour saved yet. Set it with `/vanityrole setup`.' });
-        }
+        if (use === 'secondary' && !rec?.secondary) return interaction.editReply({ content: 'No secondary colour saved yet. Set it with `/vanityrole setup`.' });
         const picked = pickActiveColors(rec, use);
         if (!picked.primaryColor) {
           return interaction.editReply({ content: 'No colours saved yet. Set them with `/vanityrole setup`.' });
@@ -321,7 +398,12 @@ module.exports = {
 
       return interaction.editReply({ content: 'Unknown subcommand.' });
     } catch (err) {
-      return interaction.editReply({ content: `Error: ${err.message || 'Unknown error'}` });
+      if (interaction.deferred || interaction.replied) {
+        return interaction.editReply({ content: `Error: ${err.message || 'Unknown error'}` });
+      }
+      return interaction.reply({ content: `Error: ${err.message || 'Unknown error'}`, ephemeral: true });
     }
   },
+  buildVanityRoleModal,
+  handleVanityRoleModalSubmit,
 };
