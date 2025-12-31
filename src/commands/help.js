@@ -49,7 +49,7 @@ const categories = {
     { cmd: '/analysis', desc: 'Spend a Rupee to analyse your recent messages for insights', perm: null },
     { cmd: '/summarize', desc: 'Summarise recent channel messages into bullets and a paragraph', perm: null },
     { cmd: '/transcribe', desc: 'Transcribe an attached audio file using Whisper', perm: null },
-    { cmd: '/removebg', desc: 'Remove the background from an image via remove.bg (2 free uses/day without Premium)', perm: 'Premium for unlimited access' },
+    { cmd: '/removebg image/gif', desc: 'Remove the background from images (remove.bg) or GIFs (Unscreen) - 2 free uses/day without Premium', perm: 'Premium for unlimited access' },
     { cmd: '/imageresize', desc: 'Resize an image and convert it to PNG', perm: null },
     { cmd: '/enlarge emoji/sticker/media', desc: 'Post a large version of any emoji, sticker, or image/GIF (2x/4x/8x)', perm: null },
     { cmd: '/clone emoji/sticker', desc: 'Clone emojis or stickers by mention, ID, URL, or upload', perm: 'Manage Emojis and Stickers' },
