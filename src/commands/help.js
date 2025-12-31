@@ -98,6 +98,10 @@ const categories = {
   'Bot Owner': [
     { cmd: '/adminlist', desc: 'List mutual guilds where a user has Administrator', perm: 'Bot Owner · Premium' },
     { cmd: '/botlook', desc: 'Update the bot avatar, nickname, or bio', perm: 'Bot Owner' },
+    { cmd: '/backup', desc: 'Create a snapshot backup of bans, channels, roles, and bots', perm: 'Bot Owner' },
+    { cmd: '/backuplist', desc: 'List stored backups for this server', perm: 'Bot Owner' },
+    { cmd: '/backupview', desc: 'Preview a backup and export JSON', perm: 'Bot Owner' },
+    { cmd: '/backupdelete', desc: 'Delete a stored backup by id', perm: 'Bot Owner' },
     { cmd: '/fetchmessage', desc: 'Backfill user messages from a channel for analysis tools', perm: 'Bot Owner' },
     { cmd: '/dmdiag test/role', desc: 'Run DM diagnostics for a member or role', perm: 'Bot Owner' },
     { cmd: '/giverupee', desc: 'Grant Rupees directly to a user', perm: 'Bot Owner or Guild Owner · Premium' },
