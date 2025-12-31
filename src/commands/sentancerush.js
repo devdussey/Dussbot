@@ -34,9 +34,9 @@ module.exports = {
         .addIntegerOption(option =>
           option
             .setName('turn_seconds')
-            .setDescription('Seconds per turn (max 30)')
-            .setMinValue(5)
-            .setMaxValue(30))),
+            .setDescription('Seconds per turn (30-60)')
+            .setMinValue(30)
+            .setMaxValue(60))),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -109,11 +109,12 @@ module.exports = {
         });
       }
 
-      const updated = sentenceRushConfigStore.setConfig(interaction.guildId, {
-        minWords,
-        maxWords,
-        turnSeconds,
-      });
+      const updates = {};
+      if (minWords !== null) updates.minWords = minWords;
+      if (maxWords !== null) updates.maxWords = maxWords;
+      if (turnSeconds !== null) updates.turnSeconds = turnSeconds;
+
+      const updated = sentenceRushConfigStore.setConfig(interaction.guildId, updates);
 
       return interaction.reply({
         content: `SentenceRush settings updated: min words **${updated.minWords}**, max words **${updated.maxWords}**, turn timer **${updated.turnSeconds}s**.`,

@@ -13,9 +13,9 @@ const { resolveEmbedColour } = require('./guildColourStore');
 const JOIN_WINDOW_MS = 30_000;
 const MIN_PLAYERS = 1;
 const MAX_PLAYERS = 6;
-const DEFAULT_TURN_SECONDS = 20;
-const MIN_TURN_SECONDS = 5;
-const MAX_TURN_SECONDS = 30;
+const DEFAULT_TURN_SECONDS = 30;
+const MIN_TURN_SECONDS = 30;
+const MAX_TURN_SECONDS = 60;
 
 const activeGames = new Map();
 
@@ -29,6 +29,12 @@ function normalizeText(input) {
     .replace(/[^a-z\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function extractWord(input) {
+  const normalized = normalizeText(input);
+  if (!normalized) return '';
+  return normalized.split(' ')[0] || '';
 }
 
 const SENTENCES = Array.isArray(sentencePool)
@@ -98,6 +104,17 @@ function buildLobbyComponents({ joinButtonId, disabled }) {
   return [row];
 }
 
+function buildHintComponents(game, { disabled = false } = {}) {
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(game.hintButtonId)
+      .setLabel('Use Hint (1x)')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(Boolean(disabled)),
+  );
+  return [row];
+}
+
 function getEmbedColour(game) {
   return resolveEmbedColour(game.guildId, 0x5865F2);
 }
@@ -114,7 +131,7 @@ function buildLobbyEmbed(game, joinDeadline) {
       { name: `Players (${game.players.length}/${MAX_PLAYERS})`, value: formatRoster(game) },
       {
         name: 'Rules',
-        value: 'Take turns guessing the hidden sentence. Correct letters in the right position reveal for everyone. Correct letters in the wrong position appear in **bold** in the last guess.',
+        value: 'Take turns guessing the hidden sentence. Send one word per message; each message advances to the next word. Correct letters in the right position reveal for everyone. Correct letters in the wrong position appear in **bold** in the last guess.',
       },
       { name: 'Settings', value: `Turn timer: **${game.turnSeconds}s**` },
     );
@@ -164,10 +181,20 @@ function formatGuess(chars, statuses) {
   return words.join(' / ') || '_No guess._';
 }
 
-function applyGuess(game, guess) {
+function buildGuessString(game, guessWords) {
+  const parts = game.targetWords.map((targetWord, index) => {
+    const raw = guessWords[index] || '';
+    const cleaned = extractWord(raw);
+    const trimmed = cleaned.slice(0, targetWord.length);
+    return trimmed.padEnd(targetWord.length, ' ');
+  });
+  return parts.join(' ');
+}
+
+function applyGuess(game, guessWords) {
   const target = game.target;
   const targetChars = target.split('');
-  const guessChars = guess.split('');
+  const guessChars = buildGuessString(game, guessWords).split('');
   const correctPositions = new Array(targetChars.length).fill(false);
 
   const limit = Math.min(targetChars.length, guessChars.length);
@@ -226,6 +253,7 @@ function buildGameEmbed(game) {
         inline: true,
       },
       { name: 'Hints', value: String(game.hintsGiven || 0), inline: true },
+      { name: 'Hint Button', value: 'Each player can press **Use Hint** once per game.', inline: false },
       { name: 'Last Guess', value: game.lastGuess || '_None yet._' },
     )
     .setFooter({ text: 'Bold letters are in the sentence but in a different position.' });
@@ -237,6 +265,29 @@ function buildGameEmbed(game) {
   return embed;
 }
 
+function scheduleCountdown(game, userId) {
+  const turnMs = game.turnSeconds * 1000;
+  if (turnMs < 10_000) return [];
+  const timers = [];
+  for (let seconds = 10; seconds >= 1; seconds -= 1) {
+    const delay = turnMs - seconds * 1000;
+    const timer = setTimeout(() => {
+      if (game.isStopped || game.currentTurnUserId !== userId) return;
+      game.channel.send({
+        content: String(seconds),
+        allowedMentions: { parse: [] },
+      }).catch(() => {});
+    }, Math.max(0, delay));
+    timers.push(timer);
+  }
+  return timers;
+}
+
+function clearCountdown(timers) {
+  if (!Array.isArray(timers)) return;
+  for (const timer of timers) clearTimeout(timer);
+}
+
 async function waitForTurnGuess(game, userId) {
   const channel = game.channel;
   const turnMs = game.turnSeconds * 1000;
@@ -246,27 +297,34 @@ async function waitForTurnGuess(game, userId) {
   }
 
   return new Promise(resolve => {
-    let picked = null;
+    const guessWords = [];
+    const countdownTimers = scheduleCountdown(game, userId);
 
     const collector = channel.createMessageCollector({
       filter: message => message.author?.id === userId && !message.author?.bot,
       time: turnMs,
-      max: 1,
+      max: game.wordCount,
     });
 
     game.currentCollector = collector;
     game.currentTurnUserId = userId;
 
     collector.on('collect', (message) => {
-      picked = message.content;
+      const word = extractWord(message.content);
+      guessWords.push(word);
+      if (guessWords.length >= game.wordCount) {
+        try { collector.stop('complete'); } catch (_) {}
+      }
     });
 
     collector.on('end', (_, reason) => {
       if (game.currentCollector === collector) game.currentCollector = null;
-      if (game.currentTurnUserId === userId) game.currentTurnUserId = null;
+      clearCountdown(countdownTimers);
 
-      if (picked) return resolve({ ok: true, guess: picked, reason: reason || 'answered' });
-      return resolve({ ok: false, reason: reason || 'timeout' });
+      if (guessWords.length) {
+        return resolve({ ok: true, guessWords, reason: reason || 'answered' });
+      }
+      return resolve({ ok: false, guessWords, reason: reason || 'timeout' });
     });
   });
 }
@@ -352,11 +410,49 @@ async function runSentenceRushGame(game) {
   game.stage = 'playing';
   game.startedPlayerIds = Array.from(game.playerSet);
 
+  await lobbyMessage.edit({
+    embeds: [buildGameEmbed(game)],
+    components: buildHintComponents(game),
+    allowedMentions: { parse: [] },
+  }).catch(() => {});
+
+  const hintCollector = lobbyMessage.createMessageComponentCollector({
+    time: 60 * 60_000,
+  });
+  game.hintCollector = hintCollector;
+
+  hintCollector.on('collect', async (componentInteraction) => {
+    if (componentInteraction.customId !== game.hintButtonId) return;
+    if (game.isStopped || game.stage !== 'playing') {
+      await componentInteraction.reply({ content: 'The game is not active right now.', ephemeral: true }).catch(() => {});
+      return;
+    }
+    if (!game.playerSet.has(componentInteraction.user.id)) {
+      await componentInteraction.reply({ content: 'Only active players can use a hint.', ephemeral: true }).catch(() => {});
+      return;
+    }
+    if (game.hintUsed.has(componentInteraction.user.id)) {
+      await componentInteraction.reply({ content: 'You already used your hint this game.', ephemeral: true }).catch(() => {});
+      return;
+    }
+
+    const hintLetter = revealHint(game);
+    if (!hintLetter) {
+      await componentInteraction.reply({ content: 'All letters are already revealed.', ephemeral: true }).catch(() => {});
+      return;
+    }
+
+    game.hintUsed.add(componentInteraction.user.id);
+    game.hintsGiven += 1;
+    game.lastHint = `<@${componentInteraction.user.id}> used a hint: **${hintLetter}**`;
+
+    await componentInteraction.reply({ content: `Hint unlocked: **${hintLetter}**`, ephemeral: true }).catch(() => {});
     await lobbyMessage.edit({
       embeds: [buildGameEmbed(game)],
-      components: [],
+      components: buildHintComponents(game),
       allowedMentions: { parse: [] },
     }).catch(() => {});
+  });
 
   if (game.players.length < MIN_PLAYERS) {
     await lobbyMessage.edit({
@@ -401,19 +497,18 @@ async function runSentenceRushGame(game) {
     const response = await waitForTurnGuess(game, userId);
     if (game.isStopped) break;
 
-    let normalizedGuess = null;
-    if (response.ok && response.guess) {
-      normalizedGuess = normalizeText(response.guess);
-    }
+    const guessWords = Array.isArray(response.guessWords) ? response.guessWords : [];
+    const guessString = guessWords.length ? buildGuessString(game, guessWords).trim() : '';
+    const fullGuess = guessWords.length ? guessString : '';
 
-    if (normalizedGuess && normalizedGuess === game.target) {
+    if (fullGuess && fullGuess === game.target) {
       game.winnerId = userId;
       game.stop('winner');
       break;
     }
 
-    if (normalizedGuess) {
-      const formattedGuess = applyGuess(game, normalizedGuess);
+    if (guessWords.length) {
+      const formattedGuess = applyGuess(game, guessWords);
       game.lastGuess = `<@${userId}>: ${formattedGuess}`;
     } else if (response.ok) {
       game.lastGuess = `<@${userId}>: _Invalid guess._`;
@@ -434,6 +529,15 @@ async function runSentenceRushGame(game) {
         game.lastHint = 'All letters are already revealed.';
       }
     }
+
+    const nextUserId = game.players[game.turnIndex] || null;
+    game.currentTurnUserId = nextUserId;
+
+    await lobbyMessage.edit({
+      embeds: [buildGameEmbed(game)],
+      components: buildHintComponents(game),
+      allowedMentions: { parse: [] },
+    }).catch(() => {});
   }
 
   const finishedAt = Date.now();
@@ -458,7 +562,13 @@ async function runSentenceRushGame(game) {
 
     await lobbyMessage.edit({
       embeds: [winnerEmbed],
+      components: buildHintComponents(game, { disabled: true }),
       allowedMentions: { parse: [] },
+    }).catch(() => {});
+
+    await game.channel.send({
+      content: `SentenceRush winner: <@${game.winnerId}> (total wins: **${wins}**)`,
+      allowedMentions: { users: [game.winnerId] },
     }).catch(() => {});
     return;
   }
@@ -470,6 +580,7 @@ async function runSentenceRushGame(game) {
         .setTitle('SentenceRush Ended')
         .setDescription('SentenceRush ended.'),
     ],
+    components: buildHintComponents(game, { disabled: true }),
     allowedMentions: { parse: [] },
   }).catch(() => {});
 }
@@ -519,6 +630,11 @@ async function startSentenceRushGame(interaction) {
     target: sentence.normalized,
     originalSentence: sentence.original,
     revealed: Array.from(sentence.normalized, ch => ch === ' '),
+    targetWords: sentence.normalized.split(' '),
+    wordCount: sentence.wordCount,
+    hintButtonId: `sentencerush-hint-${interaction.id}-${Date.now()}`,
+    hintUsed: new Set(),
+    hintCollector: null,
     lastGuess: null,
     lastHint: null,
     hintsGiven: 0,
@@ -530,6 +646,9 @@ async function startSentenceRushGame(interaction) {
     game.stopReason = reason || 'stopped';
     if (game.currentCollector) {
       try { game.currentCollector.stop('game-stopped'); } catch (_) {}
+    }
+    if (game.hintCollector) {
+      try { game.hintCollector.stop('game-stopped'); } catch (_) {}
     }
   };
 

@@ -5,7 +5,7 @@ const STORE_FILE = 'sentencerush_config.json';
 const DEFAULT_CONFIG = {
   minWords: 3,
   maxWords: 8,
-  turnSeconds: 20,
+  turnSeconds: 30,
 };
 
 let cache = null;
@@ -41,7 +41,7 @@ function normalizeConfig(input) {
   const rawMax = clampInt(input?.maxWords, 3, 8, DEFAULT_CONFIG.maxWords);
   const minWords = Math.min(rawMin, rawMax);
   const maxWords = Math.max(rawMin, rawMax);
-  const turnSeconds = clampInt(input?.turnSeconds, 5, 30, DEFAULT_CONFIG.turnSeconds);
+  const turnSeconds = clampInt(input?.turnSeconds, 30, 60, DEFAULT_CONFIG.turnSeconds);
   return { minWords, maxWords, turnSeconds };
 }
 
