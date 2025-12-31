@@ -13,7 +13,7 @@ const categories = {
     { cmd: '/mute', desc: 'Timeout a member for a set duration (reason required)', perm: 'Moderate Members' },
     { cmd: '/kick', desc: 'Remove a member from the server with a required reason', perm: 'Kick Members' },
     { cmd: '/ban', desc: 'Ban a member with optional message pruning (reason required)', perm: 'Ban Members' },
-    { cmd: '/purge', desc: 'Bulk delete 1ΓÇô100 recent messages in the current channel', perm: 'Manage Messages' },
+    { cmd: '/purge', desc: 'Bulk delete 1–100 recent messages in the current channel', perm: 'Manage Messages' },
     { cmd: '/blacklist add/remove/list', desc: 'Maintain a join blacklist that automatically bans flagged users', perm: 'Ban Members' },
     { cmd: '/jail config/add/remove/status', desc: 'Temporarily strip roles, isolate members, and restore them later', perm: 'Manage Roles' },
     { cmd: '/stfu', desc: 'Spend a Smite to silence a non-staff user for ten minutes', perm: null },
@@ -30,7 +30,7 @@ const categories = {
   'Logging & Security': [
     { cmd: '/logmessageset & /logmessagemode (plus category variants)', desc: 'Ensure the tracked events are routed through dedicated channels', perm: 'Manage Server' },
     { cmd: '/logconfig', desc: 'Assign existing channels for every tracked log event', perm: 'Manage Server' },
-    { cmd: '/tamperproof add/remove/list', desc: 'Watch channels for admin deletions and DM bot owners', perm: 'Manage Channels ┬╖ Premium' },
+    { cmd: '/tamperproof add/remove/list', desc: 'Watch channels for admin deletions and DM bot owners', perm: 'Manage Channels · Premium' },
     { cmd: '/antinuke config', desc: 'Configure anti-nuke safeguards and view their current status', perm: 'Manage Server' },
     { cmd: '/transriptconfig enable/disable/status', desc: 'Enable automatic voice transcription in chosen channels', perm: 'Manage Server' },
   ],
@@ -41,7 +41,7 @@ const categories = {
     { cmd: '/channelsync', desc: 'Sync child channels with their category permissions', perm: 'Manage Channels' },
     { cmd: '/autorespond toggle/add/remove/list', desc: 'Automate keyword replies with optional channel filters', perm: 'Administrator' },
     { cmd: '/automessage create/delete/list', desc: 'Schedule automatic hourly messages or embeds', perm: 'Manage Server' },
-    { cmd: '/repeat start/stop/list', desc: 'Schedule repeating messages every N seconds (ΓëÑ 60)', perm: 'Administrator' },
+    { cmd: '/repeat start/stop/list', desc: 'Schedule repeating messages every N seconds (≥ 60)', perm: 'Administrator' },
     { cmd: '/say', desc: 'Send a custom message as the bot in any channel you specify', perm: 'Administrator' },
   ],
   'Media & Personalisation': [
@@ -53,7 +53,7 @@ const categories = {
     { cmd: '/imageresize', desc: 'Resize an image and convert it to PNG', perm: null },
     { cmd: '/enlarge emoji/sticker/media', desc: 'Post a large version of any emoji, sticker, or image/GIF (2x/4x/8x)', perm: null },
     { cmd: '/clone emoji/sticker', desc: 'Clone emojis or stickers by mention, ID, URL, or upload', perm: 'Manage Emojis and Stickers' },
-    { cmd: '/cloneall', desc: 'Bulk clone emojis from another server with filters', perm: 'Manage Emojis and Stickers ┬╖ Premium' },
+    { cmd: '/cloneall', desc: 'Bulk clone emojis from another server with filters', perm: 'Manage Emojis and Stickers · Premium' },
   ],
   'Embeds & Branding': [
     { cmd: '/embed create/quick', desc: 'Use a guided builder or quick form to craft embeds', perm: null },
@@ -76,18 +76,11 @@ const categories = {
     { cmd: '/triviarankings', desc: 'Show the trivia leaderboard for this server', perm: null },
   ],
   'Utilities & Insights': [
-    { cmd: '/avatar', desc: 'View any userΓÇÖs avatar with quick download links', perm: null },
+    { cmd: '/avatar', desc: 'View any user’s avatar with quick download links', perm: null },
     { cmd: '/serverbanner', desc: 'Display and download the server banner', perm: null },
     { cmd: '/serverlogo', desc: 'Display and download the server icon', perm: null },
     { cmd: '/botinfo', desc: 'See which bot instance responded, uptime, and loaded commands', perm: null },
     { cmd: '/webhooks', desc: 'List every webhook in the server and its creator', perm: 'Manage Webhooks' },
-  ],
-  Premium: [
-    { cmd: '/wraith start/stop/preset', desc: 'Isolate a member with Wraith embeds using a modal or saved presets', perm: 'Bot Owner + Premium' },
-    { cmd: '/tamperproof add/remove/list', desc: 'Monitor channels for deletion tampering alerts', perm: 'Manage Channels ┬╖ Premium' },
-    { cmd: '/giverupee', desc: 'Grant Rupees directly with a Premium token', perm: 'Bot Owner or Guild Owner ┬╖ Premium' },
-    { cmd: '/cloneall', desc: 'Bulk import emojis from another server', perm: 'Manage Emojis and Stickers ┬╖ Premium' },
-    { cmd: '/removebg', desc: 'Unlimited background removals (2 free/day without Premium)', perm: 'Premium for unlimited access' },
   ],
   'Bot Owner': [
     { cmd: '/botlook', desc: 'Update the bot avatar, nickname, or bio', perm: 'Bot Owner' },
@@ -96,60 +89,101 @@ const categories = {
     { cmd: '/backupview', desc: 'Preview a backup and export JSON', perm: 'Bot Owner' },
     { cmd: '/backupdelete', desc: 'Delete a stored backup by id', perm: 'Bot Owner' },
     { cmd: '/fetchmessage', desc: 'Backfill user messages from a channel for analysis tools', perm: 'Bot Owner' },
-    { cmd: '/giverupee', desc: 'Grant Rupees directly to a user', perm: 'Bot Owner or Guild Owner ┬╖ Premium' },
+    { cmd: '/giverupee', desc: 'Grant Rupees directly to a user', perm: 'Bot Owner or Guild Owner · Premium' },
     { cmd: '/wraith start/stop/preset', desc: 'Create a private spam channel and reuse saved presets or the modal', perm: 'Bot Owner + Premium' },
   ],
 };
 
 const categoryMeta = {
   'Moderation & Enforcement': {
-    emoji: '≡ƒ¢í∩╕Å',
+    emoji: '🛡️',
     blurb: 'Act fast on rule breakers and keep order in your community.',
   },
   'Roles & Identity': {
-    emoji: '≡ƒº⌐',
+    emoji: '🧩',
     blurb: 'Manage roles, verification, and booster perks with ease.',
   },
   'Logging & Security': {
-    emoji: '≡ƒ¢░∩╕Å',
+    emoji: '🛰️',
     blurb: 'Audit key events and surface potential security concerns.',
   },
   'Server Setup & Messaging': {
-    emoji: '≡ƒº░',
+    emoji: '🧰',
     blurb: 'Configure channels, announcements, and custom automations.',
   },
   'Media & Personalisation': {
-    emoji: '≡ƒñû',
+    emoji: '🤖',
     blurb: 'Transform media and tap into AI-powered workflows.',
   },
   'Embeds & Branding': {
-    emoji: '≡ƒûî∩╕Å',
+    emoji: '🖌️',
     blurb: 'Craft stunning embeds and customise booster flair.',
   },
   'Economy & Games': {
-    emoji: '≡ƒÄ▓',
+    emoji: '🎲',
     blurb: 'Reward activity, run events, and keep members entertained.',
   },
   'Utilities & Insights': {
-    emoji: '≡ƒº¡',
+    emoji: '🧭',
     blurb: 'Handy diagnostics and quick lookups for everyday needs.',
   },
-  Premium: {
-    emoji: '≡ƒÆÄ',
-    blurb: 'Unlock with $4.99 or an active Server Boost. Votes grant 12 hours of access.',
-  },
   'Bot Owner': {
-    emoji: '≡ƒææ',
+    emoji: '👑',
     blurb: 'Exclusive controls reserved for bot owners.',
   },
 };
 
+const PERMISSION_KEYWORDS = [
+  'Administrator',
+  'Manage Server',
+  'Manage Channels',
+  'Manage Roles',
+  'Manage Messages',
+  'Manage Emojis and Stickers',
+  'Manage Webhooks',
+  'Moderate Members',
+  'Kick Members',
+  'Ban Members',
+  'Bot Owner',
+  'Guild Owner',
+];
+
+function extractPermissionTokens(rawPerm) {
+  if (!rawPerm) return [];
+  const lower = rawPerm.toLowerCase();
+  const hits = PERMISSION_KEYWORDS.filter((label) =>
+    lower.includes(label.toLowerCase())
+  );
+  if (hits.length) return hits;
+  const cleaned = rawPerm.replace(/premium/gi, '').replace(/\s+/g, ' ').trim();
+  return cleaned
+    .split(/[,/]|·|\+|&/g)
+    .map((token) => token.trim())
+    .filter(
+      (token) =>
+        token &&
+        /^[A-Za-z][A-Za-z ().-]+$/.test(token)
+    );
+}
+
+function formatCategoryPermissions(categoryName) {
+  const commands = categories[categoryName] ?? [];
+  const unique = new Set();
+  commands.forEach(({ perm }) => {
+    extractPermissionTokens(perm).forEach((token) => {
+      if (!unique.has(token)) unique.add(token);
+    });
+  });
+  if (!unique.size) return 'None (most commands are public)';
+  return [...unique].join(' · ');
+}
+
 function buildEmbed(categoryName, includeOwner, guildId, botUser) {
   const embed = new EmbedBuilder()
-    .setTitle('Γ£¿ Command Compass')
+    .setTitle('✨ Command Compass')
     .setColor(0x5865f2)
     .setFooter({
-      text: 'Use the selector below to explore ΓÇö it disables after one minute.',
+      text: 'Use the selector below to explore — it disables after one minute.',
     })
     .setTimestamp();
 
@@ -177,7 +211,7 @@ function buildEmbed(categoryName, includeOwner, guildId, botUser) {
       return embed;
     }
     const meta = categoryMeta[categoryName] ?? {};
-    const emoji = meta.emoji ?? '≡ƒôÿ';
+    const emoji = meta.emoji ?? '📘';
     const blurb = meta.blurb ? `\n_${meta.blurb}_` : '';
     embed.setDescription(`${emoji} **${categoryName} Commands**${blurb}`);
     const fields = categories[categoryName].map(({ cmd, desc, perm }) => ({
@@ -189,19 +223,22 @@ function buildEmbed(categoryName, includeOwner, guildId, botUser) {
     return embed;
   }
 
-  embed.setDescription('Γ£¿ Explore the command vault and find the perfect tool in seconds.');
+  embed.setDescription(
+    '✨ DisphoriaBot keeps your server safe, automated, and creative. Pick a category to see its tools and the permissions needed to run them.'
+  );
   const cats = Object.keys(categories).filter(
     (cat) => !(cat === 'Bot Owner' && !includeOwner)
   );
   const value = cats
     .map((c) => {
       const { emoji, blurb } = categoryMeta[c] ?? {};
-      const accent = blurb ? ` ΓÇö ${blurb}` : '';
-      return `${emoji ?? '≡ƒôÿ'} **${c}**${accent}`;
+      const accent = blurb ? ` — ${blurb}` : '';
+      const permText = formatCategoryPermissions(c);
+      return `${emoji ?? '📘'} **${c}**${accent}\n> Requires: ${permText}`;
     })
-    .join('\n');
+    .join('\n\n');
   embed.addFields(
-    { name: '≡ƒôÜ Categories', value },
+    { name: '📚 Categories', value },
     {
       name: 'Need a quick tip?',
       value: 'Use `/help` anytime to reopen this menu or explore another category.',
@@ -235,7 +272,7 @@ module.exports = {
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId('help-category')
-      .setPlaceholder('Γ£¿ Browse a command category')
+      .setPlaceholder('✨ Browse a command category')
       .addOptions(options);
 
     const row = new ActionRowBuilder().addComponents(menu);
