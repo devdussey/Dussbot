@@ -142,6 +142,11 @@ const LOG_KEYS = {
     label: 'Security Events',
     category: 'Security',
   },
+  command_error: {
+    label: 'Command Errors',
+    category: 'Commands',
+    fallbackKey: 'command',
+  },
   command: {
     label: 'Command Usage',
     category: 'Commands',

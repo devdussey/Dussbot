@@ -16,6 +16,22 @@ const boosterStore = require('../utils/boosterRoleStore');
 const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const vanityRoleCommand = require('../commands/vanityrole');
 
+const MAX_ERROR_STACK = 3500;
+
+function truncate(value, max = 1024, fallback = 'Unknown') {
+    if (value === undefined || value === null) return fallback;
+    const str = String(value);
+    if (!str.trim()) return fallback;
+    return str.length > max ? `${str.slice(0, max - 3)}...` : str;
+}
+
+function formatErrorStack(error) {
+    const raw = error?.stack || error?.message;
+    if (!raw) return null;
+    const str = String(raw);
+    return str.length > MAX_ERROR_STACK ? `${str.slice(0, MAX_ERROR_STACK - 3)}...` : str;
+}
+
 async function logCommandUsage(interaction, status, details, color = 0x5865f2) {
     if (!interaction.guildId) return;
     const fields = [
@@ -45,6 +61,43 @@ async function logCommandUsage(interaction, status, details, color = 0x5865f2) {
     }
 }
 
+async function logCommandError(interaction, error, context) {
+    if (!interaction.guildId) return;
+    const fields = [
+        { name: 'Command', value: `/${interaction.commandName}`, inline: true },
+        { name: 'User', value: `${interaction.user.tag} (${interaction.user.id})`, inline: true },
+    ];
+    if (interaction.channel) {
+        fields.push({ name: 'Channel', value: `<#${interaction.channel.id}> (${interaction.channel.id})`, inline: true });
+    }
+    if (context) {
+        fields.push({ name: 'Context', value: truncate(context), inline: false });
+    }
+    fields.push({ name: 'Error', value: truncate(error?.message || 'Unknown error'), inline: false });
+
+    const stack = formatErrorStack(error);
+    const embed = new EmbedBuilder()
+        .setTitle('Command Error')
+        .setColor(0xed4245)
+        .addFields(fields)
+        .setTimestamp();
+
+    if (stack) {
+        embed.setDescription('```\n' + stack + '\n```');
+    }
+
+    try {
+        await logSender.sendLog({
+            guildId: interaction.guildId,
+            logType: 'command_error',
+            embed,
+            client: interaction.client,
+        });
+    } catch (err) {
+        console.error('Failed to log command error:', err);
+    }
+}
+
 async function fetchMember(guild, userId) {
     if (!guild || !userId) return null;
     try { return await guild.members.fetch(userId); } catch (_) { return null; }
@@ -70,6 +123,11 @@ module.exports = {
                     const logger = require('../utils/securityLogger');
                     await logger.logMissingCommand(interaction);
                 } catch (_) {}
+                await logCommandError(
+                    interaction,
+                    new Error('Command handler missing'),
+                    'Slash command was invoked but no matching handler is registered.'
+                );
                 return;
             }
 
@@ -103,6 +161,7 @@ module.exports = {
                     console.warn('Failed to send error via interaction API:', rcode, replyError?.message);
                 }
                 await logCommandUsage(interaction, 'Failed', error?.message || 'Unknown error', 0xed4245);
+                await logCommandError(interaction, error, 'Command execution threw an error.');
             }
         }
 
