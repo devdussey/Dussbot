@@ -229,16 +229,20 @@ function buildEmbed(categoryName, includeOwner, guildId, botUser) {
   const cats = Object.keys(categories).filter(
     (cat) => !(cat === 'Bot Owner' && !includeOwner)
   );
-  const value = cats
-    .map((c) => {
-      const { emoji, blurb } = categoryMeta[c] ?? {};
-      const accent = blurb ? ` — ${blurb}` : '';
-      const permText = formatCategoryPermissions(c);
-      return `${emoji ?? '📘'} **${c}**${accent}\n> Requires: ${permText}`;
-    })
-    .join('\n\n');
+  const overviewFields = cats.map((c) => {
+    const { emoji, blurb } = categoryMeta[c] ?? {};
+    const permText = formatCategoryPermissions(c);
+    const lines = [];
+    if (blurb) lines.push(`_${blurb}_`);
+    lines.push(`> Requires: ${permText}`);
+    return {
+      name: `${emoji ?? '📘'} ${c}`,
+      value: lines.join('\n'),
+      inline: true,
+    };
+  });
   embed.addFields(
-    { name: '📚 Categories', value },
+    ...overviewFields,
     {
       name: 'Need a quick tip?',
       value: 'Use `/help` anytime to reopen this menu or explore another category.',
