@@ -60,7 +60,8 @@ async function buildLogConfigView(guild, selectedKey, options = {}) {
   const selectedEntry = selected ? getEntry(entries, selected) : null;
 
   const descriptionParts = [
-    'Pick a log event, toggle it, and assign a channel. Changes apply immediately.',
+    'Pick a log event, toggle it, and assign an existing channel. Changes apply immediately.',
+    'No channels are created automatically; choose a channel for each event.',
     `Storage: **${isMysqlConfigured() ? 'MySQL' : 'Local JSON'}**`,
   ];
   if (options.note) descriptionParts.push(options.note);
@@ -137,13 +138,7 @@ async function buildLogConfigView(guild, selectedKey, options = {}) {
     .setStyle(selectedEntry?.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
     .setDisabled(!selected);
 
-  const defaultButton = new ButtonBuilder()
-    .setCustomId(`logconfig:default:${selected ?? 'none'}`)
-    .setLabel('Auto-create default channel')
-    .setStyle(ButtonStyle.Primary)
-    .setDisabled(!selected);
-
-  const buttonRow = new ActionRowBuilder().addComponents(toggleButton, defaultButton);
+  const buttonRow = new ActionRowBuilder().addComponents(toggleButton);
 
   const channelSelect = new ChannelSelectMenuBuilder()
     .setCustomId(`logconfig:setchannel:${selected ?? 'none'}`)

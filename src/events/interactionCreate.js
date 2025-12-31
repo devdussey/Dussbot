@@ -323,14 +323,7 @@ module.exports = {
                             await logChannelTypeStore.setEnabled(interaction.guildId, logType, !entry.enabled);
                         }
                     } else if (action === 'default') {
-                        const channel = await logConfigManager.ensureDefaultChannelForType(interaction.guild, logType);
-                        const friendly = logConfigManager.getFriendlyName(logType);
-                        if (channel) {
-                            await logChannelTypeStore.setChannel(interaction.guildId, logType, channel.id);
-                            followUpContent = `Default channel for ${friendly} logs set to <#${channel.id}>.`;
-                        } else {
-                            followUpContent = `Could not create a default channel for ${friendly} logs. Please ensure I can manage channels.`;
-                        }
+                        followUpContent = 'Automatic channel creation is disabled. Please pick an existing channel from the selector.';
                     } else {
                         return;
                     }
