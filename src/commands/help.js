@@ -228,8 +228,7 @@ module.exports = {
       .filter((c) => !(c === 'Bot Owner' && !owner))
       .map((c) => {
         const meta = categoryMeta[c] ?? {};
-        const option = { label: c, value: c };
-        if (meta.emoji) option.emoji = { name: meta.emoji };
+        const option = { label: meta.emoji ? `${meta.emoji} ${c}` : c, value: c };
         if (meta.blurb) option.description = meta.blurb;
         return option;
       });
