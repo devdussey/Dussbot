@@ -13,7 +13,7 @@ const categories = {
     { cmd: '/mute', desc: 'Timeout a member for a set duration (reason required)', perm: 'Moderate Members' },
     { cmd: '/kick', desc: 'Remove a member from the server with a required reason', perm: 'Kick Members' },
     { cmd: '/ban', desc: 'Ban a member with optional message pruning (reason required)', perm: 'Ban Members' },
-    { cmd: '/purge', desc: 'Bulk delete 1–100 recent messages in the current channel', perm: 'Manage Messages' },
+    { cmd: '/purge', desc: 'Bulk delete 1ΓÇô100 recent messages in the current channel', perm: 'Manage Messages' },
     { cmd: '/blacklist add/remove/list', desc: 'Maintain a join blacklist that automatically bans flagged users', perm: 'Ban Members' },
     { cmd: '/jail config/add/remove/status', desc: 'Temporarily strip roles, isolate members, and restore them later', perm: 'Manage Roles' },
     { cmd: '/stfu', desc: 'Spend a Smite to silence a non-staff user for ten minutes', perm: null },
@@ -25,13 +25,12 @@ const categories = {
     { cmd: '/verify setup/status/disable/repost', desc: 'Set up button verification with optional account-age rules', perm: 'Manage Server' },
     { cmd: '/createrole', desc: 'Create a role with colour, hoist, mentionable, and position options', perm: 'Manage Roles' },
     { cmd: '/deleterole', desc: 'Delete a role from the server', perm: 'Manage Roles' },
-    { cmd: '/brsync', desc: 'Sync booster custom roles for existing boosters', perm: 'Manage Server' },
     { cmd: '/brconfig', desc: 'Post the booster role configuration panel', perm: 'Manage Server' },
   ],
   'Logging & Security': [
     { cmd: '/logmessageset & /logmessagemode (plus category variants)', desc: 'Ensure the tracked events are routed through dedicated channels', perm: 'Manage Server' },
     { cmd: '/logconfig', desc: 'Create or sync dedicated channels for every tracked log event', perm: 'Manage Server' },
-    { cmd: '/tamperproof add/remove/list', desc: 'Watch channels for admin deletions and DM bot owners', perm: 'Manage Channels · Premium' },
+    { cmd: '/tamperproof add/remove/list', desc: 'Watch channels for admin deletions and DM bot owners', perm: 'Manage Channels ┬╖ Premium' },
     { cmd: '/antinuke config', desc: 'Configure anti-nuke safeguards and view their current status', perm: 'Manage Server' },
     { cmd: '/transriptconfig enable/disable/status', desc: 'Enable automatic voice transcription in chosen channels', perm: 'Manage Server' },
   ],
@@ -42,7 +41,7 @@ const categories = {
     { cmd: '/createchannel', desc: 'Quickly create text, voice, or stage channels with optional category', perm: 'Manage Channels' },
     { cmd: '/channelsync', desc: 'Sync child channels with their category permissions', perm: 'Manage Channels' },
     { cmd: '/autorespond toggle/add/remove/list', desc: 'Automate keyword replies with optional channel filters', perm: 'Administrator' },
-    { cmd: '/repeat start/stop/list', desc: 'Schedule repeating messages every N seconds (≥ 60)', perm: 'Administrator' },
+    { cmd: '/repeat start/stop/list', desc: 'Schedule repeating messages every N seconds (ΓëÑ 60)', perm: 'Administrator' },
     { cmd: '/say', desc: 'Send a custom message as the bot in any channel you specify', perm: 'Administrator' },
   ],
   'Media & Personalisation': [
@@ -51,11 +50,10 @@ const categories = {
     { cmd: '/summarize', desc: 'Summarise recent channel messages into bullets and a paragraph', perm: null },
     { cmd: '/transcribe', desc: 'Transcribe an attached audio file using Whisper', perm: null },
     { cmd: '/removebg', desc: 'Remove the background from an image via remove.bg (2 free uses/day without Premium)', perm: 'Premium for unlimited access' },
-    { cmd: '/highdef', desc: 'Upscale and enhance an image using AI', perm: null },
     { cmd: '/imageresize', desc: 'Resize an image and convert it to PNG', perm: null },
     { cmd: '/enlarge emoji/sticker', desc: 'Post a large version of any emoji or sticker', perm: null },
     { cmd: '/clone emoji/sticker', desc: 'Clone emojis or stickers by mention, ID, URL, or upload', perm: 'Manage Emojis and Stickers' },
-    { cmd: '/cloneall', desc: 'Bulk clone emojis from another server with filters', perm: 'Manage Emojis and Stickers · Premium' },
+    { cmd: '/cloneall', desc: 'Bulk clone emojis from another server with filters', perm: 'Manage Emojis and Stickers ┬╖ Premium' },
     { cmd: '/font', desc: 'Transform your message with decorative Unicode fonts', perm: null },
   ],
   'Embeds & Branding': [
@@ -78,22 +76,20 @@ const categories = {
     { cmd: '/triviarankings', desc: 'Show the trivia leaderboard for this server', perm: null },
   ],
   'Utilities & Insights': [
-    { cmd: '/avatar', desc: 'View any user’s avatar with quick download links', perm: null },
+    { cmd: '/avatar', desc: 'View any userΓÇÖs avatar with quick download links', perm: null },
     { cmd: '/serverbanner', desc: 'Display and download the server banner', perm: null },
     { cmd: '/serverlogo', desc: 'Display and download the server icon', perm: null },
     { cmd: '/botinfo', desc: 'See which bot instance responded, uptime, and loaded commands', perm: null },
     { cmd: '/webhooks', desc: 'List every webhook in the server and its creator', perm: 'Manage Webhooks' },
   ],
   Premium: [
-    { cmd: '/adminlist', desc: 'Owner audit: list mutual guilds where a user has Administrator', perm: 'Bot Owner · Premium' },
-    { cmd: '/wraith start/stop', desc: 'Isolate a member with relentless pings and Wraith embeds (modal setup)', perm: 'Bot Owner · Premium' },
-    { cmd: '/tamperproof add/remove/list', desc: 'Monitor channels for deletion tampering alerts', perm: 'Manage Channels · Premium' },
-    { cmd: '/giverupee', desc: 'Grant Rupees directly with a Premium token', perm: 'Bot Owner or Guild Owner · Premium' },
-    { cmd: '/cloneall', desc: 'Bulk import emojis from another server', perm: 'Manage Emojis and Stickers · Premium' },
+    { cmd: '/wraith start/stop', desc: 'Isolate a member with relentless pings and Wraith embeds (modal setup)', perm: 'Bot Owner ┬╖ Premium' },
+    { cmd: '/tamperproof add/remove/list', desc: 'Monitor channels for deletion tampering alerts', perm: 'Manage Channels ┬╖ Premium' },
+    { cmd: '/giverupee', desc: 'Grant Rupees directly with a Premium token', perm: 'Bot Owner or Guild Owner ┬╖ Premium' },
+    { cmd: '/cloneall', desc: 'Bulk import emojis from another server', perm: 'Manage Emojis and Stickers ┬╖ Premium' },
     { cmd: '/removebg', desc: 'Unlimited background removals (2 free/day without Premium)', perm: 'Premium for unlimited access' },
   ],
   'Bot Owner': [
-    { cmd: '/adminlist', desc: 'List mutual guilds where a user has Administrator', perm: 'Bot Owner · Premium' },
     { cmd: '/botlook', desc: 'Update the bot avatar, nickname, or bio', perm: 'Bot Owner' },
     { cmd: '/backup', desc: 'Create a snapshot backup of bans, channels, roles, and bots', perm: 'Bot Owner' },
     { cmd: '/backuplist', desc: 'List stored backups for this server', perm: 'Bot Owner' },
@@ -101,60 +97,60 @@ const categories = {
     { cmd: '/backupdelete', desc: 'Delete a stored backup by id', perm: 'Bot Owner' },
     { cmd: '/fetchmessage', desc: 'Backfill user messages from a channel for analysis tools', perm: 'Bot Owner' },
     { cmd: '/dmdiag test/role', desc: 'Run DM diagnostics for a member or role', perm: 'Bot Owner' },
-    { cmd: '/giverupee', desc: 'Grant Rupees directly to a user', perm: 'Bot Owner or Guild Owner · Premium' },
-    { cmd: '/wraith start/stop', desc: 'Create a private spam channel and isolate a member (modal setup)', perm: 'Bot Owner · Premium' },
+    { cmd: '/giverupee', desc: 'Grant Rupees directly to a user', perm: 'Bot Owner or Guild Owner ┬╖ Premium' },
+    { cmd: '/wraith start/stop', desc: 'Create a private spam channel and isolate a member (modal setup)', perm: 'Bot Owner ┬╖ Premium' },
   ],
 };
 
 const categoryMeta = {
   'Moderation & Enforcement': {
-    emoji: '🛡️',
+    emoji: '≡ƒ¢í∩╕Å',
     blurb: 'Act fast on rule breakers and keep order in your community.',
   },
   'Roles & Identity': {
-    emoji: '🧩',
+    emoji: '≡ƒº⌐',
     blurb: 'Manage roles, verification, and booster perks with ease.',
   },
   'Logging & Security': {
-    emoji: '🛰️',
+    emoji: '≡ƒ¢░∩╕Å',
     blurb: 'Audit key events and surface potential security concerns.',
   },
   'Server Setup & Messaging': {
-    emoji: '🧰',
+    emoji: '≡ƒº░',
     blurb: 'Configure channels, announcements, and custom automations.',
   },
   'Media & Personalisation': {
-    emoji: '🤖',
+    emoji: '≡ƒñû',
     blurb: 'Transform media and tap into AI-powered workflows.',
   },
   'Embeds & Branding': {
-    emoji: '🖌️',
+    emoji: '≡ƒûî∩╕Å',
     blurb: 'Craft stunning embeds and customise booster flair.',
   },
   'Economy & Games': {
-    emoji: '🎲',
+    emoji: '≡ƒÄ▓',
     blurb: 'Reward activity, run events, and keep members entertained.',
   },
   'Utilities & Insights': {
-    emoji: '🧭',
+    emoji: '≡ƒº¡',
     blurb: 'Handy diagnostics and quick lookups for everyday needs.',
   },
   Premium: {
-    emoji: '💎',
+    emoji: '≡ƒÆÄ',
     blurb: 'Unlock with $4.99 or an active Server Boost. Votes grant 12 hours of access.',
   },
   'Bot Owner': {
-    emoji: '👑',
+    emoji: '≡ƒææ',
     blurb: 'Exclusive controls reserved for bot owners.',
   },
 };
 
 function buildEmbed(categoryName, includeOwner, guildId, botUser) {
   const embed = new EmbedBuilder()
-    .setTitle('✨ Command Compass')
+    .setTitle('Γ£¿ Command Compass')
     .setColor(0x5865f2)
     .setFooter({
-      text: 'Use the selector below to explore — it disables after one minute.',
+      text: 'Use the selector below to explore ΓÇö it disables after one minute.',
     })
     .setTimestamp();
 
@@ -182,7 +178,7 @@ function buildEmbed(categoryName, includeOwner, guildId, botUser) {
       return embed;
     }
     const meta = categoryMeta[categoryName] ?? {};
-    const emoji = meta.emoji ?? '📘';
+    const emoji = meta.emoji ?? '≡ƒôÿ';
     const blurb = meta.blurb ? `\n_${meta.blurb}_` : '';
     embed.setDescription(`${emoji} **${categoryName} Commands**${blurb}`);
     const fields = categories[categoryName].map(({ cmd, desc, perm }) => ({
@@ -194,19 +190,19 @@ function buildEmbed(categoryName, includeOwner, guildId, botUser) {
     return embed;
   }
 
-  embed.setDescription('✨ Explore the command vault and find the perfect tool in seconds.');
+  embed.setDescription('Γ£¿ Explore the command vault and find the perfect tool in seconds.');
   const cats = Object.keys(categories).filter(
     (cat) => !(cat === 'Bot Owner' && !includeOwner)
   );
   const value = cats
     .map((c) => {
       const { emoji, blurb } = categoryMeta[c] ?? {};
-      const accent = blurb ? ` — ${blurb}` : '';
-      return `${emoji ?? '📘'} **${c}**${accent}`;
+      const accent = blurb ? ` ΓÇö ${blurb}` : '';
+      return `${emoji ?? '≡ƒôÿ'} **${c}**${accent}`;
     })
     .join('\n');
   embed.addFields(
-    { name: '📚 Categories', value },
+    { name: '≡ƒôÜ Categories', value },
     {
       name: 'Need a quick tip?',
       value: 'Use `/help` anytime to reopen this menu or explore another category.',
@@ -241,7 +237,7 @@ module.exports = {
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId('help-category')
-      .setPlaceholder('✨ Browse a command category')
+      .setPlaceholder('Γ£¿ Browse a command category')
       .addOptions(options);
 
     const row = new ActionRowBuilder().addComponents(menu);
