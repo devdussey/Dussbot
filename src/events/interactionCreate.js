@@ -11,6 +11,9 @@ const openPollStore = require('../utils/openPollStore');
 const openPollManager = require('../utils/openPollManager');
 const reactionRoleStore = require('../utils/reactionRoleStore');
 const reactionRoleManager = require('../utils/reactionRoleManager');
+const boosterManager = require('../utils/boosterRoleManager');
+const boosterStore = require('../utils/boosterRoleStore');
+const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 
 async function logCommandUsage(interaction, status, details, color = 0x5865f2) {
     if (!interaction.guildId) return;
@@ -39,6 +42,66 @@ async function logCommandUsage(interaction, status, details, color = 0x5865f2) {
     } catch (err) {
         console.error('Failed to log command usage:', err);
     }
+}
+
+async function fetchMember(guild, userId) {
+    if (!guild || !userId) return null;
+    try { return await guild.members.fetch(userId); } catch (_) { return null; }
+}
+
+function isActiveBooster(member, premiumRoleId) {
+    if (!member) return false;
+    const hasBoost = Boolean(member.premiumSince || member.premiumSinceTimestamp);
+    const hasPremiumRole = premiumRoleId ? member.roles?.cache?.has(premiumRoleId) : false;
+    return hasBoost || hasPremiumRole;
+}
+
+async function removeLegacyBoosterRoles(member, activeRoleId) {
+    if (!member?.guild || !member.roles?.cache) return { removed: 0, deleted: 0, skipped: 0 };
+    if (!activeRoleId) return { removed: 0, deleted: 0, skipped: 0 };
+    const guild = member.guild;
+    let me = guild.members.me;
+    if (!me) {
+        try { me = await guild.members.fetchMe(); } catch (_) { me = null; }
+    }
+    if (!me?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
+        return { removed: 0, deleted: 0, skipped: 0 };
+    }
+
+    const suffix = boosterManager.ROLE_SUFFIX;
+    const legacyRoles = member.roles.cache.filter((role) =>
+        role &&
+        role.id !== activeRoleId &&
+        typeof role.name === 'string' &&
+        role.name.endsWith(suffix)
+    );
+
+    let removed = 0;
+    let deleted = 0;
+    let skipped = 0;
+
+    for (const role of legacyRoles.values()) {
+        if (role.managed || me.roles.highest.comparePositionTo(role) <= 0) {
+            skipped += 1;
+            continue;
+        }
+        const shouldDelete = role.members?.size <= 1;
+        try {
+            await member.roles.remove(role, 'Removing legacy custom booster role');
+            removed += 1;
+        } catch (_) {
+            skipped += 1;
+            continue;
+        }
+        if (shouldDelete) {
+            try {
+                await role.delete('Removing legacy custom booster role');
+                deleted += 1;
+            } catch (_) {}
+        }
+    }
+
+    return { removed, deleted, skipped };
 }
 
 module.exports = {
@@ -327,6 +390,69 @@ module.exports = {
                 }
                 if (!handledError && followUpContent) {
                     try { await interaction.followUp({ content: followUpContent, ephemeral: true }); } catch (_) {}
+                }
+                return;
+            }
+            if (interaction.customId === 'brconfig:open') {
+                if (!interaction.inGuild()) return;
+
+                const enabled = await boosterConfigStore.isEnabled(interaction.guildId);
+                if (!enabled) {
+                    try { await interaction.reply({ content: 'Custom booster roles are disabled on this server.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                let member = interaction.member;
+                if (!member?.roles?.cache) {
+                    member = await fetchMember(interaction.guild, interaction.user.id);
+                }
+                if (!member) {
+                    try { await interaction.reply({ content: 'Could not fetch your member data.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                const premiumRoleId = interaction.guild.roles.premiumSubscriberRole?.id || null;
+                if (!isActiveBooster(member, premiumRoleId)) {
+                    try { await interaction.reply({ content: 'This panel is for active server boosters only.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                const modal = new ModalBuilder()
+                    .setCustomId(`brconfig:modal:${interaction.user.id}`)
+                    .setTitle('Booster Role Configuration');
+                const nameInput = new TextInputBuilder()
+                    .setCustomId('brconfig:role_name')
+                    .setLabel('Role Name')
+                    .setStyle(TextInputStyle.Short)
+                    .setMinLength(1)
+                    .setMaxLength(100)
+                    .setRequired(true);
+                const primaryInput = new TextInputBuilder()
+                    .setCustomId('brconfig:primary')
+                    .setLabel('Primary Colour')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('#ff0000')
+                    .setMinLength(6)
+                    .setMaxLength(7)
+                    .setRequired(true);
+                const secondaryInput = new TextInputBuilder()
+                    .setCustomId('brconfig:secondary')
+                    .setLabel('Secondary Colour (optional)')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('#00ff00')
+                    .setMaxLength(7)
+                    .setRequired(false);
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(nameInput),
+                    new ActionRowBuilder().addComponents(primaryInput),
+                    new ActionRowBuilder().addComponents(secondaryInput),
+                );
+
+                try {
+                    await interaction.showModal(modal);
+                } catch (_) {
+                    try { await interaction.reply({ content: 'Could not open the booster role form. Please try again.', ephemeral: true }); } catch (_) {}
                 }
                 return;
             }
@@ -619,6 +745,84 @@ module.exports = {
 
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('brconfig:modal:')) {
+                if (!interaction.inGuild()) return;
+
+                const parts = interaction.customId.split(':');
+                const ownerId = parts[2];
+                if (ownerId && interaction.user.id !== ownerId) {
+                    try { await interaction.reply({ content: 'This booster role form is not for you.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                await interaction.deferReply({ ephemeral: true });
+
+                const enabled = await boosterConfigStore.isEnabled(interaction.guildId);
+                if (!enabled) {
+                    await interaction.editReply({ content: 'Custom booster roles are disabled on this server.' });
+                    return;
+                }
+
+                let member = interaction.member;
+                if (!member?.roles?.cache) {
+                    member = await fetchMember(interaction.guild, interaction.user.id);
+                }
+                if (!member) {
+                    await interaction.editReply({ content: 'Could not fetch your member data.' });
+                    return;
+                }
+
+                const premiumRoleId = interaction.guild.roles.premiumSubscriberRole?.id || null;
+                if (!isActiveBooster(member, premiumRoleId)) {
+                    await interaction.editReply({ content: 'You need an active server boost to configure a booster role.' });
+                    return;
+                }
+
+                const roleName = (interaction.fields.getTextInputValue('brconfig:role_name') || '').trim();
+                const primaryRaw = (interaction.fields.getTextInputValue('brconfig:primary') || '').trim();
+                const secondaryRaw = (interaction.fields.getTextInputValue('brconfig:secondary') || '').trim();
+
+                const colorInput = secondaryRaw
+                    ? { mode: 'gradient', colors: [primaryRaw, secondaryRaw] }
+                    : { mode: 'solid', colors: [primaryRaw] };
+
+                let activeRoleId = null;
+                try {
+                    const colorResult = await boosterManager.updateRoleColor(member, colorInput);
+                    activeRoleId = colorResult?.role?.id || null;
+                } catch (err) {
+                    await interaction.editReply({
+                        content: `Failed to update booster role colours: ${err?.message || 'Unknown error'}`,
+                    });
+                    return;
+                }
+
+                try {
+                    const role = await boosterManager.renameRole(member, roleName);
+                    if (role?.id) activeRoleId = role.id;
+                } catch (err) {
+                    await interaction.editReply({
+                        content: `Updated colours, but failed to rename the role: ${err?.message || 'Unknown error'}`,
+                    });
+                    return;
+                }
+
+                if (!activeRoleId) {
+                    try { activeRoleId = await boosterStore.getRoleId(interaction.guildId, interaction.user.id); } catch (_) {}
+                }
+
+                const cleanup = await removeLegacyBoosterRoles(member, activeRoleId);
+                const notes = ['Your booster role has been updated.'];
+                if (cleanup.removed > 0) {
+                    notes.push(`Removed ${cleanup.removed} legacy booster role${cleanup.removed === 1 ? '' : 's'}.`);
+                }
+                if (cleanup.deleted > 0) {
+                    notes.push(`Deleted ${cleanup.deleted} legacy role${cleanup.deleted === 1 ? '' : 's'}.`);
+                }
+
+                await interaction.editReply({ content: notes.join(' ') });
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('openpoll:submit:')) {
                 if (!interaction.inGuild()) {
                     try { await interaction.reply({ content: 'Polls can only be used in a server.', ephemeral: true }); } catch (_) {}

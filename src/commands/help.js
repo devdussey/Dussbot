@@ -26,6 +26,7 @@ const categories = {
     { cmd: '/createrole', desc: 'Create a role with colour, hoist, mentionable, and position options', perm: 'Manage Roles' },
     { cmd: '/deleterole', desc: 'Delete a role from the server', perm: 'Manage Roles' },
     { cmd: '/brsync', desc: 'Sync booster custom roles for existing boosters', perm: 'Manage Server' },
+    { cmd: '/brconfig', desc: 'Post the booster role configuration panel', perm: 'Manage Server' },
   ],
   'Logging & Security': [
     { cmd: '/logmessageset & /logmessagemode (plus category variants)', desc: 'Ensure the tracked events are routed through dedicated channels', perm: 'Manage Server' },
