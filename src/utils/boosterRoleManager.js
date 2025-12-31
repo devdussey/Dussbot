@@ -152,6 +152,16 @@ async function fetchPremiumSubscriberRole(guild) {
   return premiumRole;
 }
 
+function getHighestRoleExcluding(member, excludeRoleId) {
+  if (!member?.roles?.cache) return null;
+  let highest = null;
+  for (const role of member.roles.cache.values()) {
+    if (!role || role.id === excludeRoleId) continue;
+    if (!highest || role.position > highest.position) highest = role;
+  }
+  return highest;
+}
+
 function getEmblemExtension(attachment) {
   if (!attachment) return null;
   const contentType = (attachment.contentType || '').toLowerCase();
@@ -332,7 +342,7 @@ async function applyRoleColor(role, colorConfig, targetMember, { reason } = {}) 
   throw new Error('Unsupported colour mode requested.');
 }
 
-async function ensureRole(member, { createIfMissing = true, applyStoredColor = true } = {}) {
+async function ensureRole(member, { createIfMissing = true, applyStoredColor = true, ensureDisplayRole = false } = {}) {
   if (!member?.guild) throw new Error('Member is not in a guild');
   const guild = member.guild;
   const userId = member.id;
@@ -361,10 +371,25 @@ async function ensureRole(member, { createIfMissing = true, applyStoredColor = t
   await ensureManageable(me, role?.position);
 
   const premiumRole = await fetchPremiumSubscriberRole(guild);
+  const highestOtherRole = ensureDisplayRole ? getHighestRoleExcluding(targetMember, role?.id) : null;
   let desiredPosition = null;
+  const anchorPositions = [];
   if (premiumRole && typeof premiumRole.position === 'number') {
-    desiredPosition = premiumRole.position + 1;
-    await ensureManageable(me, desiredPosition);
+    anchorPositions.push(premiumRole.position);
+  }
+  if (highestOtherRole && typeof highestOtherRole.position === 'number') {
+    anchorPositions.push(highestOtherRole.position);
+  }
+  if (anchorPositions.length > 0) {
+    desiredPosition = Math.max(...anchorPositions) + 1;
+  }
+  if (typeof desiredPosition === 'number' && typeof me?.roles?.highest?.position === 'number') {
+    const maxAllowedPosition = me.roles.highest.position - 1;
+    if (maxAllowedPosition < 1) {
+      desiredPosition = null;
+    } else if (desiredPosition > maxAllowedPosition) {
+      desiredPosition = maxAllowedPosition;
+    }
   }
 
   if (!role && createIfMissing) {
@@ -378,14 +403,9 @@ async function ensureRole(member, { createIfMissing = true, applyStoredColor = t
   }
 
   if (role) {
-    if (
-      premiumRole &&
-      typeof premiumRole.position === 'number' &&
-      (typeof role.position !== 'number' || role.position <= premiumRole.position)
-    ) {
-      const anchorName = premiumRole.name || 'Server Booster';
+    if (typeof desiredPosition === 'number' && (typeof role.position !== 'number' || role.position < desiredPosition)) {
       try {
-        role = await role.setPosition(desiredPosition, `Aligning booster custom role above ${anchorName}`);
+        role = await role.setPosition(desiredPosition, 'Aligning booster custom role for cosmetics');
       } catch (err) {
         throw new Error(`Failed to position booster role: ${err.message || err}`);
       }
@@ -453,7 +473,10 @@ module.exports = {
     const name = sanitizeCustomName(desiredName);
     if (!name) throw new Error('Please provide a non-empty name.');
 
-    const { role, member: targetMember } = await ensureRole(member, { createIfMissing: true });
+    const { role, member: targetMember } = await ensureRole(member, {
+      createIfMissing: true,
+      ensureDisplayRole: true,
+    });
     if (!role) throw new Error('You do not have a booster role yet.');
 
     const guild = targetMember.guild;
@@ -480,6 +503,7 @@ module.exports = {
     const { role, member: targetMember } = await ensureRole(member, {
       createIfMissing: true,
       applyStoredColor: false,
+      ensureDisplayRole: true,
     });
     if (!role) throw new Error('You do not have a booster role yet.');
 
