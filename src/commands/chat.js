@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, ChannelType } = require('discord.js');
 const fetch = globalThis.fetch;
+const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('../utils/botConfigStore');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_API;
 const OPENAI_CHAT_MODEL = process.env.CHAT_MODEL || 'gpt-4o-mini';
@@ -67,8 +68,15 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const isPrivate = !!interaction.options.getBoolean('private');
-    try { await interaction.deferReply({ ephemeral: isPrivate }); } catch (_) {}
+    if (!isCategoryEnabled(interaction.guildId, 'ai', true)) {
+      const ephemeral = shouldReplyEphemeral(interaction.guildId, 'ai', true);
+      return interaction.reply({ content: 'AI commands are disabled by a server admin.', ephemeral });
+    }
+
+    const privateOpt = interaction.options.getBoolean('private');
+    const preferPublic = areRepliesPublic(interaction.guildId, 'ai', false);
+    const ephemeral = typeof privateOpt === 'boolean' ? privateOpt : !preferPublic;
+    try { await interaction.deferReply({ ephemeral }); } catch (_) {}
 
     if (!OPENAI_API_KEY) {
       return interaction.editReply('OpenAI API key not configured. Set OPENAI_API_KEY in your environment.');
@@ -136,14 +144,14 @@ module.exports = {
       await interaction.editReply(out.slice(0, 2000));
       for (let i = 2000; i < out.length; i += 2000) {
         const chunk = out.slice(i, i + 2000);
-        try { await interaction.followUp({ content: chunk, ephemeral: isPrivate }); } catch (_) {}
+        try { await interaction.followUp({ content: chunk, ephemeral }); } catch (_) {}
       }
     } catch (err) {
       const msg = err?.message || String(err);
       try {
         await interaction.editReply(`Chat failed: ${msg}`);
       } catch (_) {
-        try { await interaction.followUp({ content: `Chat failed: ${msg}`, ephemeral: isPrivate }); } catch (_) {}
+        try { await interaction.followUp({ content: `Chat failed: ${msg}`, ephemeral }); } catch (_) {}
       }
     }
   },

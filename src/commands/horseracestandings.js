@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, escapeMarkdown } = require('discord.js');
 const { getLeaderboard, getStatsForGuild } = require('../utils/horseRaceStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { areRepliesPublic } = require('../utils/botConfigStore');
 
 const PLACE_EMOJIS = ['🥇', '🥈', '🥉'];
 
@@ -21,8 +22,11 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    const preferPublic = areRepliesPublic(interaction.guildId, 'games', false);
+    const ephemeral = !preferPublic;
+
     if (!interaction.inGuild()) {
-      await interaction.reply({ content: 'Horse race standings are only available inside a server.', ephemeral: true });
+      await interaction.reply({ content: 'Horse race standings are only available inside a server.', ephemeral });
       return;
     }
 
@@ -30,7 +34,7 @@ module.exports = {
     const leaderboard = getLeaderboard(guildId);
 
     if (!leaderboard.length) {
-      await interaction.reply({ content: 'No horse races have been recorded here yet — run /horserace to start one!', ephemeral: true });
+      await interaction.reply({ content: 'No horse races have been recorded here yet - run /horserace to start one!', ephemeral });
       return;
     }
 

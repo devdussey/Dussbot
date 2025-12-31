@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { transcribeAttachment, MAX_BYTES } = require('../utils/whisper');
 const { createFieldEmbeds } = require('../utils/embedFields');
+const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('../utils/botConfigStore');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -18,7 +19,15 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    if (!isCategoryEnabled(interaction.guildId, 'ai', true)) {
+      const ephemeral = shouldReplyEphemeral(interaction.guildId, 'ai', true);
+      return interaction.reply({ content: 'AI commands are disabled by a server admin.', ephemeral });
+    }
+
+    const preferPublic = areRepliesPublic(interaction.guildId, 'ai', false);
+    const ephemeral = !preferPublic;
+
+    await interaction.deferReply({ ephemeral });
 
     const attachment = interaction.options.getAttachment('audio');
     if (!attachment) {
@@ -52,7 +61,7 @@ module.exports = {
       await interaction.editReply({ embeds: [first] });
       for (const embed of rest) {
         try {
-          await interaction.followUp({ embeds: [embed], ephemeral: true });
+          await interaction.followUp({ embeds: [embed], ephemeral });
         } catch (_) {}
       }
     } catch (err) {
@@ -60,7 +69,7 @@ module.exports = {
       try {
         await interaction.editReply(`Failed to transcribe audio: ${msg}`);
       } catch (_) {
-        try { await interaction.followUp({ content: `Failed to transcribe audio: ${msg}`, ephemeral: true }); } catch (_) {}
+        try { await interaction.followUp({ content: `Failed to transcribe audio: ${msg}`, ephemeral }); } catch (_) {}
       }
     }
   },

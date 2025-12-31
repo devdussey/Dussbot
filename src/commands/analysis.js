@@ -5,6 +5,7 @@ const coinStore = require('../utils/coinStore');
 const { getRupeeCost } = require('../utils/economyConfig');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { isOwner } = require('../utils/ownerIds');
+const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('../utils/botConfigStore');
 
 const fetch = globalThis.fetch;
 
@@ -195,8 +196,14 @@ module.exports = {
       return interaction.reply({ content: 'Use this command inside a server.', ephemeral: true });
     }
 
+    if (!isCategoryEnabled(interaction.guildId, 'ai', true)) {
+      const ephemeral = shouldReplyEphemeral(interaction.guildId, 'ai', true);
+      return interaction.reply({ content: 'AI commands are disabled by a server admin.', ephemeral });
+    }
+
     const wantsPublicReply = interaction.options.getBoolean('public');
-    const ephemeral = wantsPublicReply !== true;
+    const preferPublic = areRepliesPublic(interaction.guildId, 'ai', false);
+    const ephemeral = typeof wantsPublicReply === 'boolean' ? !wantsPublicReply : !preferPublic;
 
     try { await interaction.deferReply({ ephemeral }); } catch (_) {}
 

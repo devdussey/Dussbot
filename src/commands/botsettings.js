@@ -6,6 +6,13 @@ const {
   DEFAULT_EMBED_COLOUR,
   resolveEmbedColour,
 } = require('../utils/guildColourStore');
+const {
+  getGuildConfig,
+  listCategories,
+  areRepliesPublic,
+  isCategoryEnabled,
+  shouldReplyEphemeral,
+} = require('../utils/botConfigStore');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -16,6 +23,7 @@ module.exports = {
     const guildId = interaction.guildId;
     const storedColour = guildId ? getStoredColour(guildId) : null;
     const effectiveColour = getDefaultColour(guildId);
+    const cfg = getGuildConfig(guildId);
 
     const openAiConfigured = !!(process.env.OPENAI_API_KEY || process.env.OPENAI_API);
     const chatModel = process.env.CHAT_MODEL || 'gpt-4o-mini';
@@ -31,15 +39,6 @@ module.exports = {
         : 'Source: server override via /setdefaultcolour.',
     ];
 
-    const responseLines = [
-      'Defaults for visible/silent replies:',
-      '- Most setup/moderation commands reply privately.',
-      '- /chat: public reply by default; set `private: true` to make it silent.',
-      '- /analysis: private reply by default; set `public: true` to post in-channel.',
-      '- /summarize: public reply (no private toggle).',
-      '- /transcribe: private reply only.',
-    ];
-
     const aiLines = [
       `OpenAI key: ${openAiConfigured ? 'configured' : 'not set'}`,
       `Chat model: ${chatModel}`,
@@ -51,17 +50,25 @@ module.exports = {
       aiLines.push('Analysis persona: custom prompt set');
     }
 
+    const categoryLines = listCategories().map(def => {
+      const state = cfg.categories?.[def.key];
+      const enabled = isCategoryEnabled(guildId, def.key, true);
+      const repliesPublic = areRepliesPublic(guildId, def.key, false);
+      return `${def.label}: ${enabled ? 'Enabled ✅' : 'Disabled ⛔'} | Replies: ${repliesPublic ? 'Public 📢' : 'Private 🙈'}`;
+    });
+
     const embed = new EmbedBuilder()
       .setTitle('Bot Settings')
       .setDescription(interaction.inGuild() ? `Current settings for **${interaction.guild.name}**.` : 'Current bot settings.')
       .addFields(
         { name: 'Embed Colour', value: embedColourLines.join('\n'), inline: false },
-        { name: 'Response Visibility', value: responseLines.join('\n'), inline: false },
+        { name: 'Categories', value: categoryLines.join('\n') || 'No categories configured.', inline: false },
         { name: 'AI Settings', value: aiLines.join('\n'), inline: false },
       )
       .setColor(resolveEmbedColour(guildId, DEFAULT_EMBED_COLOUR))
       .setTimestamp(new Date());
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    const ephemeral = shouldReplyEphemeral(guildId, 'utility', true);
+    return interaction.reply({ embeds: [embed], ephemeral });
   },
 };

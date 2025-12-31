@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const { buildLogConfigView } = require('../utils/logConfigView');
+const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('../utils/botConfigStore');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -16,7 +17,15 @@ module.exports = {
       return interaction.reply({ content: 'Manage Server permission is required to configure logging.', ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    if (!isCategoryEnabled(interaction.guildId, 'logging', true)) {
+      const ephemeral = shouldReplyEphemeral(interaction.guildId, 'logging', true);
+      return interaction.reply({ content: 'Logging commands are disabled by a server admin.', ephemeral });
+    }
+
+    const preferPublic = areRepliesPublic(interaction.guildId, 'logging', false);
+    const ephemeral = !preferPublic;
+
+    await interaction.deferReply({ ephemeral });
 
     const guild = interaction.guild;
     if (!guild) {

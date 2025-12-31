@@ -7,6 +7,8 @@ const logSender = require('../utils/logSender');
 const logChannelTypeStore = require('../utils/logChannelTypeStore');
 const logConfigManager = require('../utils/logConfigManager');
 const logConfigView = require('../utils/logConfigView');
+const botConfigStore = require('../utils/botConfigStore');
+const botConfigView = require('../utils/botConfigView');
 const openPollStore = require('../utils/openPollStore');
 const openPollManager = require('../utils/openPollManager');
 const reactionRoleStore = require('../utils/reactionRoleStore');
@@ -110,6 +112,36 @@ function isActiveBooster(member, premiumRoleId) {
     return hasBoost || hasPremiumRole;
 }
 
+const COMMAND_CATEGORY_MAP = {
+    logconfig: 'logging',
+    logtree: 'logging',
+    dmdiag: 'logging',
+    analysis: 'ai',
+    chat: 'ai',
+    summarize: 'ai',
+    transcribe: 'ai',
+    botsettings: 'utility',
+    ban: 'moderation',
+    kick: 'moderation',
+    mute: 'moderation',
+    jail: 'moderation',
+    isolate: 'moderation',
+    stfu: 'moderation',
+    purge: 'moderation',
+    sentancerush: 'games',
+    wordrush: 'games',
+    horserace: 'games',
+    horseracestandings: 'games',
+    triviacategories: 'games',
+    triviarankings: 'games',
+    triviastart: 'games',
+    triviastop: 'games',
+};
+
+function getCategoryLabel(key) {
+    return botConfigStore.getCategoryDefinition(key)?.label || key || 'This category';
+}
+
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
@@ -129,6 +161,43 @@ module.exports = {
                     'Slash command was invoked but no matching handler is registered.'
                 );
                 return;
+            }
+
+            const categoryKey = COMMAND_CATEGORY_MAP[interaction.commandName];
+            let defaultEphemeral = null;
+            if (categoryKey && interaction.inGuild()) {
+                defaultEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, categoryKey, true);
+                if (!botConfigStore.isCategoryEnabled(interaction.guildId, categoryKey, true)) {
+                    const label = getCategoryLabel(categoryKey);
+                    const content = `${label} commands are disabled by a server admin.`;
+                    try {
+                        await interaction.reply({ content, ephemeral: defaultEphemeral });
+                    } catch (replyError) {
+                        const rcode = replyError?.code;
+                        if (rcode !== 40060 && rcode !== 10062) {
+                            try { await interaction.followUp({ content, ephemeral: true }); } catch (_) {}
+                        }
+                    }
+                    return;
+                }
+
+                const wrapEphemeral = (fn) => (options) => {
+                    if (options === undefined) {
+                        return fn({ ephemeral: defaultEphemeral });
+                    }
+                    if (typeof options === 'string') {
+                        return fn({ content: options, ephemeral: defaultEphemeral });
+                    }
+                    if (options && typeof options === 'object' && !Object.prototype.hasOwnProperty.call(options, 'ephemeral')) {
+                        return fn({ ...options, ephemeral: defaultEphemeral });
+                    }
+                    return fn(options);
+                };
+
+                interaction.defaultEphemeral = defaultEphemeral;
+                interaction.reply = wrapEphemeral(interaction.reply.bind(interaction));
+                interaction.followUp = wrapEphemeral(interaction.followUp.bind(interaction));
+                interaction.deferReply = wrapEphemeral(interaction.deferReply.bind(interaction));
             }
 
             try {
@@ -167,6 +236,23 @@ module.exports = {
 
         // Handle select menus
         if (interaction.isStringSelectMenu()) {
+            if (typeof interaction.customId === 'string' && interaction.customId === 'botconfig:category') {
+                if (!interaction.inGuild()) return;
+                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+                    try { await interaction.reply({ content: 'Manage Server permission is required to configure the bot.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                const utilEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'utility', true);
+                try {
+                    const selectedCategory = interaction.values?.[0] || null;
+                    const view = await botConfigView.buildBotConfigView(interaction.guild, selectedCategory);
+                    await interaction.update({ embeds: [view.embed], components: view.components });
+                } catch (err) {
+                    console.error('Failed to update bot config view via select menu:', err);
+                    try { await interaction.followUp({ content: 'Failed to update bot configuration. Please try again.', ephemeral: utilEphemeral }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId === 'logconfig:category') {
                 if (!interaction.inGuild()) return;
                 if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -338,6 +424,7 @@ module.exports = {
                     try { await interaction.reply({ content: 'Manage Server permission is required to configure logs.', ephemeral: true }); } catch (_) {}
                     return;
                 }
+                const logEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'logging', true);
                 const [, , logType] = interaction.customId.split(':');
                 if (!logType) return;
                 const channelId = interaction.values?.[0];
@@ -347,10 +434,10 @@ module.exports = {
                     const view = await logConfigView.buildLogConfigView(interaction.guild, logType);
                     await interaction.update({ embeds: [view.embed], components: view.components });
                     const friendly = logConfigManager.getFriendlyName(logType);
-                    try { await interaction.followUp({ content: `Set ${friendly} logs to <#${channelId}>.`, ephemeral: true }); } catch (_) {}
+                    try { await interaction.followUp({ content: `Set ${friendly} logs to <#${channelId}>.`, ephemeral: logEphemeral }); } catch (_) {}
                 } catch (err) {
                     console.error('Failed to update log configuration via channel select:', err);
-                    try { await interaction.followUp({ content: 'Failed to assign the selected channel. Please try again.', ephemeral: true }); } catch (_) {}
+                    try { await interaction.followUp({ content: 'Failed to assign the selected channel. Please try again.', ephemeral: logEphemeral }); } catch (_) {}
                 }
                 return;
             }
@@ -358,12 +445,40 @@ module.exports = {
 
         // Handle Verify button
         if (interaction.isButton()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('botconfig:')) {
+                if (!interaction.inGuild()) return;
+                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+                    try { await interaction.reply({ content: 'Manage Server permission is required to configure the bot.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                const utilEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'utility', true);
+                const [, action, categoryKeyRaw] = interaction.customId.split(':');
+                const categoryKey = categoryKeyRaw && categoryKeyRaw !== 'none' ? categoryKeyRaw : null;
+                try {
+                    let view = null;
+                    if (action === 'toggleEnabled' && categoryKey) {
+                        view = await botConfigView.handleToggleEnabled(interaction, categoryKey);
+                    } else if (action === 'toggleReplies' && categoryKey) {
+                        view = await botConfigView.handleToggleReplies(interaction, categoryKey);
+                    } else if (action === 'reset') {
+                        view = await botConfigView.handleReset(interaction, categoryKey);
+                    } else {
+                        return;
+                    }
+                    await interaction.update({ embeds: [view.embed], components: view.components });
+                } catch (err) {
+                    console.error('Failed to update bot configuration via button:', err);
+                    try { await interaction.followUp({ content: 'Failed to update bot configuration. Please try again.', ephemeral: utilEphemeral }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('logconfig:')) {
                 if (!interaction.inGuild()) return;
                 if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
                     try { await interaction.reply({ content: 'Manage Server permission is required to configure logs.', ephemeral: true }); } catch (_) {}
                     return;
                 }
+                const logEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'logging', true);
                 const [, action, logType] = interaction.customId.split(':');
                 if (!logType) return;
                 let followUpContent = null;
@@ -391,10 +506,10 @@ module.exports = {
                 } catch (err) {
                     handledError = true;
                     console.error('Failed to update log configuration via button:', err);
-                    try { await interaction.followUp({ content: 'Failed to update logging configuration. Please try again later.', ephemeral: true }); } catch (_) {}
+                    try { await interaction.followUp({ content: 'Failed to update logging configuration. Please try again later.', ephemeral: logEphemeral }); } catch (_) {}
                 }
                 if (!handledError && followUpContent) {
-                    try { await interaction.followUp({ content: followUpContent, ephemeral: true }); } catch (_) {}
+                    try { await interaction.followUp({ content: followUpContent, ephemeral: logEphemeral }); } catch (_) {}
                 }
                 return;
             }

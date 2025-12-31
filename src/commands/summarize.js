@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, ChannelType } = require('discord.js');
 const fetch = globalThis.fetch;
 const { createFieldEmbeds } = require('../utils/embedFields');
+const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('../utils/botConfigStore');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_API;
 const OPENAI_SUMMARIZE_MODEL = process.env.OPENAI_SUMMARIZE_MODEL
@@ -74,9 +75,17 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    if (!isCategoryEnabled(interaction.guildId, 'ai', true)) {
+      const ephemeral = shouldReplyEphemeral(interaction.guildId, 'ai', true);
+      return interaction.reply({ content: 'AI commands are disabled by a server admin.', ephemeral });
+    }
+
+    const preferPublic = areRepliesPublic(interaction.guildId, 'ai', false);
+    const ephemeral = !preferPublic;
+
     // Try to defer; if another instance already acknowledged, quietly bail.
     try {
-      await interaction.deferReply();
+      await interaction.deferReply({ ephemeral });
     } catch (e) {
       const code = e?.code || e?.status;
       const msg = (e?.message || '').toLowerCase();
@@ -223,14 +232,14 @@ module.exports = {
       const [first, ...rest] = embeds;
       await interaction.editReply({ embeds: [first] });
       for (const embed of rest) {
-        try { await interaction.followUp({ embeds: [embed] }); } catch (_) {}
+        try { await interaction.followUp({ embeds: [embed], ephemeral }); } catch (_) {}
       }
     } catch (err) {
       const msg = err?.message || String(err);
       try {
         await interaction.editReply(`Failed to summarize: ${msg}`);
       } catch (_) {
-        try { await interaction.followUp({ content: `Failed to summarize: ${msg}` }); } catch (_) {}
+        try { await interaction.followUp({ content: `Failed to summarize: ${msg}`, ephemeral }); } catch (_) {}
       }
     }
   },
