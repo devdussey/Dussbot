@@ -7,9 +7,8 @@ module.exports = {
     console.log(`${client.user.tag} is online and ready!`);
     console.log(`Serving ${client.guilds.cache.size} guilds`);
 
-    const isDev = process.env.NODE_ENV === 'development';
-    const presenceName = isDev ? '[DEV] /botinfo • /help' : '/help';
-    const status = isDev ? 'dnd' : 'online';
+    const presenceName = "/help";
+    const status = "online";
 
     try {
       client.user.setPresence({
@@ -34,6 +33,14 @@ module.exports = {
       await scheduler.startAll(client);
     } catch (e) {
       console.warn('Failed to start auto-post scheduler:', e?.message || e);
+    }
+
+    // Start automessage scheduler for timed messages/embeds
+    try {
+      const autoMessageScheduler = require('../utils/autoMessageScheduler');
+      await autoMessageScheduler.startAll(client);
+    } catch (e) {
+      console.warn('Failed to start automessage scheduler:', e?.message || e);
     }
 
     // Start autobump scheduler for listing site bumps

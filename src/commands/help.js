@@ -41,6 +41,7 @@ const categories = {
     { cmd: '/createchannel', desc: 'Quickly create text, voice, or stage channels with optional category', perm: 'Manage Channels' },
     { cmd: '/channelsync', desc: 'Sync child channels with their category permissions', perm: 'Manage Channels' },
     { cmd: '/autorespond toggle/add/remove/list', desc: 'Automate keyword replies with optional channel filters', perm: 'Administrator' },
+    { cmd: '/automessage create/delete/list', desc: 'Schedule automatic hourly messages or embeds', perm: 'Manage Server' },
     { cmd: '/repeat start/stop/list', desc: 'Schedule repeating messages every N seconds (ΓëÑ 60)', perm: 'Administrator' },
     { cmd: '/say', desc: 'Send a custom message as the bot in any channel you specify', perm: 'Administrator' },
   ],
