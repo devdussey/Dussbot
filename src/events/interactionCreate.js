@@ -9,6 +9,8 @@ const logConfigManager = require('../utils/logConfigManager');
 const logConfigView = require('../utils/logConfigView');
 const openPollStore = require('../utils/openPollStore');
 const openPollManager = require('../utils/openPollManager');
+const reactionRoleStore = require('../utils/reactionRoleStore');
+const reactionRoleManager = require('../utils/reactionRoleManager');
 
 async function logCommandUsage(interaction, status, details, color = 0x5865f2) {
     if (!interaction.guildId) return;
@@ -151,6 +153,104 @@ module.exports = {
                             await interaction.reply({ content, ephemeral: true });
                         }
                     } catch (_) {}
+                }
+                return;
+            }
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('rr:select:')) {
+                if (!interaction.inGuild()) return;
+                const parts = interaction.customId.split(':');
+                const panelId = parts[2];
+                if (!panelId) return;
+
+                const panel = reactionRoleStore.getPanel(interaction.guildId, panelId);
+                if (!panel) {
+                    try { await interaction.reply({ content: 'This reaction role panel is no longer available.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                const me = interaction.guild.members.me;
+                if (!me?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
+                    try { await interaction.reply({ content: 'I am missing Manage Roles to update your roles.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                let member = null;
+                try { member = await interaction.guild.members.fetch(interaction.user.id); } catch (_) {}
+                if (!member) {
+                    try { await interaction.reply({ content: 'Could not load your member data.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                try { await interaction.deferUpdate(); } catch (_) {}
+
+                const panelRoleIds = Array.isArray(panel.roleIds) ? panel.roleIds : [];
+                const selectedRaw = Array.isArray(interaction.values) ? interaction.values : [];
+                const selected = selectedRaw.filter(id => id !== 'none' && panelRoleIds.includes(id));
+
+                let toAdd = [];
+                let toRemove = [];
+
+                if (panel.multi) {
+                    for (const id of selected) {
+                        if (member.roles.cache.has(id)) toRemove.push(id);
+                        else toAdd.push(id);
+                    }
+                } else {
+                    const selectedId = selected[0] || null;
+                    if (!selectedId) {
+                        toRemove = panelRoleIds.filter(id => member.roles.cache.has(id));
+                    } else if (member.roles.cache.has(selectedId)) {
+                        toRemove = [selectedId];
+                    } else {
+                        toAdd = [selectedId];
+                        toRemove = panelRoleIds.filter(id => id !== selectedId && member.roles.cache.has(id));
+                    }
+                }
+
+                const blockedAdd = [];
+                const blockedRemove = [];
+                const canManage = (roleId) => {
+                    const role = interaction.guild.roles.cache.get(roleId);
+                    if (!role || role.managed) return false;
+                    return me.roles.highest.comparePositionTo(role) > 0;
+                };
+
+                toAdd = toAdd.filter(id => {
+                    if (!canManage(id)) {
+                        blockedAdd.push(id);
+                        return false;
+                    }
+                    return true;
+                });
+                toRemove = toRemove.filter(id => {
+                    if (!canManage(id)) {
+                        blockedRemove.push(id);
+                        return false;
+                    }
+                    return true;
+                });
+
+                let updateError = null;
+                try {
+                    if (toRemove.length) await member.roles.remove(toRemove, 'Reaction role selection');
+                    if (toAdd.length) await member.roles.add(toAdd, 'Reaction role selection');
+                } catch (err) {
+                    console.error('Failed to update reaction roles:', err);
+                    updateError = 'Failed to update your roles. Please try again.';
+                }
+
+                const view = reactionRoleManager.buildMenuRow(panel, interaction.guild);
+                const merged = reactionRoleManager.upsertMenuRow(interaction.message.components, view.customId, view.row);
+                if (merged.ok) {
+                    try { await interaction.message.edit({ components: merged.rows }); } catch (_) {}
+                }
+
+                if (updateError || blockedAdd.length || blockedRemove.length) {
+                    const notes = [];
+                    if (updateError) notes.push(updateError);
+                    if (blockedAdd.length) notes.push('Some selected roles could not be added due to role hierarchy.');
+                    if (blockedRemove.length) notes.push('Some selected roles could not be removed due to role hierarchy.');
+                    try { await interaction.followUp({ content: notes.join(' '), ephemeral: true }); } catch (_) {}
                 }
                 return;
             }
