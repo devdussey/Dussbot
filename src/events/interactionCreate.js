@@ -479,7 +479,12 @@ module.exports = {
                 const merged = reactionRoleManager.upsertMenuRow(interaction.message.components, view.customId, view.row);
 
                 const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild);
-                const embedMerge = reactionRoleManager.mergeSummaryEmbed(interaction.message.embeds, summary.embed, panel);
+                const embedMerge = reactionRoleManager.mergeSummaryEmbed(
+                    interaction.message.embeds,
+                    summary.embed,
+                    panel,
+                    { dropMediaEmbeds: true },
+                );
 
                 const editPayload = {};
                 if (merged.ok) editPayload.components = merged.rows;

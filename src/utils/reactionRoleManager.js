@@ -14,6 +14,15 @@ function normaliseEmbeds(embeds) {
     .filter(Boolean);
 }
 
+function hasMeaningfulText(embed) {
+  if (!embed) return false;
+  if (embed.title || embed.description) return true;
+  if (Array.isArray(embed.fields) && embed.fields.length) return true;
+  if (embed.footer?.text) return true;
+  if (embed.author?.name) return true;
+  return false;
+}
+
 function rowHasCustomId(row, customId) {
   const components = Array.isArray(row?.components) ? row.components : [];
   return components.some(component => {
@@ -150,8 +159,15 @@ function isSummaryEmbed(embed, panelId, roleIds) {
   return false;
 }
 
-function mergeSummaryEmbed(existingEmbeds, summaryEmbed, panel) {
-  const embeds = normaliseEmbeds(existingEmbeds);
+function mergeSummaryEmbed(existingEmbeds, summaryEmbed, panel, opts = {}) {
+  const dropMediaEmbeds = opts.dropMediaEmbeds === true;
+  const embeds = normaliseEmbeds(existingEmbeds).filter(embed => {
+    if (!dropMediaEmbeds) return true;
+    const hasMedia = Boolean(embed?.image || embed?.video || embed?.thumbnail);
+    const hasText = hasMeaningfulText(embed);
+    // Drop pure media previews (e.g., link/attachment previews) to avoid double banners.
+    return !(hasMedia && !hasText);
+  });
   const summaryJson = typeof summaryEmbed?.toJSON === 'function' ? summaryEmbed.toJSON() : summaryEmbed;
   if (!summaryJson) return { ok: false, error: 'invalid_summary', embeds };
   const panelId = panel?.id || panel;
