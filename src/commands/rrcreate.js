@@ -175,10 +175,9 @@ module.exports = {
       }
     }
 
-    // Preserve existing embeds (e.g., banner images) when attaching to an existing message.
-    const baseEmbeds = targetMessage.embeds || [];
-    const hasMediaEmbed = baseEmbeds.some(e => e?.image || e?.video || e?.thumbnail || e?.data?.image || e?.data?.video || e?.data?.thumbnail);
-    const shouldDropAttachments = Boolean(messageId && targetMessage.attachments?.size && hasMediaEmbed);
+    // Preserve the original appearance: if the message has attachments, rely on them and clear embeds to avoid duplicate previews.
+    const hasAttachments = messageId && targetMessage.attachments?.size > 0;
+    const baseEmbeds = hasAttachments ? [] : (targetMessage.embeds || []);
 
     let panel = null;
     try {
@@ -204,7 +203,6 @@ module.exports = {
 
     try {
       const editPayload = { components: merged.rows, embeds: baseEmbeds };
-      if (shouldDropAttachments) editPayload.attachments = [];
       await targetMessage.edit(editPayload);
     } catch (err) {
       reactionRoleStore.removePanel(interaction.guildId, panel.id);
