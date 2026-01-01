@@ -13,6 +13,14 @@ function sanitiseUrl(input) {
     }
 }
 
+function isImageAttachment(attachment) {
+    if (!attachment) return false;
+    const contentType = (attachment.contentType || '').toLowerCase();
+    if (contentType.startsWith('image/')) return true;
+    const name = (attachment.name || '').toLowerCase();
+    return /\.(png|jpe?g|gif|webp|bmp|tiff)$/i.test(name);
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('embed')
@@ -51,6 +59,12 @@ module.exports = {
                         .setDescription('Image URL')
                         .setRequired(false)
                 )
+                .addAttachmentOption(option =>
+                    option
+                        .setName('image_upload')
+                        .setDescription('Upload an image instead of a URL')
+                        .setRequired(false)
+                )
                 .addStringOption(option =>
                     option
                         .setName('thumbnail')
@@ -81,6 +95,7 @@ module.exports = {
             const description = interaction.options.getString('description');
             const colorInput = interaction.options.getString('color');
             const imageInput = interaction.options.getString('image');
+            const imageAttachment = interaction.options.getAttachment('image_upload');
             const thumbnailInput = interaction.options.getString('thumbnail');
             const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
 
@@ -88,18 +103,33 @@ module.exports = {
                 const colour = parseColorInput(colorInput, 0x5865f2);
                 const embed = new EmbedBuilder()
                     .setColor(colour);
+                const files = [];
 
                 if (title) embed.setTitle(title.slice(0, 256));
                 if (description) embed.setDescription(description.slice(0, 4096));
 
-                const image = sanitiseUrl(imageInput);
-                if (image) embed.setImage(image);
+                if (imageAttachment) {
+                    if (!isImageAttachment(imageAttachment)) {
+                        return interaction.editReply({
+                            content: '? Please upload an image file (png, jpg, gif, webp, bmp, or tiff).'
+                        });
+                    }
+                    const filename = imageAttachment.name || 'embed-image';
+                    files.push({ attachment: imageAttachment.url, name: filename });
+                    embed.setImage(`attachment://${filename}`);
+                } else {
+                    const image = sanitiseUrl(imageInput);
+                    if (image) embed.setImage(image);
+                }
 
                 const thumb = sanitiseUrl(thumbnailInput);
                 if (thumb) embed.setThumbnail(thumb);
 
                 // Send the embed to the chosen channel
-                await targetChannel.send({ embeds: [embed] });
+                await targetChannel.send({
+                    embeds: [embed],
+                    files: files.length ? files : undefined,
+                });
 
                 // Let the user know privately it worked
                 await interaction.editReply({
