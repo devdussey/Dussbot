@@ -478,33 +478,16 @@ module.exports = {
                 const view = reactionRoleManager.buildMenuRow(panel, interaction.guild);
                 const merged = reactionRoleManager.upsertMenuRow(interaction.message.components, view.customId, view.row);
 
-                let embedMerge = { ok: true, embeds: interaction.message.embeds || [] };
-                if (panel.showCounts !== false) {
-                    const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild);
-                    embedMerge = reactionRoleManager.mergeSummaryEmbed(
-                        interaction.message.embeds,
-                        summary.embed,
-                        panel,
-                        {},
-                    );
-                }
-
                 const editPayload = {};
                 if (merged.ok) editPayload.components = merged.rows;
-                if (embedMerge.ok) editPayload.embeds = embedMerge.embeds;
+                // Leave embeds unchanged; only update components.
+                if (interaction.message.embeds) editPayload.embeds = interaction.message.embeds;
 
                 if (Object.keys(editPayload).length) {
                     try { await interaction.message.edit(editPayload); } catch (_) {}
                 }
 
                 const notes = [];
-                if (panel.showCounts === false) {
-                    // No summary embed; just surface any role update issues.
-                } else if (!embedMerge.ok && embedMerge.error === 'max_embeds') {
-                    notes.push('Cannot update the summary embed because the message already has 10 embeds.');
-                } else if (!embedMerge.ok) {
-                    notes.push('Could not refresh the summary embed for this panel.');
-                }
                 if (updateError) notes.push(updateError);
                 if (blockedAdd.length) notes.push('Some selected roles could not be added due to role hierarchy.');
                 if (blockedRemove.length) notes.push('Some selected roles could not be removed due to role hierarchy.');
@@ -527,13 +510,7 @@ module.exports = {
                     content: notes.length ? `${selectionLine} ${notes.join(' ')}` : selectionLine,
                     ephemeral: true,
                 };
-                if (panel.showCounts !== false) {
-                    const personalSummary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, {
-                        highlightRoleIds: personalRoles,
-                        title: 'Your reaction roles',
-                    });
-                    followUpPayload.embeds = [personalSummary.embed];
-                }
+                // No summary embed; just a silent ephemeral text follow-up.
 
                 try { await interaction.followUp(followUpPayload); } catch (_) {}
                 return;

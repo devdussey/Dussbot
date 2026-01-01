@@ -94,7 +94,6 @@ function sanitisePanel(panel) {
   cleaned.roleIds = sanitiseRoleIds(cleaned.roleIds);
   cleaned.emojis = sanitiseEmojiMap(cleaned.emojis, cleaned.roleIds);
   cleaned.multi = cleaned.multi === true;
-  cleaned.showCounts = cleaned.showCounts === false ? false : true;
   cleaned.createdBy = String(cleaned.createdBy || '').trim();
   cleaned.createdAt = Number.isFinite(cleaned.createdAt) ? cleaned.createdAt : Date.now();
   return cleaned.id && cleaned.guildId && cleaned.channelId && cleaned.messageId ? cleaned : null;
@@ -111,7 +110,6 @@ function createPanel(guildId, panel) {
     roleIds: panel?.roleIds,
     emojis: panel?.emojis,
     multi: panel?.multi === true,
-    showCounts: panel?.showCounts !== false,
     createdBy: panel?.createdBy,
     createdAt: Date.now(),
   });
