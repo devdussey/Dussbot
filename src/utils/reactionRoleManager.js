@@ -166,9 +166,12 @@ function isSummaryEmbed(embed, panelId, roleIds) {
 function mergeSummaryEmbed(existingEmbeds, summaryEmbed, panel, opts = {}) {
   const replaceAll = opts.replaceAll === true;
   const combineWithMediaEmbed = opts.combineWithMediaEmbed === true && !replaceAll;
+  const useFirstMediaEmbed = opts.useFirstMediaEmbed === true;
   const dropMediaEmbeds = combineWithMediaEmbed ? false : opts.dropMediaEmbeds === true;
 
   let embeds = normaliseEmbeds(existingEmbeds);
+  const mediaSource = useFirstMediaEmbed ? embeds.find(hasMedia) || null : null;
+
   if (!replaceAll && dropMediaEmbeds) {
     embeds = embeds.filter(embed => {
       const media = hasMedia(embed);
@@ -179,6 +182,13 @@ function mergeSummaryEmbed(existingEmbeds, summaryEmbed, panel, opts = {}) {
   }
   const summaryJson = typeof summaryEmbed?.toJSON === 'function' ? summaryEmbed.toJSON() : summaryEmbed;
   if (!summaryJson) return { ok: false, error: 'invalid_summary', embeds };
+
+  if (mediaSource) {
+    if (!summaryJson.image && mediaSource.image) summaryJson.image = mediaSource.image;
+    if (!summaryJson.image && !mediaSource.image && mediaSource.thumbnail) summaryJson.image = mediaSource.thumbnail;
+    if (!summaryJson.color && mediaSource.color) summaryJson.color = mediaSource.color;
+  }
+
   const panelId = panel?.id || panel;
   const roleIds = Array.isArray(panel?.roleIds) ? panel.roleIds : [];
   const filtered = replaceAll ? [] : embeds.filter(e => !isSummaryEmbed(e, panelId, roleIds));
