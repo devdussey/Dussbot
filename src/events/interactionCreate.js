@@ -478,13 +478,16 @@ module.exports = {
                 const view = reactionRoleManager.buildMenuRow(panel, interaction.guild);
                 const merged = reactionRoleManager.upsertMenuRow(interaction.message.components, view.customId, view.row);
 
-                const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild);
-                const embedMerge = reactionRoleManager.mergeSummaryEmbed(
-                    interaction.message.embeds,
-                    summary.embed,
-                    panel,
-                    { replaceAll: true, useFirstMediaEmbed: true },
-                );
+                let embedMerge = { ok: true, embeds: [] };
+                if (panel.showCounts !== false) {
+                    const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild);
+                    embedMerge = reactionRoleManager.mergeSummaryEmbed(
+                        interaction.message.embeds,
+                        summary.embed,
+                        panel,
+                        { replaceAll: true, useFirstMediaEmbed: true },
+                    );
+                }
 
                 const editPayload = {};
                 if (merged.ok) editPayload.components = merged.rows;
@@ -495,7 +498,9 @@ module.exports = {
                 }
 
                 const notes = [];
-                if (!embedMerge.ok && embedMerge.error === 'max_embeds') {
+                if (panel.showCounts === false) {
+                    // No summary embed; just surface any role update issues.
+                } else if (!embedMerge.ok && embedMerge.error === 'max_embeds') {
                     notes.push('Cannot update the summary embed because the message already has 10 embeds.');
                 } else if (!embedMerge.ok) {
                     notes.push('Could not refresh the summary embed for this panel.');
@@ -515,19 +520,20 @@ module.exports = {
                     for (const id of toRemove) finalRoleSet.delete(id);
                 }
                 const personalRoles = panelRoleIds.filter(id => finalRoleSet.has(id));
-                const personalSummary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, {
-                    highlightRoleIds: personalRoles,
-                    title: 'Your reaction roles',
-                });
-
                 const selectionLine = personalRoles.length
                     ? `You have selected: ${personalRoles.map(id => `<@&${id}>`).join(', ')}.`
                     : 'You have selected: none.';
                 const followUpPayload = {
                     content: notes.length ? `${selectionLine} ${notes.join(' ')}` : selectionLine,
-                    embeds: [personalSummary.embed],
                     ephemeral: true,
                 };
+                if (panel.showCounts !== false) {
+                    const personalSummary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, {
+                        highlightRoleIds: personalRoles,
+                        title: 'Your reaction roles',
+                    });
+                    followUpPayload.embeds = [personalSummary.embed];
+                }
 
                 try { await interaction.followUp(followUpPayload); } catch (_) {}
                 return;

@@ -66,6 +66,11 @@ module.exports = {
       opt
         .setName('allow_multiple')
         .setDescription('Allow selecting multiple roles (default on)')
+    )
+    .addBooleanOption(opt =>
+      opt
+        .setName('show_counts')
+        .setDescription('Include role counts and percentages in the embed (default on)')
     ),
 
   async execute(interaction) {
@@ -139,6 +144,8 @@ module.exports = {
 
     const allowMultiple = interaction.options.getBoolean('allow_multiple');
     const multi = allowMultiple === null ? true : allowMultiple;
+    const showCountsOpt = interaction.options.getBoolean('show_counts');
+    const showCounts = showCountsOpt === null ? true : showCountsOpt;
 
     const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
     if (!targetChannel || !targetChannel.isTextBased?.()) {
@@ -183,6 +190,7 @@ module.exports = {
         roleIds: validRoles.map(role => role.id),
         emojis: emojiMap,
         multi,
+        showCounts,
         createdBy: interaction.user.id,
       });
     } catch (err) {
@@ -197,23 +205,26 @@ module.exports = {
       return interaction.editReply({ content: 'That message already has the maximum number of component rows.' });
     }
 
-    const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild);
-    const embedMerge = reactionRoleManager.mergeSummaryEmbed(
-      targetMessage.embeds,
-      summary.embed,
-      panel,
-      { replaceAll: true, useFirstMediaEmbed: true },
-    );
-    if (!embedMerge.ok) {
-      reactionRoleStore.removePanel(interaction.guildId, panel.id);
-      const reason = embedMerge.error === 'max_embeds'
-        ? 'That message already has 10 embeds. Remove one before adding reaction roles.'
-        : 'Failed to add the reaction roles summary embed.';
-      return interaction.editReply({ content: reason });
+    let embedMerge = { ok: true, embeds: [] };
+    if (showCounts) {
+      const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild);
+      embedMerge = reactionRoleManager.mergeSummaryEmbed(
+        targetMessage.embeds,
+        summary.embed,
+        panel,
+        { replaceAll: true, useFirstMediaEmbed: true },
+      );
+      if (!embedMerge.ok) {
+        reactionRoleStore.removePanel(interaction.guildId, panel.id);
+        const reason = embedMerge.error === 'max_embeds'
+          ? 'That message already has 10 embeds. Remove one before adding reaction roles.'
+          : 'Failed to add the reaction roles summary embed.';
+        return interaction.editReply({ content: reason });
+      }
     }
 
     try {
-      await targetMessage.edit({ components: merged.rows, embeds: embedMerge.embeds });
+      await targetMessage.edit({ components: merged.rows, embeds: embedMerge.embeds || [] });
     } catch (err) {
       reactionRoleStore.removePanel(interaction.guildId, panel.id);
       console.error('Failed to attach reaction role menu:', err);
