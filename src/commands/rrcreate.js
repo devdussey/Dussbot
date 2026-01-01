@@ -175,6 +175,9 @@ module.exports = {
       }
     }
 
+    // Preserve any existing embeds (e.g., banner images) when attaching a menu to an existing message.
+    const baseEmbeds = targetMessage.embeds || [];
+
     let panel = null;
     try {
       panel = reactionRoleStore.createPanel(interaction.guildId, {
@@ -198,7 +201,7 @@ module.exports = {
     }
 
     try {
-      await targetMessage.edit({ components: merged.rows, embeds: targetMessage.embeds });
+      await targetMessage.edit({ components: merged.rows, embeds: baseEmbeds });
     } catch (err) {
       reactionRoleStore.removePanel(interaction.guildId, panel.id);
       console.error('Failed to attach reaction role menu:', err);
