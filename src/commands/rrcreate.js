@@ -166,7 +166,7 @@ module.exports = {
     } else {
       try {
         targetMessage = await targetChannel.send({
-          content: 'Select your roles from the menu below.',
+          content: '\u200b',
           allowedMentions: { parse: [] },
         });
       } catch (err) {
