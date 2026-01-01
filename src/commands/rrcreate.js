@@ -2,6 +2,7 @@ const { SlashCommandBuilder, PermissionsBitField, ChannelType } = require('disco
 const logger = require('../utils/securityLogger');
 const reactionRoleStore = require('../utils/reactionRoleStore');
 const reactionRoleManager = require('../utils/reactionRoleManager');
+const { parseColorInput } = require('../utils/colorParser');
 
 function parseRoleIds(input) {
   const matches = String(input || '').match(/\d{17,20}/g);
@@ -66,6 +67,26 @@ module.exports = {
       opt
         .setName('allow_multiple')
         .setDescription('Allow selecting multiple roles (default on)')
+    )
+    .addBooleanOption(opt =>
+      opt
+        .setName('embed')
+        .setDescription('Include an embed with the menu (default: true)')
+    )
+    .addStringOption(opt =>
+      opt
+        .setName('embed_colour')
+        .setDescription('Embed colour (hex or name). Default: #00f9ff')
+    )
+    .addStringOption(opt =>
+      opt
+        .setName('embed_image_url')
+        .setDescription('Image URL to show in the embed')
+    )
+    .addAttachmentOption(opt =>
+      opt
+        .setName('embed_image_upload')
+        .setDescription('Upload an image to show in the embed')
     ),
 
   async execute(interaction) {
@@ -139,6 +160,11 @@ module.exports = {
 
     const allowMultiple = interaction.options.getBoolean('allow_multiple');
     const multi = allowMultiple === null ? true : allowMultiple;
+    const embedOpt = interaction.options.getBoolean('embed');
+    const useEmbed = embedOpt !== false;
+    const embedColourInput = interaction.options.getString('embed_colour');
+    const embedImageUrlInput = (interaction.options.getString('embed_image_url') || '').trim();
+    const embedImageUpload = interaction.options.getAttachment('embed_image_upload') || null;
 
     const targetChannel = interaction.options.getChannel('channel') || interaction.channel;
     if (!targetChannel || !targetChannel.isTextBased?.()) {
@@ -147,6 +173,8 @@ module.exports = {
 
     const messageId = interaction.options.getString('message_id');
     let targetMessage = null;
+    let newEmbed = null;
+    let embedFiles = [];
 
     if (messageId) {
       const existingPanel = reactionRoleStore.findPanelByMessageId(interaction.guildId, messageId);
@@ -175,9 +203,35 @@ module.exports = {
       }
     }
 
-    // Preserve the original appearance: if the message has attachments, rely on them and clear embeds to avoid duplicate previews.
+    if (useEmbed) {
+      let imageUrl = null;
+      if (embedImageUpload && embedImageUpload.contentType?.startsWith('image/')) {
+        const fileName = embedImageUpload.name || 'image.png';
+        imageUrl = `attachment://${fileName}`;
+        embedFiles = [{ attachment: embedImageUpload.url, name: fileName }];
+      } else if (embedImageUrlInput) {
+        try {
+          const parsedUrl = new URL(embedImageUrlInput);
+          if (['http:', 'https:'].includes(parsedUrl.protocol)) {
+            imageUrl = parsedUrl.toString();
+          }
+        } catch (_) {}
+      }
+
+      const colour = parseColorInput(embedColourInput, 0x00f9ff);
+      const { EmbedBuilder } = require('discord.js');
+      newEmbed = new EmbedBuilder().setColor(colour);
+      if (imageUrl) newEmbed.setImage(imageUrl);
+      if (!imageUrl && targetMessage.embeds?.length) {
+        // Reuse existing first embed if provided and no new image given.
+        newEmbed = null;
+      }
+    }
+
+    // Build final embeds: if user requested an embed and provided one, use it; otherwise respect existing embeds unless attachments-only.
     const hasAttachments = messageId && targetMessage.attachments?.size > 0;
-    const baseEmbeds = hasAttachments ? [] : (targetMessage.embeds || []);
+    const baseEmbeds = (!useEmbed || hasAttachments) ? [] : (targetMessage.embeds || []);
+    const embedsToUse = newEmbed ? [newEmbed] : baseEmbeds;
 
     let panel = null;
     try {
@@ -202,7 +256,8 @@ module.exports = {
     }
 
     try {
-      const editPayload = { components: merged.rows, embeds: baseEmbeds };
+      const editPayload = { components: merged.rows, embeds: embedsToUse };
+      if (embedFiles.length) editPayload.files = embedFiles;
       await targetMessage.edit(editPayload);
     } catch (err) {
       reactionRoleStore.removePanel(interaction.guildId, panel.id);
