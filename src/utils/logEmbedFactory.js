@@ -44,6 +44,13 @@ function buildLogEmbed({ action, target, actor, reason, color = DEFAULT_COLOR, t
   if (avatarUrl) {
     embed.setThumbnail(avatarUrl);
   }
+  const footerIcon = resolveAvatar(actor);
+  if (actor) {
+    embed.setFooter({
+      text: `Performed by ${formatPerson(actor, 'System')}`,
+      iconURL: footerIcon || undefined,
+    });
+  }
   return embed;
 }
 

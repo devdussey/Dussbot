@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder, StickerFormatType } = require('discord.js');
 const tokenStore = require('../utils/messageTokenStore');
 const coinStore = require('../utils/coinStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
@@ -7,6 +7,7 @@ const modLogger = require('../utils/modLogger');
 const { getSmiteCost } = require('../utils/economyConfig');
 
 const BAG_LABEL = 'Smite';
+const DEFAULT_SMITE_IMAGE_URL = process.env.SMITE_IMAGE_URL || process.env.SMITE_DEFAULT_IMAGE_URL || null;
 const MAX_MINUTES = 5;
 
 function formatCoins(value) {
@@ -41,6 +42,11 @@ module.exports = {
         .setName('reason')
         .setDescription('Reason for spending the Smite (optional, max 200 characters).')
         .setMaxLength(200)
+    )
+    .addStringOption(opt =>
+      opt
+        .setName('sticker')
+        .setDescription('Sticker name or ID from this server to display on the Smite embed')
     ),
 
   async execute(interaction) {
@@ -134,6 +140,7 @@ module.exports = {
 
     const reasonRaw = (interaction.options.getString('reason') || '').trim();
     const reason = reasonRaw.slice(0, 200);
+    const stickerInput = (interaction.options.getString('sticker') || '').trim();
 
     const consumed = await tokenStore.consumeToken(guildId, userId);
     if (!consumed) {
@@ -163,11 +170,34 @@ module.exports = {
       await interaction.editReply({ content: parts.join(' ') });
 
       try {
+        let stickerUrl = null;
+        if (stickerInput && interaction.guild) {
+          const stickers = interaction.guild.stickers?.cache?.size
+            ? interaction.guild.stickers.cache
+            : await interaction.guild.stickers.fetch().catch(() => null);
+          const sticker = stickers
+            ? stickers.find(s =>
+              s.id === stickerInput ||
+              s.name.toLowerCase() === stickerInput.toLowerCase()
+            )
+            : null;
+          if (sticker && sticker.format !== StickerFormatType.Lottie) {
+            stickerUrl = sticker.url;
+          }
+        }
+
         const embed = new EmbedBuilder()
           .setColor(0xe74c3c)
           .setDescription(
             `${interaction.user.username} is tired of ${targetUser.username} bullshit for ${formatMinutes(durationMinutes)}\nReason: ${humanReason}`
-          );
+          )
+          .setThumbnail(targetUser.displayAvatarURL({ extension: 'png', size: 256 }))
+          .setFooter({
+            text: `Performed by ${interaction.user.tag}`,
+            iconURL: interaction.user.displayAvatarURL({ extension: 'png', size: 128 }),
+          });
+        const imageUrl = stickerUrl || DEFAULT_SMITE_IMAGE_URL;
+        if (imageUrl) embed.setImage(imageUrl);
         await interaction.channel?.send({ embeds: [embed] });
       } catch (_) {}
 
@@ -180,7 +210,8 @@ module.exports = {
           extraFields.push({ name: 'Coins Spent', value: `${formatCoins(smiteCost)} coin${smiteCost === 1 ? '' : 's'}`, inline: true });
         }
         await modLogger.log(interaction, 'Smite Timeout', {
-          target: `${targetUser.tag} (${targetUser.id})`,
+          target: targetUser,
+          thumbnailTarget: targetUser,
           reason: humanReason,
           color: 0x2ecc71,
           extraFields,
