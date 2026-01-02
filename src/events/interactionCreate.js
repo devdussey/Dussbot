@@ -17,6 +17,7 @@ const boosterManager = require('../utils/boosterRoleManager');
 const boosterStore = require('../utils/boosterRoleStore');
 const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const vanityRoleCommand = require('../commands/vanityrole');
+const roleCleanCommand = require('../commands/roleclean');
 const { isOwner } = require('../utils/ownerIds');
 
 const MAX_ERROR_STACK = 3500;
@@ -129,6 +130,7 @@ const COMMAND_CATEGORY_MAP = {
     isolate: 'moderation',
     stfu: 'moderation',
     purge: 'moderation',
+    roleclean: 'moderation',
     sentancerush: 'games',
     wordrush: 'games',
     horserace: 'games',
@@ -161,11 +163,12 @@ const ADMIN_COMMANDS = new Set([
     'confessconfig',
     'createchannel',
     'createrole',
-    'deleterole',
-    'embed',
-    'fetchmessage',
+  'deleterole',
+  'embed',
+  'fetchmessage',
   'giverupee',
   'isolate',
+  'roleclean',
   'jail',
   'logtree',
   'logconfig',
@@ -612,6 +615,15 @@ module.exports = {
                 }
                 if (!handledError && followUpContent) {
                     try { await interaction.followUp({ content: followUpContent, ephemeral: logEphemeral }); } catch (_) {}
+                }
+                return;
+            }
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('roleclean:')) {
+                if (!interaction.inGuild()) return;
+                try {
+                    await roleCleanCommand.handleRoleCleanButton(interaction);
+                } catch (err) {
+                    console.error('Failed to handle roleclean button:', err);
                 }
                 return;
             }

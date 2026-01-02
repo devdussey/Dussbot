@@ -25,6 +25,7 @@ const categories = {
     { cmd: '/verify setup/status/disable/repost', desc: 'Set up button verification with optional account-age rules', perm: 'Manage Server' },
     { cmd: '/createrole', desc: 'Create a role with colour, hoist, mentionable, and position options', perm: 'Manage Roles' },
     { cmd: '/deleterole', desc: 'Delete a role from the server', perm: 'Manage Roles' },
+    { cmd: '/roleclean', desc: 'Find roles with zero members and delete them quickly', perm: 'Manage Roles' },
     { cmd: '/brconfig', desc: 'Post the booster role configuration panel', perm: 'Manage Server' },
   ],
   'Logging & Security': [
