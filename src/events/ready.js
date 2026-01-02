@@ -27,14 +27,6 @@ module.exports = {
     console.warn('Failed to install error console relay:', e?.message || e);
   }
 
-    // Start auto-post scheduler for any saved repeat jobs
-    try {
-      const scheduler = require('../utils/autoPostScheduler');
-      await scheduler.startAll(client);
-    } catch (e) {
-      console.warn('Failed to start auto-post scheduler:', e?.message || e);
-    }
-
     // Start automessage scheduler for timed messages/embeds
     try {
       const autoMessageScheduler = require('../utils/autoMessageScheduler');

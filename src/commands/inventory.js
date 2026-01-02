@@ -50,7 +50,7 @@ function buildInventoryEmbed({
     .setColor(resolveEmbedColour(guildId, 0xf1c40f))
     .setTitle(title)
     .setDescription(
-      'Your sacred belongings, tallied and catalogued. Spend coins in /store to expand your arsenal.'
+      'Your sacred belongings, tallied and catalogued. Spend coins to expand your arsenal.'
     )
     .addFields(
       {
