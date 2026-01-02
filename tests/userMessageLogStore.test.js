@@ -92,3 +92,28 @@ test('recordMessagesBulk stores messages in chronological order', async () => {
     assert.equal(logs[2].id, 'm3');
   });
 });
+
+test('searchWordUsage counts matches per user and tracks author tags', async () => {
+  await withTempStore(async store => {
+    const guildId = 'search-guild';
+    await store.recordMessagesBulk(guildId, 'user-1', [
+      { id: 'a', content: 'Hello there friend', createdTimestamp: 1000, author: { id: 'user-1', tag: 'Alpha#0001' } },
+      { id: 'b', content: 'No keyword here', createdTimestamp: 1100, author: { id: 'user-1', tag: 'Alpha#0001' } },
+      { id: 'c', content: 'HELLO again hello', createdTimestamp: 1200, author: { id: 'user-1', tag: 'Alpha#0001' } },
+    ]);
+    await store.recordMessagesBulk(guildId, 'user-2', [
+      { id: 'd', content: 'hello-world is hyphenated', createdTimestamp: 1300, author: { id: 'user-2', tag: 'Beta#0002' } },
+      { id: 'e', content: 'shellow is not counted', createdTimestamp: 1400, author: { id: 'user-2', tag: 'Beta#0002' } },
+    ]);
+
+    const result = store.searchWordUsage(guildId, 'hello');
+    assert.equal(result.totalMatches, 4);
+    assert.equal(result.users.length, 2);
+    assert.equal(result.users[0].userId, 'user-1');
+    assert.equal(result.users[0].count, 3);
+    assert.equal(result.users[0].authorTag, 'Alpha#0001');
+    assert.equal(result.users[1].userId, 'user-2');
+    assert.equal(result.users[1].count, 1);
+    assert.equal(result.users[1].authorTag, 'Beta#0002');
+  });
+});

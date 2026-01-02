@@ -65,7 +65,7 @@ function sanitizeContent(content) {
     .replace(/<#(\d+)>/g, '[#channel:$1]');
 }
 
-function buildEntryFromMessage(message) {
+function buildEntryFromMessage(message, userId) {
   if (!message) return null;
   const contentRaw = message?.content || '';
   let cleaned = sanitizeContent(contentRaw).slice(0, 1900);
@@ -93,6 +93,9 @@ function buildEntryFromMessage(message) {
     }
   }
 
+  const authorId = message?.author?.id || userId || null;
+  const authorTag = message?.author?.tag || message?.author?.username || message?.author?.globalName || null;
+
   return {
     id: message?.id || null,
     channelId: message?.channelId || null,
@@ -100,6 +103,8 @@ function buildEntryFromMessage(message) {
     createdTimestamp: Number.isFinite(message?.createdTimestamp)
       ? Number(message.createdTimestamp)
       : Date.now(),
+    userId: authorId,
+    authorTag,
   };
 }
 
@@ -111,7 +116,7 @@ function trimList(list) {
 
 async function recordMessage(guildId, userId, message) {
   if (!guildId || !userId) return;
-  const entry = buildEntryFromMessage(message);
+  const entry = buildEntryFromMessage(message, userId);
   if (!entry) return;
 
   const list = ensureGuildUser(guildId, userId);
@@ -125,7 +130,7 @@ async function recordMessagesBulk(guildId, userId, messages) {
   if (!Array.isArray(messages) || !messages.length) return { added: 0 };
 
   const entries = messages
-    .map((message) => buildEntryFromMessage(message))
+    .map((message) => buildEntryFromMessage(message, userId))
     .filter((entry) => entry && typeof entry === 'object');
   if (!entries.length) return { added: 0 };
 
@@ -150,9 +155,64 @@ function getRecentMessages(guildId, userId, limit = MAX_PER_USER) {
   return slice.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildWordRegex(word) {
+  const trimmed = (word || '').trim();
+  if (!trimmed) return null;
+  const escaped = escapeRegExp(trimmed);
+  try {
+    return new RegExp(`\\b${escaped}\\b`, 'gi');
+  } catch (_) {
+    return null;
+  }
+}
+
+function searchWordUsage(guildId, word) {
+  if (!guildId || !word) return { totalMatches: 0, users: [] };
+  const regex = buildWordRegex(word);
+  if (!regex) return { totalMatches: 0, users: [] };
+
+  const store = loadStore();
+  const guild = store.guilds[guildId];
+  if (!guild || typeof guild !== 'object' || typeof guild.users !== 'object') {
+    return { totalMatches: 0, users: [] };
+  }
+
+  const users = [];
+  for (const [userId, messages] of Object.entries(guild.users)) {
+    if (!Array.isArray(messages) || !messages.length) continue;
+    let count = 0;
+    let lastTag = null;
+    for (const message of messages) {
+      if (!message || !message.content) continue;
+      if (message.authorTag) lastTag = message.authorTag;
+      regex.lastIndex = 0;
+      const matches = message.content.match(regex);
+      if (matches && matches.length) {
+        count += matches.length;
+      }
+    }
+    if (count > 0) {
+      users.push({ userId, count, authorTag: lastTag || null });
+    }
+  }
+
+  users.sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return a.userId.localeCompare(b.userId);
+  });
+
+  const totalMatches = users.reduce((sum, entry) => sum + entry.count, 0);
+  return { totalMatches, users };
+}
+
 module.exports = {
   MAX_PER_USER,
   recordMessage,
   getRecentMessages,
   recordMessagesBulk,
+  searchWordUsage,
 };

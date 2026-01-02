@@ -182,6 +182,8 @@ const MANAGE_GUILD_COMMANDS = new Set([
   'joinstrackerleaders',
   'leavetracker',
   'leavetrackerleaders',
+  'fetchchannel',
+  'searchword',
 ]);
 
 module.exports = {
