@@ -2,7 +2,13 @@ const fs = require('fs');
 const { ensureFileSync, resolveDataPath, writeJson } = require('./dataDir');
 
 const STORE_FILE = 'automod_config.json';
-const DEFAULT_CONFIG = { enabled: false, logChannelId: null, flags: [], whitelistUserIds: [] };
+const DEFAULT_CONFIG = {
+  enabled: false,
+  logChannelId: null,
+  flags: [],
+  whitelistUserIds: [],
+  openaiApiKey: null,
+};
 
 let cache = null;
 
@@ -44,11 +50,13 @@ function getConfig(guildId) {
   const whitelistUserIds = Array.isArray(raw.whitelistUserIds)
     ? Array.from(new Set(raw.whitelistUserIds.filter(id => typeof id === 'string' && id.trim()).map(id => id.trim())))
     : [];
+  const openaiApiKey = typeof raw.openaiApiKey === 'string' ? raw.openaiApiKey.trim() || null : null;
   return {
     enabled: Boolean(raw.enabled),
     logChannelId: raw.logChannelId || null,
     flags,
     whitelistUserIds,
+    openaiApiKey,
   };
 }
 
@@ -75,6 +83,11 @@ async function updateConfig(guildId, updates = {}) {
         .map(id => id.trim())
         .filter(id => id.length > 0),
     ));
+  }
+  if (typeof updates.openaiApiKey === 'string') {
+    entry.openaiApiKey = updates.openaiApiKey.trim() || null;
+  } else if (updates.openaiApiKey === null) {
+    entry.openaiApiKey = null;
   }
   await persist();
   return getConfig(guildId);

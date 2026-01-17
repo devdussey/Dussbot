@@ -10,6 +10,9 @@ const {
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const automodConfigStore = require('../utils/automodConfigStore');
 
+const GLOBAL_AUTOMOD_OPENAI_KEY =
+  process.env.AUTOMOD_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENAI_API;
+
 function parseFlags(raw) {
   if (!raw) return null;
   const parts = raw
@@ -39,6 +42,16 @@ function formatWhitelist(ids) {
   return ids.map(id => `- <@${id}>`).join('\n').slice(0, 1024);
 }
 
+function describeOpenAiKey(configKey) {
+  if (configKey) {
+    const trimmed = String(configKey).trim();
+    const masked = trimmed.length > 8 ? `ends with ${trimmed.slice(-4)}` : 'set for this server';
+    return `Set for this server (${masked})`;
+  }
+  if (GLOBAL_AUTOMOD_OPENAI_KEY) return 'Using bot OpenAI key (env)';
+  return 'Not set (AI checks unavailable)';
+}
+
 function makeEmbed(guildId, config) {
   const flagField = config.flags.length
     ? config.flags.map(f => `- ${f}`).join('\n').slice(0, 1024)
@@ -54,6 +67,11 @@ function makeEmbed(guildId, config) {
       {
         name: 'Log channel',
         value: config.logChannelId ? `<#${config.logChannelId}>` : 'Not set',
+        inline: true,
+      },
+      {
+        name: 'OpenAI key',
+        value: describeOpenAiKey(config.openaiApiKey),
         inline: true,
       },
       {
@@ -100,6 +118,16 @@ module.exports = {
     )
     .addStringOption(opt =>
       opt
+        .setName('openai_key')
+        .setDescription('Set or update the OpenAI API key used for AI automod (kept private)'),
+    )
+    .addBooleanOption(opt =>
+      opt
+        .setName('clear_openai_key')
+        .setDescription('Remove the stored OpenAI key for this server'),
+    )
+    .addStringOption(opt =>
+      opt
         .setName('whitelist_users')
         .setDescription('Comma or newline separated user IDs or @mentions to ignore'),
     )
@@ -115,7 +143,13 @@ module.exports = {
     const guildId = interaction.guildId;
     const logChannel = interaction.options.getChannel('log_channel');
     const flagsRaw = interaction.options.getString('flag_terms');
+    const openaiKey = interaction.options.getString('openai_key');
+    const clearOpenaiKey = interaction.options.getBoolean('clear_openai_key');
     const whitelistRaw = interaction.options.getString('whitelist_users');
+
+    if (openaiKey && clearOpenaiKey) {
+      return interaction.editReply({ content: 'Choose either `openai_key` or `clear_openai_key`, not both.' });
+    }
 
     const updates = {};
     if (logChannel) {
@@ -124,6 +158,11 @@ module.exports = {
     const parsedFlags = parseFlags(flagsRaw);
     if (parsedFlags) {
       updates.flags = parsedFlags;
+    }
+    if (openaiKey) {
+      updates.openaiApiKey = openaiKey.trim();
+    } else if (clearOpenaiKey) {
+      updates.openaiApiKey = null;
     }
     const parsedWhitelist = parseWhitelist(whitelistRaw);
     if (parsedWhitelist) {

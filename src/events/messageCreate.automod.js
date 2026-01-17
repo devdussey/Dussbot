@@ -2,6 +2,11 @@ const { Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Perm
 const automodConfigStore = require('../utils/automodConfigStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
+const fetch = globalThis.fetch;
+const GLOBAL_AUTOMOD_OPENAI_KEY =
+  process.env.AUTOMOD_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENAI_API;
+const OPENAI_MODERATION_MODEL = 'omni-moderation-latest';
+
 const VOTES_REQUIRED = 5;
 const VOTE_WINDOW_MS = 2 * 60_000;
 const MUTE_DURATION_MS = 60 * 60_000; // 1 hour
@@ -19,6 +24,41 @@ function formatSnippet(content) {
   if (!content) return '_No content_';
   const trimmed = content.length > 300 ? `${content.slice(0, 297)}...` : content;
   return trimmed;
+}
+
+async function runOpenAiModeration(content, apiKey) {
+  if (!apiKey || !content) return null;
+  try {
+    const resp = await fetch('https://api.openai.com/v1/moderations', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODERATION_MODEL,
+        input: content.slice(0, 2000),
+      }),
+    });
+    const text = await resp.text();
+    if (!resp.ok) {
+      console.error('Automod OpenAI moderation API error:', text);
+      return null;
+    }
+    const data = JSON.parse(text);
+    const result = data?.results?.[0];
+    if (!result || !result.flagged) return null;
+    const categories = Object.entries(result.categories || {})
+      .filter(([, flagged]) => flagged)
+      .map(([name]) => name.replace(/_/g, ' '));
+    const detail = categories.length
+      ? `OpenAI moderation flagged (${categories.join(', ')})`
+      : 'OpenAI moderation flagged this message.';
+    return { categories, detail };
+  } catch (err) {
+    console.error('Automod OpenAI moderation failed:', err);
+    return null;
+  }
 }
 
 async function sendLog({ guild, logChannelId, embed }) {
@@ -74,11 +114,25 @@ module.exports = {
       const whitelist = new Set(Array.isArray(config.whitelistUserIds) ? config.whitelistUserIds : []);
       if (whitelist.has(message.author.id)) return;
       const flagTerms = Array.isArray(config.flags) ? config.flags : [];
-      if (!flagTerms.length) return;
+      const openaiKey = config.openaiApiKey || GLOBAL_AUTOMOD_OPENAI_KEY;
+      const hasAi = Boolean(openaiKey);
+      if (!flagTerms.length && !hasAi) return;
 
+      const rawContent = message.content || '';
       const content = normalizeContent(message);
-      const matchedTerm = findFlaggedTerm(content, flagTerms);
-      if (!matchedTerm) return;
+      const matchedTerm = flagTerms.length ? findFlaggedTerm(content, flagTerms) : null;
+      let aiFlag = null;
+      if (!matchedTerm && hasAi && rawContent.trim()) {
+        aiFlag = await runOpenAiModeration(rawContent, openaiKey);
+      }
+      if (!matchedTerm && !aiFlag) return;
+
+      const triggerText = matchedTerm
+        ? `Flagged term: ${matchedTerm}`
+        : aiFlag?.detail || 'OpenAI moderation flagged this message.';
+      const triggerLogValue = matchedTerm
+        ? matchedTerm
+        : (aiFlag?.categories?.join(', ') || 'AI moderation');
 
       const color = resolveEmbedColour(guildId, 0xedc531);
 
@@ -86,7 +140,10 @@ module.exports = {
         .setColor(color)
         .setTitle('Automod Flag')
         .setDescription(`${message.author} has been flagged for the following content:`)
-        .addFields({ name: 'Message', value: formatSnippet(message.content) || '_No content_' })
+        .addFields(
+          { name: 'Message', value: formatSnippet(rawContent) || '_No content_' },
+          { name: 'Trigger', value: triggerText.slice(0, 1024) },
+        )
         .setFooter({ text: '5 votes for Mute will take action. If no action in 2 minutes, this vote will close.' })
         .setTimestamp(new Date());
 
@@ -96,8 +153,8 @@ module.exports = {
         .addFields(
           { name: 'User', value: `${message.author.tag} (${message.author.id})`, inline: true },
           { name: 'Channel', value: `<#${message.channelId}>`, inline: true },
-          { name: 'Matched term', value: matchedTerm || 'N/A', inline: true },
-          { name: 'Content', value: formatSnippet(message.content) || '_No content_', inline: false },
+          { name: 'Trigger', value: triggerLogValue.slice(0, 1024), inline: true },
+          { name: 'Content', value: formatSnippet(rawContent) || '_No content_', inline: false },
         )
         .setTimestamp(new Date());
 
