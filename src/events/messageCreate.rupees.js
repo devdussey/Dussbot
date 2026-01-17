@@ -27,7 +27,7 @@ module.exports = {
       const earnedText = `${message.author} has earned ${amountText}! They now have ${newBalance}!`;
       const embed = new EmbedBuilder()
         .setColor(resolveEmbedColour(message.guild.id, 0x00f0ff))
-        .setDescription(`${earnedText}\n\nTo spend your rupees, type /rupeeshop.`)
+        .setDescription(`${earnedText}\n\nTo spend your rupees, type /rupeestore.`)
         .setThumbnail(message.author.displayAvatarURL({ extension: 'png', size: 256 }));
       try {
         await message.channel?.send({ embeds: [embed] });

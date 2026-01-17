@@ -5,8 +5,10 @@ const {
   StringSelectMenuBuilder,
   UserSelectMenuBuilder,
   PermissionsBitField,
+  ComponentType,
 } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
+const coinStore = require('../utils/coinStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const immunityStore = require('../utils/silenceImmunityStore');
 
@@ -17,13 +19,15 @@ const SHOP_ITEMS = [
     cost: 5,
     description: 'Silence any user for 5 minutes.',
     requireModeratorTarget: false,
+    moderatorOnly: false,
   },
   {
     id: 'abuse_mod',
     label: 'Abuse Mod',
-    cost: 5,
+    cost: 10,
     description: 'Silence a moderator for 5 minutes.',
     requireModeratorTarget: true,
+    moderatorOnly: true,
   },
 ];
 
@@ -39,13 +43,21 @@ function formatMinutes(ms) {
   return `${mins} minute${mins === 1 ? '' : 's'}`;
 }
 
-function buildShopEmbed(guildId, balance, selectedItemId = null) {
+function formatBlessingStatus(guildId, userId) {
+  const status = coinStore.getPrayStatus(guildId, userId);
+  if (status.canPray) return '✅ Ready — use `/blessing` to claim 1 rupee.';
+  const mins = Math.ceil(status.cooldownMs / 60_000);
+  return `⌛ Available in ${mins} minute${mins === 1 ? '' : 's'}.`;
+}
+
+function buildShopEmbed({ guildId, balance, selectedItemId = null, blessingStatus }) {
   const embed = makeEmbed(guildId)
-    .setTitle('🏪 Rupee Shop')
+    .setTitle('🏪 Rupee Store')
     .setDescription(
       'Spend your rupees on limited-time moderation toys. Choose an item, then pick a target to apply it to.\n' +
       `**Your balance:** ${balance} rupee${balance === 1 ? '' : 's'}.`
-    );
+    )
+    .addFields({ name: 'Blessing status', value: blessingStatus });
 
   SHOP_ITEMS.forEach(item => {
     const prefix = item.id === selectedItemId ? '👉 ' : '';
@@ -88,6 +100,22 @@ function buildUserSelect(customId, disabled = true, placeholder = 'Select an ite
   );
 }
 
+function buildModeratorSelect(customId, moderators, disabled = false) {
+  const options = moderators.slice(0, 25).map(member => ({
+    label: member.displayName || member.user.username || member.id,
+    value: member.id,
+    description: member.user.tag,
+  }));
+
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(customId)
+      .setPlaceholder(options.length ? 'Pick a moderator target' : 'No moderators available')
+      .setDisabled(disabled || options.length === 0)
+      .addOptions(options.length ? options : [{ label: 'No moderators available', value: 'none', description: 'Nobody to target', default: true }]),
+  );
+}
+
 function findItem(itemId) {
   return SHOP_ITEMS.find(item => item.id === itemId);
 }
@@ -109,6 +137,10 @@ async function applyTimeoutPurchase({ interaction, item, targetMember }) {
   }
 
   const isAdminTarget = targetMember.permissions.has(PermissionsBitField.Flags.Administrator);
+  if (isAdminTarget) {
+    return { error: 'This item cannot be used on administrators.' };
+  }
+
   const isModeratorTarget = targetMember.permissions.has(PermissionsBitField.Flags.ModerateMembers)
     || targetMember.permissions.has(PermissionsBitField.Flags.ManageMessages);
 
@@ -116,7 +148,7 @@ async function applyTimeoutPurchase({ interaction, item, targetMember }) {
     return { error: 'Abuse Mod can only be used on moderators.' };
   }
 
-  const remainingMs = isAdminTarget ? 0 : immunityStore.getRemainingMs(guild.id, targetMember.id);
+  const remainingMs = immunityStore.getRemainingMs(guild.id, targetMember.id);
   if (remainingMs > 0) {
     return { blockedMs: remainingMs };
   }
@@ -141,34 +173,48 @@ async function applyTimeoutPurchase({ interaction, item, targetMember }) {
     return { error: 'Failed to apply the timeout. Your rupees were refunded.' };
   }
 
-  if (!isAdminTarget) {
-    await immunityStore.recordSilence(guild.id, targetMember.id, TIMEOUT_DURATION_MS, IMMUNITY_BUFFER_MS);
-  }
+  await immunityStore.recordSilence(guild.id, targetMember.id, TIMEOUT_DURATION_MS, IMMUNITY_BUFFER_MS);
 
   const newBalance = rupeeStore.getBalance(guild.id, actor.id);
   return { success: true, newBalance };
 }
 
+async function getModerators(guild) {
+  try {
+    const members = await guild.members.fetch();
+    return members.filter(m =>
+      !m.user.bot &&
+      !m.permissions.has(PermissionsBitField.Flags.Administrator) &&
+      (m.permissions.has(PermissionsBitField.Flags.ModerateMembers) || m.permissions.has(PermissionsBitField.Flags.ManageMessages))
+    ).toJSON();
+  } catch (_) {
+    return [];
+  }
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('rupeeshop')
+    .setName('rupeestore')
     .setDescription('Browse and spend rupees on special items'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
       const embed = makeEmbed(interaction.guildId)
         .setTitle('Use this in a server')
-        .setDescription('The Rupee Shop can only be opened inside a server.');
+        .setDescription('The Rupee Store can only be opened inside a server.');
       await interaction.reply({ embeds: [embed], ephemeral: true });
       return;
     }
 
     const guildId = interaction.guildId;
-    const balance = rupeeStore.getBalance(guildId, interaction.user.id);
-    const selectId = `rupeeshop-select-${interaction.id}`;
-    const targetSelectBase = `rupeeshop-target-${interaction.id}`;
+    const userId = interaction.user.id;
+    const balance = rupeeStore.getBalance(guildId, userId);
+    const blessingStatus = formatBlessingStatus(guildId, userId);
 
-    const embed = buildShopEmbed(guildId, balance);
+    const selectId = `rupeestore-select-${interaction.id}`;
+    const targetSelectBase = `rupeestore-target-${interaction.id}`;
+
+    const embed = buildShopEmbed({ guildId, balance, blessingStatus });
     const itemRow = buildItemSelect(selectId, false);
     const userRow = buildUserSelect(targetSelectBase, true);
 
@@ -182,7 +228,7 @@ module.exports = {
 
     collector.on('collect', async (componentInteraction) => {
       if (componentInteraction.user.id !== interaction.user.id) {
-        await componentInteraction.reply({ content: 'This shop session belongs to someone else.', ephemeral: true });
+        await componentInteraction.reply({ content: 'This store session belongs to someone else.', ephemeral: true });
         return;
       }
 
@@ -190,17 +236,33 @@ module.exports = {
         const itemId = componentInteraction.values[0];
         const selectedItem = findItem(itemId);
         const freshBalance = rupeeStore.getBalance(guildId, interaction.user.id);
-        const updatedEmbed = buildShopEmbed(guildId, freshBalance, itemId);
-        const freshItemRow = buildItemSelect(selectId, false);
-        const enabledUserRow = buildUserSelect(`${targetSelectBase}:${itemId}`, false, `Pick a target for ${selectedItem.label}`);
-        await componentInteraction.update({
-          embeds: [updatedEmbed],
-          components: [freshItemRow, enabledUserRow],
+        const freshBlessing = formatBlessingStatus(guildId, userId);
+        const updatedEmbed = buildShopEmbed({
+          guildId,
+          balance: freshBalance,
+          selectedItemId: itemId,
+          blessingStatus: freshBlessing,
         });
+        const freshItemRow = buildItemSelect(selectId, false);
+
+        if (selectedItem?.moderatorOnly) {
+          const moderators = await getModerators(interaction.guild);
+          const modRow = buildModeratorSelect(`${targetSelectBase}:${itemId}`, moderators, false);
+          await componentInteraction.update({
+            embeds: [updatedEmbed],
+            components: [freshItemRow, modRow],
+          });
+        } else {
+          const enabledUserRow = buildUserSelect(`${targetSelectBase}:${itemId}`, false, `Pick a target for ${selectedItem?.label ?? 'this item'}`);
+          await componentInteraction.update({
+            embeds: [updatedEmbed],
+            components: [freshItemRow, enabledUserRow],
+          });
+        }
         return;
       }
 
-      if (componentInteraction.isUserSelectMenu() && componentInteraction.customId.startsWith(targetSelectBase)) {
+      if (componentInteraction.customId.startsWith(targetSelectBase)) {
         const parts = componentInteraction.customId.split(':');
         const itemId = parts[1];
         const selectedItem = findItem(itemId);
@@ -209,9 +271,14 @@ module.exports = {
           return;
         }
 
-        const targetId = componentInteraction.values?.[0];
-        if (!targetId) {
-          await componentInteraction.reply({ content: 'Please pick a target.', ephemeral: true });
+        let targetId = null;
+        if (componentInteraction.isUserSelectMenu()) {
+          targetId = componentInteraction.values?.[0];
+        } else if (componentInteraction.isStringSelectMenu()) {
+          targetId = componentInteraction.values?.[0];
+        }
+        if (!targetId || targetId === 'none') {
+          await componentInteraction.reply({ content: 'Please pick a valid target.', ephemeral: true });
           return;
         }
 
@@ -269,7 +336,12 @@ module.exports = {
         }).catch(() => {});
 
         const freshBalance = rupeeStore.getBalance(guildId, interaction.user.id);
-        const refreshedEmbed = buildShopEmbed(guildId, freshBalance);
+        const freshBlessing = formatBlessingStatus(guildId, userId);
+        const refreshedEmbed = buildShopEmbed({
+          guildId,
+          balance: freshBalance,
+          blessingStatus: freshBlessing,
+        });
         const freshItemRow = buildItemSelect(selectId, false);
         const resetUserRow = buildUserSelect(targetSelectBase, true);
 

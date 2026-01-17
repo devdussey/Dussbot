@@ -60,9 +60,10 @@ const categories = {
   ],
   'Economy & Games': [
     { cmd: '/inventory', desc: 'Check your coins and rupees', perm: null },
-    { cmd: '/viewrupees', desc: 'Admins: view a rupee balance leaderboard for the server', perm: 'Administrator' },
-    { cmd: '/rupeeshop', desc: 'Spend rupees on shop items like STFU and Abuse Mod', perm: null },
-    { cmd: '/pray', desc: 'Pray once per day to receive a coin blessing', perm: null },
+    { cmd: '/rupeeboard', desc: 'View the rupee leaderboard for the server', perm: null },
+    { cmd: '/rupeestore', desc: 'Spend rupees on shop items like STFU and Abuse Mod', perm: null },
+    { cmd: '/blessing', desc: 'Claim a daily blessing worth 1 rupee', perm: null },
+    { cmd: '/massblessing', desc: 'Give every user in the server 1 rupee', perm: 'Administrator' },
     { cmd: '/horserace', desc: 'Host a chaotic horse race mini-game with your server', perm: null },
     { cmd: '/horseracestandings', desc: 'Review historical podium finishes or personal stats', perm: null },
     { cmd: '/wordrush start', desc: 'Start a WordRush lobby (30s join button) - last player with lives wins', perm: null },

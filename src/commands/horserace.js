@@ -14,39 +14,22 @@ const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 const TRACK_SLOTS = 80;
-const TICK_DELAY_MS = 3_000; // Live update cadence
-const MAX_TICKS = 32;
+const TICK_DELAY_MS = 3_000;
+const MAX_TICKS = 10;
 const JOIN_WINDOW_MS = 60_000;
-const MIN_PLAYERS = 3;
-const MAX_PLAYERS = 8; // command issuer + up to 7 more
+const MIN_PLAYERS = 1;
+const MAX_PLAYERS = 8;
 const ENTRY_COST = 1;
 const BET_COST = 1;
 const PLACEMENT_REWARDS = [3, 2, 1];
-const RACE_COLOR_FALLBACK = 0x00f0ff;
-const NPC_HORSES = [
-  'Blaze',
-  'Comet',
-  'Juniper',
-  'Maverick',
-  'Nebula',
-  'Pepper',
-  'Shadowfax',
-  'Storm',
-  'Thunder',
-  'Willow',
-];
 const PLACE_EMOJIS = ['🥇', '🥈', '🥉'];
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function getEmbedColour(guildId) {
-  return resolveEmbedColour(guildId, RACE_COLOR_FALLBACK);
-}
-
-function makeEmbed(guildId) {
-  return new EmbedBuilder().setColor(getEmbedColour(guildId));
+function makeEmbed(guildId, colorFallback = 0x00f0ff) {
+  return new EmbedBuilder().setColor(resolveEmbedColour(guildId, colorFallback));
 }
 
 function renderTrack(position) {
@@ -81,7 +64,7 @@ function renderRaceLines(horses, finishOrder, betTotals) {
   });
 }
 
-function summarizeBets(horses, bets) {
+function summarizeBets(bets) {
   const betTotals = new Map();
   for (const bet of bets.values()) {
     if (!bet) continue;
@@ -151,21 +134,6 @@ function buildComponents(stage, participantCount, joinButtonId, betButtonId) {
   return [row];
 }
 
-function pickNpcNames(count, exclude = new Set()) {
-  const pool = NPC_HORSES.filter(name => !exclude.has(name));
-  const chosen = [];
-  const used = new Set();
-  while (chosen.length < count) {
-    const candidates = pool.length ? pool : NPC_HORSES;
-    const idx = Math.floor(Math.random() * candidates.length);
-    const name = candidates[idx];
-    if (used.has(name)) continue;
-    used.add(name);
-    chosen.push(name);
-  }
-  return chosen;
-}
-
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('horserace')
@@ -211,21 +179,6 @@ module.exports = {
       return horse;
     }
 
-    function addNpcRacers(count, excludeNames = new Set()) {
-      const names = pickNpcNames(count, excludeNames);
-      for (const [idx, name] of names.entries()) {
-        horses.push({
-          id: `npc-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
-          name,
-          shortName: name,
-          isPlayer: false,
-          position: 0,
-          finished: false,
-          finishTick: Number.POSITIVE_INFINITY,
-        });
-      }
-    }
-
     const paid = await rupeeStore.spendTokens(guildId, interaction.user.id, ENTRY_COST);
     if (!paid) {
       const balance = rupeeStore.getBalance(guildId, interaction.user.id);
@@ -256,7 +209,7 @@ module.exports = {
 
     const buildAndSend = async () => {
       try {
-        const { betTotals, totalBets } = summarizeBets(horses, bets);
+        const { betTotals, totalBets } = summarizeBets(bets);
         let embed;
         if (stage === 'waiting') {
           const waiting = renderWaitingState(horses, joinDeadline, betTotals, totalBets);
@@ -436,21 +389,11 @@ module.exports = {
     await waitForJoinPhase();
     stage = 'running';
 
-    const playerNames = new Set(horses.filter(h => h.isPlayer).map(h => h.name));
-    if (horses.length < MIN_PLAYERS) {
-      addNpcRacers(MIN_PLAYERS - horses.length, playerNames);
-    } else if (horses.length < MAX_PLAYERS) {
-      const npcToAdd = Math.max(0, Math.min(2, MAX_PLAYERS - horses.length));
-      if (npcToAdd > 0) {
-        addNpcRacers(npcToAdd, playerNames);
-      }
-    }
-
     await buildAndSend();
 
     const sendLiveUpdate = async () => {
       try {
-        const { betTotals, totalBets } = summarizeBets(horses, bets);
+        const { betTotals, totalBets } = summarizeBets(bets);
         const raceLines = renderRaceLines(horses, finishOrder, betTotals);
         const embed = makeEmbed(guildId)
           .setTitle(`🏇 Horse Race — Turn ${currentTick}`)
@@ -514,13 +457,14 @@ module.exports = {
       const isWinner = bet.horseId === winningHorse.id;
       if (isWinner) {
         await rupeeStore.addTokens(guildId, userId, 2); // 1 profit + 1 refunded
-        winners.push(`• <@${userId}> won and earned +1 rupee (bet refunded).`);
+        winners.push(`- <@${userId}> won and earned +1 rupee (bet refunded).`);
       } else {
-        losers.push(`• <@${userId}> lost their 1 rupee bet.`);
+        losers.push(`- <@${userId}> lost their 1 rupee bet.`);
       }
     }
 
     const playerStatsByUserId = new Map();
+
     const playerSummaryLines = [];
     for (const horse of horses) {
       if (!horse.isPlayer || !horse.userId) continue;
@@ -537,50 +481,37 @@ module.exports = {
       }
       const rewardText = reward > 0 ? ` (+${reward} rupee${reward === 1 ? '' : 's'})` : '';
       playerSummaryLines.push(
-        `• **${escapeMarkdown(horse.shortName || horse.name)}** ${placementLabel}${rewardText} — 🥇 ${stats.first ?? 0} · 🥈 ${stats.second ?? 0} · 🥉 ${stats.third ?? 0} (Races: ${stats.races ?? 0})`,
+        `- **${escapeMarkdown(horse.shortName || horse.name)}** ${placementLabel}${rewardText} — 🥇 ${stats.first ?? 0} · 🥈 ${stats.second ?? 0} · 🥉 ${stats.third ?? 0} (Races: ${stats.races ?? 0})`,
       );
     }
 
-    const podium = finishOrder.slice(0, 3)
-      .map((horse, idx) => `${PLACE_EMOJIS[idx] ?? `#${idx + 1}`} ${horse.isPlayer ? `**${escapeMarkdown(horse.name)}**` : escapeMarkdown(horse.name)}`)
-      .join('\n');
-
-    const summarySections = [];
-    if (podium) {
-      summarySections.push({ name: 'Podium', value: podium, inline: false });
-    }
-    if (playerSummaryLines.length) {
-      summarySections.push({ name: 'Player stats', value: playerSummaryLines.join('\n'), inline: false });
-    }
-
-    summarySections.push({ name: 'Entry fee', value: `${ENTRY_COST} rupee per rider`, inline: true });
-    summarySections.push({
-      name: 'Winning horse',
-      value: escapeMarkdown(winningHorse.shortName || winningHorse.name),
-      inline: true,
+    const podiumLines = finishOrder.slice(0, 3).map((horse, idx) => {
+      const placeLabel = idx === 0 ? '1st Place' : idx === 1 ? '2nd Place' : '3rd Place';
+      if (!horse) return `${placeLabel} - TBD`;
+      const name = horse.isPlayer ? `<@${horse.userId}>` : escapeMarkdown(horse.name);
+      return `${placeLabel} - ${name}`;
     });
 
+    const winnersEmbed = makeEmbed(guildId)
+      .setTitle('🏁 Horse Race - Winners')
+      .setDescription(podiumLines.join('\n'));
+
+    if (playerSummaryLines.length) {
+      winnersEmbed.addFields({ name: 'Player stats', value: playerSummaryLines.join('\n') });
+    }
     if (bets.size > 0) {
-      summarySections.push({
-        name: 'Betting results',
-        value: winners.length
-          ? winners.join('\n')
-          : '_No winning bets this time._',
-        inline: false,
+      winnersEmbed.addFields({
+        name: 'Bets',
+        value: winners.length ? winners.join('\n') : '_No winning bets this time._',
       });
       if (losers.length) {
-        summarySections.push({ name: 'Lost bets', value: losers.join('\n'), inline: false });
+        winnersEmbed.addFields({ name: 'Lost bets', value: losers.join('\n') });
       }
-    } else {
-      summarySections.push({ name: 'Betting results', value: '_No bets were placed during this race._', inline: false });
     }
 
-    finalSummaryEmbed = makeEmbed(guildId)
-      .setTitle('🏁 Horse Race — Results')
-      .setDescription('Race complete! Here are the results:')
-      .addFields(summarySections);
+    finalSummaryEmbed = winnersEmbed;
 
-    await interaction.followUp({ embeds: [finalSummaryEmbed], allowedMentions: { parse: [] } });
+    await interaction.followUp({ embeds: [winnersEmbed], allowedMentions: { parse: [] } });
     await buildAndSend();
     collector.stop('finished');
   },

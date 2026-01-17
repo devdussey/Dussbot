@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const coinStore = require('../utils/coinStore');
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
-const { getRupeeCost, getPrayReward } = require('../utils/economyConfig');
+const { getRupeeCost } = require('../utils/economyConfig');
 
 function formatCoins(value) {
   return Number(value).toLocaleString(undefined, {
@@ -30,7 +30,6 @@ function buildInventoryEmbed({
   rupeeBalance,
   rupeeCost,
   prayStatus,
-  prayReward,
 }) {
   const username = user && typeof user.username === 'string' && user.username.trim().length
     ? user.username
@@ -56,19 +55,19 @@ function buildInventoryEmbed({
         name: '💎 Rupees',
         value: `**Owned:** ${rupeeBalance}\n**Cost:** ${formatCoins(
           rupeeCost
-        )} coins each\nRupees unlock the powerful /analysis command, can be bestowed by moderators using /giverupee, and are spent in /rupeeshop.`,
+        )} coins each\nRupees unlock the powerful /analysis command, can be bestowed by moderators using /giverupee, and are spent in /rupeestore.`,
       },
       {
         name: '🏪 Rupee Shop',
-        value: 'Visit `/rupeeshop` to buy items like **STFU** (5 rupees) to silence a user or **Abuse Mod** (5 rupees) to timeout a moderator for 5 minutes.',
+        value: 'Visit `/rupeestore` to buy items like **STFU** (5 rupees) to silence a user or **Abuse Mod** (10 rupees) to timeout a moderator for 5 minutes.',
       }
     );
 
   embed.addFields({
-    name: '🙏 Daily Prayer',
+    name: '🙏 Blessing',
     value: prayStatus.canPray
-      ? `Ready to pray! Use /pray to receive ${formatCoins(prayReward)} coins.`
-      : `Already blessed. You can pray again in ${formatDuration(prayStatus.cooldownMs)}.`,
+      ? 'Ready! Use /blessing to receive 1 rupee.'
+      : `Already blessed. You can bless again in ${formatDuration(prayStatus.cooldownMs)}.`,
   });
 
   const avatarUrl = typeof user.displayAvatarURL === 'function' ? user.displayAvatarURL({ forceStatic: true }) : null;
@@ -100,7 +99,6 @@ module.exports = {
     const rupeeBalance = rupeeStore.getBalance(guildId, userId);
     const rupeeCost = getRupeeCost();
     const prayStatus = coinStore.getPrayStatus(guildId, userId);
-    const prayReward = getPrayReward();
 
     const embed = buildInventoryEmbed({
       guildId,
@@ -109,7 +107,6 @@ module.exports = {
       rupeeBalance,
       rupeeCost,
       prayStatus,
-      prayReward,
     });
 
     await interaction.editReply({ embeds: [embed] });

@@ -1,10 +1,8 @@
 const { SlashCommandBuilder } = require('discord.js');
 const coinStore = require('../utils/coinStore');
-const { getPrayReward } = require('../utils/economyConfig');
+const rupeeStore = require('../utils/rupeeStore');
 
-function formatCoins(value) {
-  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
+const DAILY_RUPEE = 1;
 
 function formatDuration(ms) {
   const totalSeconds = Math.ceil(ms / 1000);
@@ -20,32 +18,28 @@ function formatDuration(ms) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('pray')
-    .setDescription('Offer a daily prayer to receive a Rupee'),
+    .setName('blessing')
+    .setDescription('Receive a daily blessing worth 1 rupee'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
-      return interaction.reply({ content: 'Daily prayers are only tracked inside servers.', ephemeral: true });
+      return interaction.reply({ content: 'Blessings are only tracked inside servers.', ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: true });
 
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
-    const reward = getPrayReward();
     const status = coinStore.getPrayStatus(guildId, userId);
 
     if (!status.canPray) {
       const remaining = formatDuration(status.cooldownMs);
-      return interaction.editReply({ content: `You have already prayed today. Try again in ${remaining}.` });
+      return interaction.editReply({ content: `You have already received your blessing. Try again in ${remaining}.` });
     }
 
-    const result = await coinStore.recordPrayer(guildId, userId, reward);
-    const rewardText = reward > 0
-      ? `${formatCoins(reward)} coin${reward === 1 ? '' : 's'}`
-      : 'no coins';
-    const balanceText = `${formatCoins(result.balance)} coin${result.balance === 1 ? '' : 's'}`;
+    await coinStore.recordPrayer(guildId, userId, 0);
+    const newBalance = await rupeeStore.addTokens(guildId, userId, DAILY_RUPEE);
 
-    return interaction.editReply({ content: `You offer a humble prayer and receive ${rewardText}. New balance: ${balanceText}.` });
+    return interaction.editReply({ content: `✨ You receive a blessing and gain 1 rupee! New balance: ${newBalance}.` });
   },
 };

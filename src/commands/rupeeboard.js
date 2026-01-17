@@ -1,6 +1,5 @@
 const {
   SlashCommandBuilder,
-  PermissionsBitField,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -21,14 +20,12 @@ function buildLeaderboardEmbed({ guildId, entries, pageIndex, perPage }) {
   const start = safePage * perPage;
   const slice = entries.slice(start, start + perPage);
 
-  const totalRupees = entries.reduce((sum, e) => sum + (Number.isFinite(e.tokens) ? e.tokens : 0), 0);
-
   const embed = new EmbedBuilder()
     .setColor(resolveEmbedColour(guildId, 0x2ecc71))
-    .setTitle('Rupee Balances')
+    .setTitle('💎 Rupee Leaderboard')
     .setDescription(
       totalUsers
-        ? `Users with rupees: **${totalUsers}** • Total rupees tracked: **${totalRupees}**\nPage **${safePage + 1}/${totalPages}**`
+        ? `Top rupee holders in this server.\nPage **${safePage + 1}/${totalPages}**`
         : 'No users have any rupees yet.'
     );
 
@@ -37,7 +34,7 @@ function buildLeaderboardEmbed({ guildId, entries, pageIndex, perPage }) {
       const rank = start + idx + 1;
       return `${rank}. <@${e.userId}> — **${e.tokens}** ${pluralize(e.tokens, 'rupee')}`;
     });
-    embed.addFields({ name: 'Leaderboard', value: lines.join('\n').slice(0, 1024) });
+    embed.addFields({ name: 'Standings', value: lines.join('\n').slice(0, 1024) });
   }
 
   return { embed, totalPages, pageIndex: safePage };
@@ -48,13 +45,13 @@ function buildPagerRow({ pageIndex, totalPages, prevId, nextId }) {
   const prev = new ButtonBuilder()
     .setCustomId(prevId)
     .setStyle(ButtonStyle.Secondary)
-    .setLabel('◀')
+    .setLabel('Prev')
     .setDisabled(pageIndex <= 0);
 
   const next = new ButtonBuilder()
     .setCustomId(nextId)
     .setStyle(ButtonStyle.Secondary)
-    .setLabel('▶')
+    .setLabel('Next')
     .setDisabled(pageIndex >= totalPages - 1);
 
   return new ActionRowBuilder().addComponents(prev, next);
@@ -62,9 +59,8 @@ function buildPagerRow({ pageIndex, totalPages, prevId, nextId }) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('viewrupees')
-    .setDescription('Admins: view rupee balances leaderboard')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .setName('rupeeboard')
+    .setDescription('View the rupee leaderboard')
     .setDMPermission(false),
 
   async execute(interaction) {
@@ -72,19 +68,14 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    if (!interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
-      return interaction.reply({ content: 'Only server administrators can use this command.', ephemeral: true });
-    }
-
-    // Public leaderboard (admins only can invoke).
     await interaction.deferReply();
 
     const entries = rupeeStore.listUserBalances(interaction.guildId, { minTokens: 1 });
-    const perPage = 20;
+    const perPage = 10;
     let pageIndex = 0;
 
-    const prevId = `viewrupees:prev:${interaction.id}`;
-    const nextId = `viewrupees:next:${interaction.id}`;
+    const prevId = `rupeeboard:prev:${interaction.id}`;
+    const nextId = `rupeeboard:next:${interaction.id}`;
 
     const initial = buildLeaderboardEmbed({
       guildId: interaction.guildId,
@@ -119,7 +110,7 @@ module.exports = {
       }
 
       if (i.customId === prevId) pageIndex = Math.max(0, pageIndex - 1);
-      if (i.customId === nextId) pageIndex = pageIndex + 1;
+      if (i.customId === nextId) pageIndex = Math.min(pageIndex + 1, initial.totalPages - 1);
 
       const next = buildLeaderboardEmbed({
         guildId: interaction.guildId,
