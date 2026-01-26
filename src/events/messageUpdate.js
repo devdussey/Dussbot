@@ -15,7 +15,7 @@ module.exports = {
         target: newMessage.author,
         actor: newMessage.author,
         reason: 'Message content changed',
-        color: 0xffa500,
+        color: 0xffd166,
         extraFields: [
           { name: 'Channel', value: `<#${newMessage.channel.id}> (${newMessage.channel.id})`, inline: true },
           { name: 'Old Content', value: oldContent, inline: false },

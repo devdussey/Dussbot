@@ -79,7 +79,7 @@ module.exports = {
         extraFields: [
           { name: 'Channel', value: `<#${message.channel.id}> (${message.channel.id})`, inline: true },
           { name: 'Message ID', value: message.id || 'Unknown', inline: true },
-          { name: 'Deleted by', value: executor ? `${executor.tag} (${executor.id})` : 'Unknown', inline: true },
+          { name: 'Deleted by', value: executor ? `${executor.tag} (${executor.id})` : 'Unknown', inline: false },
           ...(attachmentSummary ? [{ name: 'Attachments', value: truncate(attachmentSummary, 256), inline: true }] : []),
           ...(notes.length ? [{ name: 'Notes', value: notes.join('\n'), inline: false }] : []),
         ],

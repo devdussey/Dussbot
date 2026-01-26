@@ -155,18 +155,27 @@ module.exports = {
     try {
       if (!message.guild || message.author?.bot) return;
       const content = message.content?.substring(0, 1000) || '*No content*';
+      const { mediaItems, stickerItems } = collectMediaFromMessage(message);
+
       const embed = buildLogEmbed({
         action: 'Message Created',
         target: message.author,
         actor: message.author,
         reason: content,
-        color: 0x5865f2,
+        color: 0x2ecc71,
         extraFields: [
           { name: 'Channel', value: `<#${message.channel.id}> (${message.channel.id})`, inline: true },
           { name: 'Message ID', value: message.id, inline: true },
           { name: 'Attachments', value: message.attachments.size > 0 ? `${message.attachments.size} file(s)` : 'None', inline: true },
         ],
       });
+
+      // Attach the first image/gif to the embed for quick viewing.
+      const firstImage = mediaItems.find(item => item.type === 'image' || item.type === 'gif');
+      if (firstImage?.url) {
+        embed.setImage(firstImage.url);
+      }
+
       await logSender.sendLog({
         guildId: message.guild.id,
         logType: 'message_create',
@@ -174,7 +183,6 @@ module.exports = {
         client: message.client,
       });
 
-      const { mediaItems, stickerItems } = collectMediaFromMessage(message);
       if (mediaItems.length || stickerItems.length) {
         const mediaEmbed = buildMediaEmbed(message, mediaItems, stickerItems);
         await logSender.sendLog({
