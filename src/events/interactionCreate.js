@@ -187,10 +187,6 @@ const ADMIN_COMMANDS = new Set([
   'webhooks',
 ]);
 const MANAGE_GUILD_COMMANDS = new Set([
-  'jointracker',
-  'joinstrackerleaders',
-  'leavetracker',
-  'leavetrackerleaders',
   'fetchchannel',
   'searchword',
 ]);

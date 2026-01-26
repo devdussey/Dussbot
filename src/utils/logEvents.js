@@ -42,6 +42,11 @@ const LOG_KEYS = {
     category: 'Member',
     fallbackKey: 'member',
   },
+  member_boost: {
+    label: 'Member Boosted',
+    category: 'Member',
+    fallbackKey: 'member',
+  },
 
   moderation: {
     label: 'All Moderation Events',

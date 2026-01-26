@@ -9,6 +9,7 @@ const joinTrackerStore = require('../utils/joinTrackerStore');
 const { buildJoinEmbed, formatInviteSource } = require('../utils/joinTrackerEmbed');
 const { detectVanityUse } = require('../utils/vanityUseTracker');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
+const { buildMemberLogEmbed } = require('../utils/memberLogEmbed');
 
 const INVITE_LOG_COLOR = 0x00f0ff;
 
@@ -94,12 +95,10 @@ module.exports = {
 
         // Log the member join to the member log channel
         try {
-            const embed = buildLogEmbed({
-                action: 'Member Joined',
-                target: member.user,
-                actor: member.user,
-                reason: 'Member joined the server',
-                color: 0x2b2d31,
+            const embed = buildMemberLogEmbed({
+                action: 'User Joined',
+                user: member.user,
+                color: 0x2ecc71,
                 extraFields: [
                     { name: 'Account created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
                     { name: 'Guild', value: `${member.guild.name} (${member.guild.id})`, inline: true },

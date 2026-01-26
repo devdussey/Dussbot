@@ -31,6 +31,7 @@ const categories = {
   'Logging & Security': [
     { cmd: '/logmessageset & /logmessagemode (plus category variants)', desc: 'Ensure the tracked events are routed through dedicated channels', perm: 'Manage Server' },
     { cmd: '/logconfig', desc: 'Assign existing channels for every tracked log event', perm: 'Manage Server' },
+    { cmd: '/memberlogconfig', desc: 'Configure member join/leave/boost logs and send test embeds', perm: 'Manage Server' },
     { cmd: '/tamperproof add/remove/list', desc: 'Watch channels for admin deletions and DM bot owners', perm: 'Manage Channels · Premium' },
     { cmd: '/antinuke config', desc: 'Configure anti-nuke safeguards and view their current status', perm: 'Manage Server' },
     { cmd: '/transriptconfig enable/disable/status', desc: 'Enable automatic voice transcription in chosen channels', perm: 'Manage Server' },

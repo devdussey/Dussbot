@@ -1,8 +1,9 @@
-const { Events, AuditLogEvent, PermissionsBitField, EmbedBuilder } = require('discord.js');
+const { Events, AuditLogEvent, PermissionsBitField } = require('discord.js');
 const logSender = require('../utils/logSender');
 const joinLeaveStore = require('../utils/joinLeaveStore');
 const leaveTrackerStore = require('../utils/leaveTrackerStore');
 const { buildLeaveEmbed } = require('../utils/leaveTrackerEmbed');
+const { buildMemberLogEmbed } = require('../utils/memberLogEmbed');
 
 module.exports = {
   name: Events.GuildMemberRemove,
@@ -66,15 +67,19 @@ module.exports = {
       if (departure.type === 'ban') return;
 
       // Log the member removal
-      const logEmbed = new EmbedBuilder()
-        .setTitle(`?? Member ${departure.type === 'ban' ? 'Banned' : departure.type === 'kick' ? 'Kicked' : 'Left'}`)
-        .setColor(departure.type === 'left' ? 0xffa500 : 0xff0000)
-        .addFields(
-          { name: 'User', value: `${member.user?.tag || member.user?.username || member.id} (${member.id})`, inline: false },
-          { name: 'Reason', value: departure.type, inline: true },
-          { name: 'Guild', value: `${guild.name} (${guild.id})`, inline: false }
-        )
-        .setTimestamp();
+      const actionLabel = departure.type === 'kick' ? 'User Kicked' : 'User Left';
+      const logEmbed = buildMemberLogEmbed({
+        action: actionLabel,
+        user: member.user || { id: member.id },
+        color: 0xed4245,
+        extraFields: [
+          { name: 'Departure type', value: departure.type, inline: true },
+          departure.executorId
+            ? { name: 'Executor', value: departure.executorTag ? `${departure.executorTag} (${departure.executorId})` : `<@${departure.executorId}>`, inline: true }
+            : null,
+          { name: 'Guild', value: `${guild.name} (${guild.id})`, inline: true },
+        ],
+      });
 
       await logSender.sendLog({
         guildId: guild.id,

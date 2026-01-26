@@ -3,6 +3,8 @@ const boosterStore = require('../utils/boosterRoleStore');
 const boosterManager = require('../utils/boosterRoleManager');
 const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const { postBoosterRolePanel } = require('../utils/boosterRolePanel');
+const logSender = require('../utils/logSender');
+const { buildMemberLogEmbed } = require('../utils/memberLogEmbed');
 
 async function getMe(guild) {
   if (!guild) return null;
@@ -25,6 +27,27 @@ module.exports = {
       const hasBoost = Boolean(newMember?.premiumSinceTimestamp || newMember?.premiumSince);
 
       if (hasBoost && !hadBoost) {
+        try {
+          const timestamp = newMember?.premiumSinceTimestamp || Date.now();
+          const embed = buildMemberLogEmbed({
+            action: 'User Boosted',
+            user: newMember.user || { id: newMember.id },
+            color: 0xeb459e,
+            extraFields: [
+              { name: 'Guild', value: `${guild.name} (${guild.id})`, inline: true },
+              { name: 'Boost start', value: `<t:${Math.floor(timestamp / 1000)}:f>`, inline: true },
+            ],
+          });
+          await logSender.sendLog({
+            guildId: guild.id,
+            logType: 'member_boost',
+            embed,
+            client: guild.client,
+          });
+        } catch (err) {
+          console.error(`Failed to log member boost for ${newMember.id} in ${guild.id}:`, err);
+        }
+
         try {
           await boosterManager.ensureRole(newMember, { createIfMissing: true });
         } catch (err) {
