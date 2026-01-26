@@ -3,6 +3,8 @@ const logSender = require('../utils/logSender');
 const inviteTracker = require('../utils/inviteTracker');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
 
+const INVITE_LOG_COLOR = 0x00f0ff;
+
 async function safeLog(guild, type, embed) {
   if (!guild) return;
   try {
@@ -333,7 +335,7 @@ async function handleInviteCreate(invite) {
     inviter: invite.inviter ? `${invite.inviter.tag} (${invite.inviter.id})` : 'Unknown',
     uses: invite.uses ?? 0,
     reason: 'Invite generated',
-  }, 0x57f287);
+  }, INVITE_LOG_COLOR);
   await safeLog(guild, 'invite_create', embed);
 }
 
@@ -347,7 +349,7 @@ async function handleInviteDelete(invite) {
     inviter: invite.inviter ? `${invite.inviter.tag} (${invite.inviter.id})` : 'Unknown',
     uses: invite.uses ?? 0,
     reason: 'Invite removed',
-  }, 0xed4245);
+  }, INVITE_LOG_COLOR);
   await safeLog(guild, 'invite_delete', embed);
 }
 
