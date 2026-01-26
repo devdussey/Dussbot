@@ -10,6 +10,8 @@ const { buildJoinEmbed, formatInviteSource } = require('../utils/joinTrackerEmbe
 const { detectVanityUse } = require('../utils/vanityUseTracker');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
 
+const INVITE_LOG_COLOR = 0x00f0ff;
+
 module.exports = {
     name: Events.GuildMemberAdd,
     async execute(member) {
@@ -157,17 +159,22 @@ module.exports = {
         // Attempt to detect the invite used
         try {
             if (usedInvite) {
+                const inviterLabel = usedInvite.inviterTag
+                    ? `${usedInvite.inviterTag} (${usedInvite.inviterId})`
+                    : usedInvite.inviterId
+                        ? `User ID ${usedInvite.inviterId}`
+                        : 'Unknown';
                 const inviteEmbed = buildLogEmbed({
                     action: 'Invite Used',
                     target: member.user,
-                    actor: member.user,
+                    actor: inviterLabel,
                     reason: `Invite ${usedInvite.code} used`,
-                    color: 0x5865f2,
+                    color: INVITE_LOG_COLOR,
                     extraFields: [
                         { name: 'Channel', value: usedInvite.channelId ? `<#${usedInvite.channelId}>` : 'Unknown', inline: true },
                         {
                             name: 'Inviter',
-                            value: usedInvite.inviterTag ? `${usedInvite.inviterTag} (${usedInvite.inviterId})` : 'Unknown',
+                            value: inviterLabel,
                             inline: true,
                         },
                         { name: 'Uses', value: `${usedInvite.uses}${usedInvite.maxUses ? ` / ${usedInvite.maxUses}` : ''}`, inline: true },
