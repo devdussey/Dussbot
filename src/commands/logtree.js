@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder, ChannelType } = require('discord.js');
 const logChannelTypeStore = require('../utils/logChannelTypeStore');
 const { listCategories, listKeysForCategory, getLogKeyLabel } = require('../utils/logEvents');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
@@ -7,6 +7,22 @@ const { isMysqlConfigured } = require('../utils/mysqlPool');
 const PERM_NAME_BY_VALUE = new Map(Object.entries(PermissionsBitField.Flags).map(([name, value]) => [value, name]));
 function permName(value) {
   return PERM_NAME_BY_VALUE.get(value) || String(value);
+}
+
+function requiredPermissionsForChannel(channel) {
+  const base = [
+    PermissionsBitField.Flags.ViewChannel,
+    PermissionsBitField.Flags.EmbedLinks,
+  ];
+  const isThread = typeof channel?.isThread === 'function' ? channel.isThread() : Boolean(channel?.isThread);
+  if (channel?.type === ChannelType.GuildForum) {
+    return [
+      ...base,
+      PermissionsBitField.Flags.CreatePublicThreads,
+      PermissionsBitField.Flags.SendMessagesInThreads,
+    ];
+  }
+  return [...base, isThread ? PermissionsBitField.Flags.SendMessagesInThreads : PermissionsBitField.Flags.SendMessages];
 }
 
 function buildFieldValue(lines, emptyMessage) {
@@ -40,17 +56,12 @@ async function describeRoute(guild, me, getChannel, logKey, entry) {
   if (!channel) {
     return { ok: false, line: `❌ ${label} — <#${channelId}> (no access)` };
   }
-  if (!channel.isTextBased?.()) {
+  if (!channel.isTextBased?.() && channel.type !== ChannelType.GuildForum) {
     return { ok: false, line: `❌ ${label} — <#${channelId}> (not text)` };
   }
 
   if (me) {
-    const isThread = typeof channel.isThread === 'function' ? channel.isThread() : Boolean(channel.isThread);
-    const required = [
-      PermissionsBitField.Flags.ViewChannel,
-      isThread ? PermissionsBitField.Flags.SendMessagesInThreads : PermissionsBitField.Flags.SendMessages,
-      PermissionsBitField.Flags.EmbedLinks,
-    ];
+    const required = requiredPermissionsForChannel(channel);
     const perms = channel.permissionsFor(me);
     const missing = required.filter(flag => !perms?.has(flag)).map(permName);
     if (missing.length) {

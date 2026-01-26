@@ -26,7 +26,7 @@ module.exports = {
       option
         .setName('channel')
         .setDescription('Channel where invite logs should be posted')
-        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum)),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -56,20 +56,34 @@ module.exports = {
     }
 
     if (channel) {
-      if (!channel.isTextBased?.()) {
-        return interaction.reply({ content: 'Please choose a text-based channel.', ephemeral: true });
+      const isForum = channel.type === ChannelType.GuildForum;
+      if (!channel.isTextBased?.() && !isForum) {
+        return interaction.reply({ content: 'Please choose a text-based or forum channel.', ephemeral: true });
       }
       const me = interaction.guild?.members?.me || await interaction.guild?.members?.fetchMe().catch(() => null);
       if (me) {
         const required = [
           PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
           PermissionsBitField.Flags.EmbedLinks,
         ];
+        if (isForum) {
+          required.push(
+            PermissionsBitField.Flags.CreatePublicThreads,
+            PermissionsBitField.Flags.SendMessagesInThreads,
+          );
+        } else if (typeof channel.isThread === 'function' ? channel.isThread() : Boolean(channel.isThread)) {
+          required.push(PermissionsBitField.Flags.SendMessagesInThreads);
+        } else {
+          required.push(PermissionsBitField.Flags.SendMessages);
+        }
         const perms = channel.permissionsFor(me);
         if (!perms || !perms.has(required)) {
+          const missing = required
+            .filter(flag => !perms?.has(flag))
+            .map(flag => Object.entries(PermissionsBitField.Flags).find(([, v]) => v === flag)?.[0] || String(flag));
+          const missingList = missing.length ? missing.join(', ') : 'required permissions';
           return interaction.reply({
-            content: `I need View Channel, Send Messages, and Embed Links permissions in ${channel}.`,
+            content: `I need ${missingList} permissions in ${channel} to post invite logs.`,
             ephemeral: true,
           });
         }
