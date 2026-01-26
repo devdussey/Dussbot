@@ -1,6 +1,7 @@
 const { Events, AuditLogEvent, PermissionsBitField } = require('discord.js');
 const logSender = require('../utils/logSender');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
+const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/botLogEmbed');
 
 module.exports = {
   name: Events.GuildBanRemove,
@@ -43,9 +44,32 @@ module.exports = {
         client: guild.client,
         ownerFallback: true,
       });
+
+      if (user.bot) {
+        try {
+          const botEmbed = buildBotLogEmbed({
+            action: 'Bot Unbanned',
+            botUser: user,
+            actor: executor || 'System',
+            color: BOT_ACTION_COLORS.moderation,
+            description: reason || 'No reason provided',
+            extraFields: [
+              { name: 'Guild', value: `${guild.name} (${guild.id})`, inline: false },
+            ],
+          });
+
+          await logSender.sendLog({
+            guildId: guild.id,
+            logType: BOT_LOG_KEYS.moderation,
+            embed: botEmbed,
+            client: guild.client,
+          });
+        } catch (err) {
+          console.error('Failed to log bot unban:', err);
+        }
+      }
     } catch (err) {
       console.error('guildBanRemove handler error:', err);
     }
   },
 };
-

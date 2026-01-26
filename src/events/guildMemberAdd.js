@@ -10,6 +10,7 @@ const { buildJoinEmbed, formatInviteSource } = require('../utils/joinTrackerEmbe
 const { detectVanityUse } = require('../utils/vanityUseTracker');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
 const { buildMemberLogEmbed } = require('../utils/memberLogEmbed');
+const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/botLogEmbed');
 
 const INVITE_LOG_COLOR = 0x00f0ff;
 
@@ -135,6 +136,35 @@ module.exports = {
             usedInvite = await inviteTracker.handleMemberJoin(member);
         } catch (err) {
             console.error('Failed to detect invite usage:', err);
+        }
+
+        try {
+            if (member.user?.bot) {
+                const inviterUser = usedInvite?.inviterId
+                    ? { id: usedInvite.inviterId, tag: usedInvite.inviterTag }
+                    : null;
+
+                const embed = buildBotLogEmbed({
+                    action: 'Joined',
+                    botUser: member.user,
+                    inviter: inviterUser,
+                    color: BOT_ACTION_COLORS.join,
+                    extraFields: [
+                        { name: 'Invite Code', value: usedInvite?.code || 'Unknown', inline: true },
+                        { name: 'Invite Channel', value: usedInvite?.channelId ? `<#${usedInvite.channelId}>` : 'Unknown', inline: true },
+                        { name: 'Guild', value: `${member.guild.name} (${member.guild.id})`, inline: false },
+                    ],
+                });
+
+                await logSender.sendLog({
+                    guildId: member.guild.id,
+                    logType: BOT_LOG_KEYS.join,
+                    embed,
+                    client: member.client,
+                });
+            }
+        } catch (err) {
+            console.error('Failed to log bot join:', err);
         }
 
         try {

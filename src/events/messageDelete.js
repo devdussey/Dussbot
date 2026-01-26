@@ -1,6 +1,7 @@
 const { Events, AuditLogEvent, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const logSender = require('../utils/logSender');
 const userMessageLogStore = require('../utils/userMessageLogStore');
+const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/botLogEmbed');
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.apng', '.heic', '.gif'];
 const RED = 0xed4245;
@@ -98,6 +99,38 @@ module.exports = {
     try {
       if (!message?.guild || !message.channel) return;
       const guild = message.guild;
+
+      if (message.author?.bot) {
+        const cached = getCachedContent(message);
+        let content = message.content ? truncate(message.content) : '';
+        if (!content && cached?.content) {
+          content = truncate(cached.content);
+        }
+        if (!content) content = '*No content available*';
+
+        const attachmentInfo = collectAttachmentInfo(message);
+        const embed = buildBotLogEmbed({
+          action: 'Message Deleted',
+          botUser: message.author,
+          channel: message.channel,
+          color: BOT_ACTION_COLORS.messageDelete,
+          extraFields: [
+            { name: 'Message ID', value: message.id || 'Unknown', inline: true },
+            { name: 'Content', value: content, inline: false },
+            { name: 'Attachments', value: attachmentInfo.lines.length ? attachmentInfo.lines.join('\n').slice(0, 1024) : 'None', inline: false },
+          ],
+        });
+
+        await logSender.sendLog({
+          guildId: guild.id,
+          logType: BOT_LOG_KEYS.messageDelete,
+          embed,
+          client: message.client,
+          files: attachmentInfo.files,
+        });
+        return;
+      }
+
       const me = guild.members.me;
       if (!me) return;
       let executor = null;

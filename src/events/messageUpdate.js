@@ -1,5 +1,6 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const logSender = require('../utils/logSender');
+const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/botLogEmbed');
 
 const YELLOW = 0xffd166;
 
@@ -55,8 +56,31 @@ module.exports = {
   name: Events.MessageUpdate,
   async execute(oldMessage, newMessage) {
     try {
-      if (!newMessage.guild || newMessage.author?.bot) return;
-      if (oldMessage.content === newMessage.content) return;
+      if (!newMessage.guild) return;
+
+      if (newMessage.author?.bot) {
+        if (oldMessage?.content === newMessage?.content) return;
+        const embed = buildBotLogEmbed({
+          action: 'Message Edited',
+          botUser: newMessage.author,
+          channel: newMessage.channel,
+          color: BOT_ACTION_COLORS.messageEdit,
+          extraFields: [
+            { name: 'Message ID', value: newMessage.id || 'Unknown', inline: true },
+            { name: 'Original Content', value: truncate(oldMessage?.content), inline: false },
+            { name: 'Edited Content', value: truncate(newMessage?.content), inline: false },
+          ],
+        });
+        await logSender.sendLog({
+          guildId: newMessage.guild.id,
+          logType: BOT_LOG_KEYS.messageEdit,
+          embed,
+          client: newMessage.client,
+        });
+        return;
+      }
+
+      if (oldMessage?.content === newMessage?.content) return;
       const embed = buildEditedEmbed(oldMessage, newMessage);
       await logSender.sendLog({
         guildId: newMessage.guild.id,

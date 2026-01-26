@@ -48,6 +48,41 @@ const LOG_KEYS = {
     fallbackKey: 'member',
   },
 
+  bot: {
+    label: 'All Bot Events',
+    category: 'Bots',
+  },
+  bot_join: {
+    label: 'Bot Joined',
+    category: 'Bots',
+    fallbackKey: 'bot',
+  },
+  bot_leave: {
+    label: 'Bot Left',
+    category: 'Bots',
+    fallbackKey: 'bot',
+  },
+  bot_message_create: {
+    label: 'Bot Message Created',
+    category: 'Bots',
+    fallbackKey: 'bot',
+  },
+  bot_message_delete: {
+    label: 'Bot Message Deleted',
+    category: 'Bots',
+    fallbackKey: 'bot',
+  },
+  bot_message_edit: {
+    label: 'Bot Message Edited',
+    category: 'Bots',
+    fallbackKey: 'bot',
+  },
+  bot_moderation: {
+    label: 'Bot Moderation',
+    category: 'Bots',
+    fallbackKey: 'bot',
+  },
+
   moderation: {
     label: 'All Moderation Events',
     category: 'Moderation',

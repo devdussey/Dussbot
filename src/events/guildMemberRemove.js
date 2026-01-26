@@ -4,6 +4,7 @@ const joinLeaveStore = require('../utils/joinLeaveStore');
 const leaveTrackerStore = require('../utils/leaveTrackerStore');
 const { buildLeaveEmbed } = require('../utils/leaveTrackerEmbed');
 const { buildMemberLogEmbed } = require('../utils/memberLogEmbed');
+const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/botLogEmbed');
 
 module.exports = {
   name: Events.GuildMemberRemove,
@@ -64,6 +65,31 @@ module.exports = {
       }
 
       // Bans are handled by the GuildBanAdd event to avoid duplicates.
+      if (member.user?.bot && departure.type !== 'ban') {
+        try {
+          const isKick = departure.type === 'kick';
+          const embed = buildBotLogEmbed({
+            action: isKick ? 'Kicked' : 'Left',
+            botUser: member.user,
+            actor: isKick && departure.executorId ? { id: departure.executorId, tag: departure.executorTag } : null,
+            color: isKick ? BOT_ACTION_COLORS.moderation : BOT_ACTION_COLORS.leave,
+            extraFields: [
+              { name: 'Departure type', value: departure.type, inline: true },
+              { name: 'Guild', value: `${guild.name} (${guild.id})`, inline: true },
+            ],
+          });
+
+          await logSender.sendLog({
+            guildId: guild.id,
+            logType: isKick ? BOT_LOG_KEYS.moderation : BOT_LOG_KEYS.leave,
+            embed,
+            client,
+          });
+        } catch (err) {
+          console.error('Failed to log bot departure:', err);
+        }
+      }
+
       if (departure.type === 'ban') return;
 
       // Log the member removal

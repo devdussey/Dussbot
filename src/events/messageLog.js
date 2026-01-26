@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const logSender = require('../utils/logSender');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
+const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/botLogEmbed');
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.apng', '.heic'];
 const VIDEO_EXTS = ['.mp4', '.mov', '.webm', '.mkv', '.avi'];
@@ -217,7 +218,33 @@ module.exports = {
   name: Events.MessageCreate,
   async execute(message) {
     try {
-      if (!message.guild || message.author?.bot) return;
+      if (!message.guild) return;
+
+      if (message.author?.bot) {
+        const attachmentInfo = buildAttachmentInfo(message);
+        const content = truncate(message.content || '*No content*', 1024) || '*No content*';
+        const embed = buildBotLogEmbed({
+          action: 'Message Created',
+          botUser: message.author,
+          channel: message.channel,
+          color: BOT_ACTION_COLORS.messageCreate,
+          description: content,
+          extraFields: [
+            { name: 'Message ID', value: message.id || 'Unknown', inline: true },
+            { name: 'Attachments', value: attachmentInfo.lines.length ? attachmentInfo.lines.join('\n').slice(0, 1024) : 'None', inline: false },
+          ],
+        });
+
+        await logSender.sendLog({
+          guildId: message.guild.id,
+          logType: BOT_LOG_KEYS.messageCreate,
+          embed,
+          client: message.client,
+          files: attachmentInfo.files,
+        });
+        return;
+      }
+
       const { mediaItems, stickerItems } = collectMediaFromMessage(message);
       const attachmentInfo = buildAttachmentInfo(message);
       const embed = buildCreatedEmbed(message, attachmentInfo);

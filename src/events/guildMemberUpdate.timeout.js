@@ -1,6 +1,7 @@
 const { Events, AuditLogEvent, PermissionsBitField } = require('discord.js');
 const logSender = require('../utils/logSender');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
+const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/botLogEmbed');
 
 function getTimeoutTimestamp(member) {
   const ts = member?.communicationDisabledUntilTimestamp;
@@ -87,9 +88,30 @@ module.exports = {
         embed,
         client: guild.client,
       });
+
+      if (newMember.user?.bot) {
+        try {
+          const botEmbed = buildBotLogEmbed({
+            action: action.replace('User', 'Bot'),
+            botUser: newMember.user,
+            actor: executor || 'System',
+            color: BOT_ACTION_COLORS.moderation,
+            description: reason || (logType === 'member_timeout' ? 'Timeout applied' : 'Timeout removed'),
+            extraFields,
+          });
+
+          await logSender.sendLog({
+            guildId: guild.id,
+            logType: BOT_LOG_KEYS.moderation,
+            embed: botEmbed,
+            client: guild.client,
+          });
+        } catch (err) {
+          console.error('Failed to log bot timeout:', err);
+        }
+      }
     } catch (err) {
       console.error('guildMemberUpdate.timeout handler error:', err);
     }
   },
 };
-
