@@ -9,8 +9,6 @@ const logConfigManager = require('../utils/logConfigManager');
 const logConfigView = require('../utils/logConfigView');
 const botConfigStore = require('../utils/botConfigStore');
 const botConfigView = require('../utils/botConfigView');
-const openPollStore = require('../utils/openPollStore');
-const openPollManager = require('../utils/openPollManager');
 const reactionRoleStore = require('../utils/reactionRoleStore');
 const reactionRoleManager = require('../utils/reactionRoleManager');
 const boosterManager = require('../utils/boosterRoleManager');
@@ -155,24 +153,23 @@ const ADMIN_COMMANDS = new Set([
   'automessage',
   'autorespond',
   'autoroles',
-    'backup',
-    'backupdelete',
-    'backuplist',
-    'backupview',
-    'botconfig',
-    'botlook',
-    'botsettings',
+  'backup',
+  'backupdelete',
+  'backuplist',
+  'backupview',
+  'botconfig',
+  'botlook',
+  'botsettings',
   'brconfig',
   'channelsync',
   'automodconfig',
   'confessconfig',
-  'createchannel',
-    'createrole',
-  'deleterole',
+  'channel',
   'embed',
   'fetchmessage',
   'giverupee',
   'isolate',
+  'role',
   'roleclean',
   'jail',
   'logtree',
@@ -692,176 +689,6 @@ module.exports = {
                 }
                 return;
             }
-            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('openpoll:')) {
-                if (!interaction.inGuild()) {
-                    try { await interaction.reply({ content: 'Polls can only be used in a server.', ephemeral: true }); } catch (_) {
-                        try { await interaction.deferUpdate(); } catch (_) {}
-                    }
-                    return;
-                }
-
-                const parts = interaction.customId.split(':');
-                const action = parts[1];
-                const pollId = parts[2];
-                if (!action || !pollId) return;
-
-                const safeEphemeral = async (payload) => {
-                    const data = typeof payload === 'string' ? { content: payload } : (payload || {});
-                    if (typeof data.ephemeral !== 'boolean') data.ephemeral = true;
-                    try {
-                        if (interaction.replied || interaction.deferred) return await interaction.followUp(data);
-                        return await interaction.reply(data);
-                    } catch (_) {
-                        try { await interaction.deferUpdate(); } catch (_) {}
-                        return null;
-                    }
-                };
-
-                const safeUpdateOrReply = async (payload) => {
-                    const base = typeof payload === 'string' ? { content: payload } : (payload || {});
-                    const updatePayload = { ...base };
-                    delete updatePayload.ephemeral;
-                    try {
-                        await interaction.update(updatePayload);
-                        return true;
-                    } catch (_) {
-                        try {
-                            const data = { ...base, ephemeral: true };
-                            if (interaction.replied || interaction.deferred) await interaction.followUp(data);
-                            else await interaction.reply(data);
-                            return true;
-                        } catch (_) {
-                            try { await interaction.deferUpdate(); } catch (_) {}
-                            return false;
-                        }
-                    }
-                };
-
-                const poll = openPollStore.getPoll(interaction.guildId, pollId);
-                if (!poll) {
-                    await safeEphemeral('That poll is no longer available.');
-                    return;
-                }
-
-                if (action === 'add') {
-                    if (poll.open === false) {
-                        await safeEphemeral('This poll is closed.');
-                        return;
-                    }
-
-                    const modal = new ModalBuilder()
-                        .setCustomId(`openpoll:submit:${pollId}`)
-                        .setTitle('Add an answer');
-
-                    const input = new TextInputBuilder()
-                        .setCustomId('openpoll:answer')
-                        .setLabel('Your answer')
-                        .setStyle(TextInputStyle.Paragraph)
-                        .setRequired(true)
-                        .setMaxLength(200);
-
-                    modal.addComponents(new ActionRowBuilder().addComponents(input));
-
-                    try {
-                        await interaction.showModal(modal);
-                    } catch (_) {
-                        await safeEphemeral('Could not open the answer form. Please try again.');
-                    }
-                    return;
-                }
-
-                if (action === 'voteui') {
-                    if (poll.open === false) {
-                        await safeEphemeral('This poll is closed.');
-                        return;
-                    }
-
-                    const page = Number(parts[3] ?? 0);
-                    const view = openPollManager.buildVoteUi(poll, interaction.guildId, interaction.user.id, page);
-
-                    await safeEphemeral(view);
-                    return;
-                }
-
-                if (action === 'cast') {
-                    if (poll.open === false) {
-                        await safeEphemeral('This poll is closed.');
-                        return;
-                    }
-
-                    const answerIndex = Number(parts[3]);
-                    const page = Number(parts[4] ?? 0);
-                    const res = openPollStore.toggleVote(interaction.guildId, pollId, interaction.user.id, answerIndex);
-
-                    if (!res.ok || !res.poll) {
-                        const msg = res.error === 'invalid_answer'
-                            ? 'That answer is no longer available.'
-                            : res.error === 'closed'
-                                ? 'This poll is closed.'
-                                : 'That poll is no longer available.';
-                        await safeEphemeral(msg);
-                        return;
-                    }
-
-                    const view = openPollManager.buildVoteUi(res.poll, interaction.guildId, interaction.user.id, page);
-                    await safeUpdateOrReply(view);
-
-                    openPollManager
-                        .updatePollMessage(interaction.client, res.poll)
-                        .catch((err) => console.error('Failed to update open poll message after vote:', err));
-                    return;
-                }
-
-                if (action === 'clear') {
-                    if (poll.open === false) {
-                        await safeEphemeral('This poll is closed.');
-                        return;
-                    }
-
-                    const page = Number(parts[3] ?? 0);
-                    const res = openPollStore.clearVote(interaction.guildId, pollId, interaction.user.id);
-
-                    if (!res.ok || !res.poll) {
-                        const msg = res.error === 'closed'
-                            ? 'This poll is closed.'
-                            : 'That poll is no longer available.';
-                        await safeEphemeral(msg);
-                        return;
-                    }
-
-                    const view = openPollManager.buildVoteUi(res.poll, interaction.guildId, interaction.user.id, page);
-                    await safeUpdateOrReply(view);
-
-                    openPollManager
-                        .updatePollMessage(interaction.client, res.poll)
-                        .catch((err) => console.error('Failed to update open poll message after clearing vote:', err));
-                    return;
-                }
-
-                if (action === 'toggle') {
-                    if (interaction.user.id !== poll.creatorId) {
-                        await safeEphemeral('Only the poll creator can open/close this poll.');
-                        return;
-                    }
-
-                    const updated = openPollStore.togglePollOpen(interaction.guildId, pollId);
-                    if (!updated) {
-                        await safeEphemeral('That poll is no longer available.');
-                        return;
-                    }
-
-                    try {
-                        await interaction.update(openPollManager.buildPollView(updated, interaction.guildId));
-                    } catch (err) {
-                        console.error('Failed to update open poll message (toggle):', err);
-                        try { await interaction.deferUpdate(); } catch (_) {}
-                        try { await interaction.message?.edit(openPollManager.buildPollView(updated, interaction.guildId)); } catch (_) {}
-                    }
-                    return;
-                }
-
-                return;
-            }
             if (interaction.customId === 'verify:go') {
                 if (!interaction.inGuild()) return;
 
@@ -1086,55 +913,6 @@ module.exports = {
                 }
 
                 await interaction.editReply({ content: notes.join(' ') });
-                return;
-            }
-            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('openpoll:submit:')) {
-                if (!interaction.inGuild()) {
-                    try { await interaction.reply({ content: 'Polls can only be used in a server.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                const [, , pollId] = interaction.customId.split(':');
-                if (!pollId) return;
-
-                await interaction.deferReply({ ephemeral: true });
-
-                const poll = openPollStore.getPoll(interaction.guildId, pollId);
-                if (!poll) {
-                    await interaction.editReply({ content: 'That poll is no longer available.' });
-                    return;
-                }
-                if (poll.open === false) {
-                    await interaction.editReply({ content: 'This poll is closed.' });
-                    return;
-                }
-
-                let answer = '';
-                try { answer = (interaction.fields.getTextInputValue('openpoll:answer') || '').trim(); } catch (_) {}
-
-                const res = openPollStore.addAnswer(interaction.guildId, pollId, {
-                    text: answer,
-                    authorId: interaction.user.id,
-                    createdAt: Date.now(),
-                });
-
-                if (!res.ok) {
-                    const msg = res.error === 'max_answers'
-                        ? `This poll already has the maximum number of answers (${openPollStore.MAX_ANSWERS}).`
-                        : res.error === 'closed'
-                            ? 'This poll is closed.'
-                            : 'Please enter a valid answer.';
-                    await interaction.editReply({ content: msg });
-                    return;
-                }
-
-                try {
-                    await openPollManager.updatePollMessage(interaction.client, res.poll);
-                } catch (err) {
-                    console.error('Failed to update open poll message:', err);
-                }
-
-                await interaction.editReply({ content: 'Your answer has been added.' });
                 return;
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('confess:submit:')) {

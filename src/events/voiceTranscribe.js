@@ -2,8 +2,52 @@ const { Events, MessageFlags } = require('discord.js');
 const { transcribeAttachment, MAX_BYTES } = require('../utils/whisper');
 const voiceAutoStore = require('../utils/voiceAutoStore');
 const { createFieldEmbeds } = require('../utils/embedFields');
+const translate = require('@vitalets/google-translate-api');
 
 const HAS_OPENAI_KEY = Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_API);
+const LANGUAGE_DISPLAY = (() => {
+  try {
+    if (typeof Intl.DisplayNames === 'function') {
+      return new Intl.DisplayNames(['en'], { type: 'language' });
+    }
+  } catch (_) {}
+  return null;
+})();
+
+function formatLanguageName(code) {
+  if (!code) return null;
+  const normalized = String(code).toLowerCase();
+  const fromDisplay = LANGUAGE_DISPLAY?.of(normalized);
+  if (fromDisplay) return fromDisplay;
+  return normalized;
+}
+
+async function detectTranslation(text) {
+  if (!text) return null;
+  try {
+    const result = await translate(text, { to: 'en' });
+    const iso = String(result?.from?.language?.iso || '').toLowerCase();
+    if (!iso || iso === 'en') return null;
+    const translation = String(result?.text || '').trim();
+    if (!translation) return null;
+    const name = formatLanguageName(iso);
+    return { iso, name, translation };
+  } catch (err) {
+    console.error('Voice translation failed:', err);
+    return null;
+  }
+}
+
+function renderContentSection(text, translationDetails) {
+  const lines = [String(text || '').trim() || '(No content)'];
+  if (translationDetails) {
+    const languageLabel = translationDetails.name || translationDetails.iso || 'Unknown language';
+    lines.push('');
+    lines.push(`Language detected: ${languageLabel}`);
+    lines.push(`English translation: ${translationDetails.translation}`);
+  }
+  return lines.join('\n');
+}
 
 module.exports = {
   name: Events.MessageCreate,
@@ -28,12 +72,13 @@ module.exports = {
       }
 
       const text = await transcribeAttachment(attachment);
+      const translationDetails = await detectTranslation(text);
       const embeds = createFieldEmbeds({
         guildId: message.guildId,
         title: 'Voice Transcript',
         user: message.author,
         sections: [
-          { name: 'Content', value: text }
+          { name: 'Content', value: renderContentSection(text, translationDetails) }
         ]
       });
 

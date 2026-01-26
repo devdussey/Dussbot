@@ -20,11 +20,9 @@ const categories = {
     { cmd: '/rupeeconfig', desc: 'Enable or disable Smite rewards and redemption', perm: 'Manage Server' },
   ],
   'Roles & Identity': [
-    { cmd: '/role add/remove', desc: 'Grant or remove specific roles from a member', perm: 'Manage Roles' },
     { cmd: '/autoroles add/remove/list/clear', desc: 'Automatically assign roles to new members', perm: 'Manage Roles' },
     { cmd: '/verify setup/status/disable/repost', desc: 'Set up button verification with optional account-age rules', perm: 'Manage Server' },
-    { cmd: '/createrole', desc: 'Create a role with colour, hoist, mentionable, and position options', perm: 'Manage Roles' },
-    { cmd: '/deleterole', desc: 'Delete a role from the server', perm: 'Manage Roles' },
+    { cmd: '/role create/delete/edit', desc: 'Create, delete, or rename custom roles without touching permissions', perm: 'Administrator' },
     { cmd: '/roleclean', desc: 'Find roles with zero members and delete them quickly', perm: 'Manage Roles' },
     { cmd: '/brconfig', desc: 'Post the booster role configuration panel', perm: 'Manage Server' },
   ],
@@ -40,7 +38,7 @@ const categories = {
   'Server Setup & Messaging': [
     { cmd: '/confessconfig', desc: 'Post the anonymous confession button to a channel', perm: 'Manage Server' },
     { cmd: '/autobump add/remove/enable/disable/list', desc: 'Schedule automatic bumps for server listing sites', perm: 'Manage Server' },
-    { cmd: '/createchannel', desc: 'Quickly create text, voice, or stage channels with optional category', perm: 'Manage Channels' },
+    { cmd: '/channel create/edit', desc: 'Create or rename channels inside a category', perm: 'Administrator' },
     { cmd: '/channelsync', desc: 'Sync child channels with their category permissions', perm: 'Manage Channels' },
     { cmd: '/autorespond toggle/add/remove/list', desc: 'Automate keyword replies with optional channel filters', perm: 'Administrator' },
     { cmd: '/automessage create/delete/list', desc: 'Schedule automatic hourly messages or embeds', perm: 'Manage Server' },

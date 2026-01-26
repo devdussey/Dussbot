@@ -9,6 +9,26 @@ const {
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
+async function filterPresentMembers(guild, entries) {
+  if (!guild || !Array.isArray(entries) || !entries.length) return [];
+  const filtered = [];
+  for (const entry of entries) {
+    const userId = entry?.userId;
+    if (!userId) continue;
+    if (guild.members.cache.has(userId)) {
+      filtered.push(entry);
+      continue;
+    }
+    try {
+      await guild.members.fetch(userId);
+      filtered.push(entry);
+    } catch (_) {
+      // Ignore missing users
+    }
+  }
+  return filtered;
+}
+
 function pluralize(count, singular) {
   return Number(count) === 1 ? singular : `${singular}s`;
 }
@@ -70,7 +90,8 @@ module.exports = {
 
     await interaction.deferReply();
 
-    const entries = rupeeStore.listUserBalances(interaction.guildId, { minTokens: 1 });
+    const rawEntries = rupeeStore.listUserBalances(interaction.guildId, { minTokens: 1 });
+    const entries = await filterPresentMembers(interaction.guild, rawEntries);
     const perPage = 10;
     let pageIndex = 0;
 
