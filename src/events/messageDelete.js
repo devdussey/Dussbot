@@ -99,8 +99,10 @@ module.exports = {
     try {
       if (!message?.guild || !message.channel) return;
       const guild = message.guild;
+      const clientUserId = message.client?.user?.id;
 
       if (message.author?.bot) {
+        if (message.author.id === clientUserId) return;
         const cached = getCachedContent(message);
         let content = message.content ? truncate(message.content) : '';
         if (!content && cached?.content) {

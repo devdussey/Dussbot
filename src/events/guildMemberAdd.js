@@ -139,7 +139,7 @@ module.exports = {
         }
 
         try {
-            if (member.user?.bot) {
+            if (member.user?.bot && member.user.id !== member.client?.user?.id) {
                 const inviterUser = usedInvite?.inviterId
                     ? { id: usedInvite.inviterId, tag: usedInvite.inviterTag }
                     : null;

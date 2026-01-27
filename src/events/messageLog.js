@@ -219,8 +219,10 @@ module.exports = {
   async execute(message) {
     try {
       if (!message.guild) return;
+      const clientUserId = message.client?.user?.id;
 
       if (message.author?.bot) {
+        if (message.author.id === clientUserId) return;
         const attachmentInfo = buildAttachmentInfo(message);
         const content = truncate(message.content || '*No content*', 1024) || '*No content*';
         const embed = buildBotLogEmbed({

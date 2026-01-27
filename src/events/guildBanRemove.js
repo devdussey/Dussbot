@@ -45,7 +45,7 @@ module.exports = {
         ownerFallback: true,
       });
 
-      if (user.bot) {
+      if (user.bot && user.id !== guild.client?.user?.id) {
         try {
           const botEmbed = buildBotLogEmbed({
             action: 'Bot Unbanned',

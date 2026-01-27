@@ -65,7 +65,7 @@ module.exports = {
       }
 
       // Bans are handled by the GuildBanAdd event to avoid duplicates.
-      if (member.user?.bot && departure.type !== 'ban') {
+      if (member.user?.bot && member.user.id !== member.client?.user?.id && departure.type !== 'ban') {
         try {
           const isKick = departure.type === 'kick';
           const embed = buildBotLogEmbed({

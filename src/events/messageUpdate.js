@@ -57,8 +57,10 @@ module.exports = {
   async execute(oldMessage, newMessage) {
     try {
       if (!newMessage.guild) return;
+      const clientUserId = newMessage.client?.user?.id;
 
       if (newMessage.author?.bot) {
+        if (newMessage.author.id === clientUserId) return;
         if (oldMessage?.content === newMessage?.content) return;
         const embed = buildBotLogEmbed({
           action: 'Message Edited',

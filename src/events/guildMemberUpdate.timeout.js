@@ -89,7 +89,7 @@ module.exports = {
         client: guild.client,
       });
 
-      if (newMember.user?.bot) {
+      if (newMember.user?.bot && newMember.user.id !== guild.client?.user?.id) {
         try {
           const botEmbed = buildBotLogEmbed({
             action: action.replace('User', 'Bot'),
