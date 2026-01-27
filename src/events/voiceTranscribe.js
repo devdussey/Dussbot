@@ -2,7 +2,7 @@ const { Events, MessageFlags } = require('discord.js');
 const { transcribeAttachment, MAX_BYTES } = require('../utils/whisper');
 const voiceAutoStore = require('../utils/voiceAutoStore');
 const { createFieldEmbeds } = require('../utils/embedFields');
-const translate = require('@vitalets/google-translate-api');
+const { translate } = require('@vitalets/google-translate-api');
 
 const HAS_OPENAI_KEY = Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_API);
 const LANGUAGE_DISPLAY = (() => {

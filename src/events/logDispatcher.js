@@ -338,6 +338,17 @@ async function handleIntegration(action, integration) {
   await safeLog(guild, 'integration', embed);
 }
 
+async function handleIntegrationsUpdate(guild, integrations) {
+  if (!guild || !integrations?.cache?.size) return;
+  try {
+    for (const integration of integrations.cache.values()) {
+      await handleIntegration('updated', integration);
+    }
+  } catch (err) {
+    console.error('Failed to log integration updates:', err);
+  }
+}
+
 async function handleInviteCreate(invite) {
   const guild = invite.guild;
   if (!guild) return;
@@ -408,9 +419,9 @@ async function handleAutoModAction(execution) {
 }
 
 function registerHandlers(client) {
-  client.on(Events.RoleCreate, role => handleRoleCreate(role));
-  client.on(Events.RoleDelete, role => handleRoleDelete(role));
-  client.on(Events.RoleUpdate, (oldRole, newRole) => handleRoleUpdate(oldRole, newRole));
+  client.on(Events.GuildRoleCreate, role => handleRoleCreate(role));
+  client.on(Events.GuildRoleDelete, role => handleRoleDelete(role));
+  client.on(Events.GuildRoleUpdate, (oldRole, newRole) => handleRoleUpdate(oldRole, newRole));
   client.on(Events.ChannelCreate, channel => handleChannelCreate(channel));
   client.on(Events.ChannelDelete, channel => handleChannelDelete(channel));
   client.on(Events.ChannelUpdate, (oldChannel, newChannel) => handleChannelUpdate(oldChannel, newChannel));
@@ -418,18 +429,18 @@ function registerHandlers(client) {
   client.on(Events.ThreadDelete, thread => handleThreadDelete(thread));
   client.on(Events.ThreadUpdate, (oldThread, newThread) => handleThreadUpdate(oldThread, newThread));
   client.on(Events.VoiceStateUpdate, (oldState, newState) => handleVoiceState(oldState, newState));
-  client.on(Events.EmojiCreate, emoji => handleEmojiAction('created', emoji));
-  client.on(Events.EmojiDelete, emoji => handleEmojiAction('deleted', emoji));
-  client.on(Events.EmojiUpdate, (oldEmoji, newEmoji) => handleEmojiUpdate(oldEmoji, newEmoji));
-  client.on(Events.StickerCreate, sticker => handleStickerAction('created', sticker));
-  client.on(Events.StickerDelete, sticker => handleStickerAction('deleted', sticker));
-  client.on(Events.StickerUpdate, (oldSticker, newSticker) => handleStickerUpdate(oldSticker, newSticker));
+  client.on(Events.GuildEmojiCreate, emoji => handleEmojiAction('created', emoji));
+  client.on(Events.GuildEmojiDelete, emoji => handleEmojiAction('deleted', emoji));
+  client.on(Events.GuildEmojiUpdate, (oldEmoji, newEmoji) => handleEmojiUpdate(oldEmoji, newEmoji));
+  client.on(Events.GuildStickerCreate, sticker => handleStickerAction('created', sticker));
+  client.on(Events.GuildStickerDelete, sticker => handleStickerAction('deleted', sticker));
+  client.on(Events.GuildStickerUpdate, (oldSticker, newSticker) => handleStickerUpdate(oldSticker, newSticker));
   client.on(Events.GuildUpdate, (oldGuild, newGuild) => handleGuildUpdate(oldGuild, newGuild));
   client.on(Events.GuildCreate, guild => handleGuildCreate(guild));
   client.on(Events.GuildDelete, guild => handleGuildDelete(guild));
-  client.on(Events.IntegrationCreate, integration => handleIntegration('created', integration));
-  client.on(Events.IntegrationUpdate, integration => handleIntegration('updated', integration));
-  client.on(Events.IntegrationDelete, integration => handleIntegration('deleted', integration));
+  client.on(Events.GuildIntegrationsUpdate, (guild, integrations) => {
+    void handleIntegrationsUpdate(guild, integrations);
+  });
   client.on(Events.InviteCreate, invite => handleInviteCreate(invite));
   client.on(Events.InviteDelete, invite => handleInviteDelete(invite));
   client.on(Events.AutoModerationRuleCreate, rule => handleAutoModRule('created', rule));
