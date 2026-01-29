@@ -117,6 +117,11 @@ const LOG_KEYS = {
     category: 'Moderation',
     fallbackKey: 'moderation',
   },
+  restraining_order_violation: {
+    label: 'Restraining Order Violation',
+    category: 'Moderation',
+    fallbackKey: 'moderation',
+  },
 
   channel: {
     label: 'All Channel Events',
