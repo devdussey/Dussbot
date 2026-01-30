@@ -6,6 +6,7 @@ const { parseOwnerIds } = require('./ownerIds');
 
 const forumThreadCache = new Map();
 const DEFAULT_FORUM_ARCHIVE_MINUTES = 1440;
+const UNKNOWN_CHANNEL_CODES = new Set([10003]);
 
 function permName(flag) {
   return Object.entries(PermissionsBitField.Flags).find(([, value]) => value === flag)?.[0] || String(flag);
@@ -43,6 +44,23 @@ function resolveForumArchiveDuration(channel) {
   const allowed = new Set([60, 1440, 4320, 10080]);
   const preferred = channel?.defaultAutoArchiveDuration;
   return allowed.has(preferred) ? preferred : DEFAULT_FORUM_ARCHIVE_MINUTES;
+}
+
+function isUnknownChannelError(err) {
+  if (!err) return false;
+  const code = err?.code || err?.status;
+  return code === 404 || UNKNOWN_CHANNEL_CODES.has(code);
+}
+
+async function clearMissingChannelEntry(guildId, logKey, channelId) {
+  try {
+    const removed = await logChannelTypeStore.removeChannel(guildId, logKey);
+    if (removed) {
+      console.info(`logSender: Cleared log entry ${logKey} for guild ${guildId} after channel ${channelId} became unavailable.`);
+    }
+  } catch (err) {
+    console.error(`logSender: Failed to clear log entry ${logKey} for guild ${guildId}:`, err?.message || err);
+  }
 }
 
 async function fetchCachedForumThread(channel, cacheKey) {
@@ -162,15 +180,24 @@ async function sendLog(options) {
       if (!guild) {
         console.error(`logSender: Guild ${guildId} not found in cache for ${logType}`);
       } else {
-        const channel = guild.channels.cache.get(channelId) ||
-          await guild.channels.fetch(channelId).catch(err => {
+        let channel = guild.channels.cache.get(channelId);
+        let channelFetchError = null;
+
+        if (!channel) {
+          try {
+            channel = await guild.channels.fetch(channelId);
+          } catch (err) {
+            channelFetchError = err;
             const code = err?.code || err?.status;
             console.error(`logSender: Failed to fetch channel ${channelId} in guild ${guildId} for ${logType} (code ${code}):`, err?.message || err);
-            return null;
-          });
+          }
+        }
 
         if (!channel) {
           console.error(`logSender: Channel ${channelId} not found/accessible in guild ${guildId} for ${logType}`);
+          if (isUnknownChannelError(channelFetchError)) {
+            await clearMissingChannelEntry(guildId, resolvedLogKey, channelId);
+          }
         } else if (!channel.isTextBased?.() && channel.type !== ChannelType.GuildForum) {
           console.error(`logSender: Channel ${channelId} is not text-based for ${logType}`);
         } else {
