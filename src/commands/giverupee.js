@@ -1,7 +1,8 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { isOwner } = require('../utils/ownerIds');
 const rupeeStore = require('../utils/rupeeStore');
 const premiumManager = require('../utils/premiumManager');
+const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -63,18 +64,20 @@ module.exports = {
     const balanceLine = `They now have ${total} rupee${total === 1 ? '' : 's'}.`;
     const reasonLine = reason ? `Reason: ${reason}` : '';
 
-    const lines = [
-      `<@${interaction.user.id}> has given <@${target.id}> ${amount} rupee${amount === 1 ? '' : 's'}.`,
-      balanceLine,
-      reasonLine,
-    ]
-      .filter(Boolean)
-      .join('\n')
-      .slice(0, 1900);
+    const embed = new EmbedBuilder()
+      .setColor(resolveEmbedColour(interaction.guildId, 0x00f0ff))
+      .setTitle('Rupees granted')
+      .setDescription(`<@${interaction.user.id}> has given <@${target.id}> ${amount} rupee${amount === 1 ? '' : 's'}.`)
+      .addFields(
+        { name: 'Amount awarded', value: `${amount} rupee${amount === 1 ? '' : 's'}`, inline: true },
+        { name: 'New balance', value: balanceLine.replace('They now have ', '').replace('.', ''), inline: true },
+      )
+      .setTimestamp();
 
-    return interaction.reply({
-      content: lines,
-    });
+    if (reasonLine) {
+      embed.addFields({ name: 'Reason', value: reasonLine.replace('Reason: ', '') });
+    }
+
+    return interaction.reply({ embeds: [embed] });
   },
 };
-
