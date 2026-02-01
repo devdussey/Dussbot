@@ -264,6 +264,9 @@ const ADMIN_COMMANDS = new Set([
   'webhooks',
   'wordrush',
 ]);
+const ALWAYS_ENABLED_COMMANDS = new Set([
+  'rupeestore',
+]);
 const MANAGE_GUILD_COMMANDS = new Set([
   'searchword',
 ]);
@@ -323,10 +326,11 @@ module.exports = {
             }
 
             const categoryKey = COMMAND_CATEGORY_MAP[interaction.commandName];
+            const skipCategoryEnabledCheck = ALWAYS_ENABLED_COMMANDS.has(interaction.commandName);
             let defaultEphemeral = null;
             if (categoryKey && interaction.inGuild()) {
                 defaultEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, categoryKey, true);
-                if (!botConfigStore.isCategoryEnabled(interaction.guildId, categoryKey, true)) {
+                if (!skipCategoryEnabledCheck && !botConfigStore.isCategoryEnabled(interaction.guildId, categoryKey, true)) {
                     const label = getCategoryLabel(categoryKey);
                     const content = `${label} commands are disabled by a server admin.`;
                     try {
