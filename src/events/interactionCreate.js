@@ -247,7 +247,6 @@ const ADMIN_COMMANDS = new Set([
   'rrlist',
   'rupeeconfig',
   'rupeeboard',
-  'rupeestore',
   'say',
   'sentancerush',
   'showbans',
