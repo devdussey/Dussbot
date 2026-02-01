@@ -224,6 +224,15 @@ const LOG_KEYS = {
     label: 'System Events',
     category: 'System',
   },
+  economy: {
+    label: 'All Economy Events',
+    category: 'Economy',
+  },
+  rupee_spend: {
+    label: 'Rupee Store Spending',
+    category: 'Economy',
+    fallbackKey: 'economy',
+  },
 };
 
 const ALL_KEYS = Object.freeze(Object.keys(LOG_KEYS));

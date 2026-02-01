@@ -16,6 +16,8 @@ const coinStore = require('../utils/coinStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const immunityStore = require('../utils/silenceImmunityStore');
 const rupeeCustomRoleStore = require('../utils/rupeeCustomRoleStore');
+const logSender = require('../utils/logSender');
+const { buildRupeeSpendEmbed } = require('../utils/rupeeLogEmbed');
 
 const SHOP_ITEMS = [
   {
@@ -118,6 +120,28 @@ function buildShopEmbed({ guildId, balance, selectedItemId = null, blessingStatu
   embed.setFooter({ text: 'STFU/Abuse Mod targets gain 10 minutes of immunity after their timeout ends.' });
 
   return embed;
+}
+
+async function logRupeeStorePurchase({ interaction, itemLabel, cost, target, balance }) {
+  if (!interaction?.guildId || !interaction?.client) return;
+  try {
+    const embed = buildRupeeSpendEmbed({
+      guildId: interaction.guildId,
+      actor: interaction.user,
+      itemLabel,
+      itemCost: cost,
+      target,
+      balance,
+    });
+    await logSender.sendLog({
+      guildId: interaction.guildId,
+      logType: 'rupee_spend',
+      embed,
+      client: interaction.client,
+    });
+  } catch (err) {
+    console.error('Failed to send rupee spend log:', err?.message || err);
+  }
 }
 
 function buildItemSelect(customId, disabled = false) {
@@ -561,6 +585,14 @@ module.exports = {
             );
           await submission.reply({ embeds: [successEmbed], ephemeral: true });
 
+          await logRupeeStorePurchase({
+            interaction,
+            itemLabel: selectedItem.label,
+            cost: selectedItem.cost,
+            target: interaction.user,
+            balance: Number.isFinite(result.newBalance) ? result.newBalance : rupeeStore.getBalance(guildId, interaction.user.id),
+          });
+
           const refreshedEmbed = buildShopEmbed({
             guildId,
             balance: rupeeStore.getBalance(guildId, interaction.user.id),
@@ -659,6 +691,14 @@ module.exports = {
             content: `✅ ${selectedItem.label} applied to ${roleMention}.\nRemaining balance: ${result.newBalance} rupee${result.newBalance === 1 ? '' : 's'}.`,
           });
 
+          await logRupeeStorePurchase({
+            interaction,
+            itemLabel: selectedItem.label,
+            cost: selectedItem.cost,
+            target: interaction.user,
+            balance: Number.isFinite(result.newBalance) ? result.newBalance : rupeeStore.getBalance(guildId, interaction.user.id),
+          });
+
           const refreshedEmbed = buildShopEmbed({
             guildId,
             balance: rupeeStore.getBalance(guildId, interaction.user.id),
@@ -755,6 +795,13 @@ module.exports = {
 
         const freshBalance = rupeeStore.getBalance(guildId, interaction.user.id);
         const freshBlessing = formatBlessingStatus(guildId, userId);
+        await logRupeeStorePurchase({
+          interaction,
+          itemLabel: selectedItem.label,
+          cost: selectedItem.cost,
+          target: targetMember,
+          balance: freshBalance,
+        });
         const refreshedEmbed = buildShopEmbed({
           guildId,
           balance: freshBalance,
