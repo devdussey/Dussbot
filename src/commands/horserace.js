@@ -14,8 +14,8 @@ const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 const TRACK_SLOTS = 80;
-const TICK_DELAY_MS = 3_000;
-const MAX_TICKS = 10;
+const TICK_DELAY_MS = 5_000;
+const MAX_TICKS = 6;
 const JOIN_WINDOW_MS = 60_000;
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 8;
@@ -242,7 +242,7 @@ module.exports = {
 
           if (stage !== 'finished') {
             embed.addFields({ name: 'Bets', value: renderBettingSummary(horses, betTotals, totalBets) });
-            embed.setFooter({ text: 'Live updates every 3 seconds' });
+        embed.setFooter({ text: 'Live updates every 5 seconds' });
           } else if (finalSummaryEmbed) {
             embed = finalSummaryEmbed;
           }
@@ -426,7 +426,7 @@ module.exports = {
           .setTitle(`🏇 Horse Race — Turn ${currentTick}`)
           .setDescription(raceLines.join('\n'))
           .addFields({ name: 'Bets', value: renderBettingSummary(horses, betTotals, totalBets) })
-          .setFooter({ text: 'Live updates every 3 seconds' });
+          .setFooter({ text: 'Live updates every 5 seconds' });
         await interaction.followUp({ embeds: [embed], allowedMentions: { parse: [] } });
       } catch (err) {
         console.error('Failed to send live race update:', err);
@@ -435,7 +435,6 @@ module.exports = {
 
     for (let tick = 1; tick <= MAX_TICKS; tick += 1) {
       currentTick = tick;
-      let anyProgress = false;
       for (const horse of horses) {
         if (horse.finished) continue;
         const advance = Math.floor(Math.random() * 3) + 1; // 1-3 steps per tick
@@ -446,25 +445,12 @@ module.exports = {
           horse.finishTick = tick;
           finishOrder.push(horse);
         }
-        if (advance > 0) anyProgress = true;
       }
 
       await sendLiveUpdate();
-      if (finishOrder.length === horses.length) {
-        break;
+      if (tick < MAX_TICKS) {
+        await wait(TICK_DELAY_MS);
       }
-      if (!anyProgress) {
-        for (const horse of horses) {
-          if (!horse.finished) {
-            horse.position = TRACK_SLOTS - 1;
-            horse.finished = true;
-            horse.finishTick = tick;
-            finishOrder.push(horse);
-          }
-        }
-        break;
-      }
-      await wait(TICK_DELAY_MS);
     }
 
     if (finishOrder.length < horses.length) {
