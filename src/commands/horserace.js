@@ -15,7 +15,7 @@ const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 const TRACK_SLOTS = 18;
-const TICK_DELAY_MS = 1_000;
+const TICK_DELAY_MS = 5_000;
 const MAX_TICKS = 25;
 const JOIN_WINDOW_MS = 60_000;
 const MIN_PLAYERS = 2;
@@ -52,6 +52,16 @@ function renderRaceLines(horses, betTotals) {
     const starSuffix = horse.isPlayer && !horse.finished ? ' ⭐' : '';
     return `${track} 🏁 [${displayName}]${betText}${starSuffix}`;
   });
+}
+
+function formatRaceBulletins(raceLines) {
+  if (!raceLines.length) {
+    return ['🚨 Race Bulletin', '• _Racers are waiting in the gates..._'];
+  }
+  return [
+    '🚨 Race Bulletin',
+    ...raceLines.map((line) => `• **${line}**`),
+  ];
 }
 
 function summarizeBets(bets) {
@@ -98,11 +108,12 @@ function formatLobbyContent(waiting) {
 }
 
 function formatRunningContent(raceLines, betSummary, currentTick) {
+  const bulletins = formatRaceBulletins(raceLines);
   return [
     `🏇 Horse Race — Turn ${currentTick}`,
     '🚩 The race is now in progress.',
     '',
-    ...raceLines,
+    ...bulletins,
     '',
     'Bets',
     betSummary,
@@ -569,7 +580,34 @@ module.exports = {
       }
     }
     finalSummaryContent = summarySections.join('\n\n');
-    await interaction.followUp({ content: finalSummaryContent, allowedMentions: { parse: [] } });
+    const winnerEmbed = makeEmbed(guildId)
+      .setTitle('🏁 Horse Race Winners')
+      .setDescription(podiumLines.join('\n') || '_Placings unavailable_');
+
+    if (playerSummaryLines.length) {
+      winnerEmbed.addFields({
+        name: 'Player stats',
+        value: playerSummaryLines.join('\n'),
+      });
+    }
+
+    if (bets.size > 0) {
+      winnerEmbed.addFields({
+        name: 'Winning bets',
+        value: winners.length ? winners.join('\n') : '_No winning bets this time._',
+      });
+      if (losers.length) {
+        winnerEmbed.addFields({
+          name: 'Losing bets',
+          value: losers.join('\n'),
+        });
+      }
+    }
+
+    await interaction.followUp({
+      embeds: [winnerEmbed],
+      allowedMentions: { parse: [] },
+    });
     await buildAndSend();
     collector.stop('finished');
   },
