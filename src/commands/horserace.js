@@ -83,6 +83,43 @@ function renderBettingSummary(horses, betTotals, totalBets) {
   return `${headline}\n${lines.join('\n')}`;
 }
 
+function formatLobbyContent(waiting) {
+  return [
+    '🏇 Horse Race Lobby',
+    waiting.description,
+    '',
+    `Start timer: ${waiting.countdown}`,
+    '',
+    'Bets',
+    waiting.betting,
+    '',
+    `Entry cost: ${ENTRY_COST} rupee • Bets cost: ${BET_COST} rupee each`,
+  ].join('\n');
+}
+
+function formatRunningContent(raceLines, betSummary, currentTick) {
+  return [
+    `🏇 Horse Race — Turn ${currentTick}`,
+    '🚩 The race is now in progress.',
+    '',
+    ...raceLines,
+    '',
+    'Bets',
+    betSummary,
+    '',
+    'Live updates every 5 seconds',
+  ].join('\n');
+}
+
+function formatCancelledContent(refundNote) {
+  const note = refundNote || 'No charges were made.';
+  return [
+    '🏇 Horse Race Cancelled',
+    `Not enough racers joined in time (need at least ${MIN_PLAYERS}).`,
+    note,
+  ].join('\n');
+}
+
 function renderWaitingState(horses, joinDeadline, betTotals, totalBets) {
   const now = Date.now();
   const secondsLeft = Math.max(0, Math.ceil((joinDeadline - now) / 1000));
@@ -201,55 +238,35 @@ module.exports = {
     let joinDeadline = Date.now() + JOIN_WINDOW_MS;
     let stage = 'waiting';
     let currentTick = 0;
-    let finalSummaryEmbed = null;
+    let finalSummaryContent = null;
 
     await interaction.deferReply();
 
     const buildAndSend = async () => {
       try {
         const { betTotals, totalBets } = summarizeBets(bets);
-        let embed;
+        let content = '';
         if (stage === 'waiting') {
           const waiting = renderWaitingState(horses, joinDeadline, betTotals, totalBets);
-          embed = makeEmbed(guildId)
-            .setTitle('🏇 Horse Race Lobby')
-            .setDescription(waiting.description)
-            .addFields(
-              { name: 'Start timer', value: waiting.countdown, inline: false },
-              { name: 'Bets', value: waiting.betting, inline: false },
-            )
-            .setFooter({ text: `Entry cost: ${ENTRY_COST} rupee • Bets cost: ${BET_COST} rupee each` });
+          content = formatLobbyContent(waiting);
         } else if (stage === 'cancelled') {
           const refunds = [];
           if (entryPayments.size > 0) refunds.push('entry fees');
           if (bets.size > 0) refunds.push('bets');
           const refundNote = refunds.length ? `Refunded ${refunds.join(' and ')}.` : '';
-          embed = makeEmbed(guildId)
-            .setTitle('🏇 Horse Race Cancelled')
-            .setDescription(
-              `Not enough racers joined in time (need at least ${MIN_PLAYERS}).\n${refundNote || 'No charges were made.'}`
-            );
+          content = formatCancelledContent(refundNote);
         } else {
           const raceLines = renderRaceLines(horses, betTotals);
-          const title = stage === 'finished'
-            ? '🏁 Horse Race — Final Standings'
-            : `🏇 Horse Race — Turn ${currentTick}`;
-          const statusLine = stage === 'running' ? '🚩 The race is now in progress.' : '';
-          const description = statusLine ? `${statusLine}\n${raceLines.join('\n')}` : raceLines.join('\n');
-          embed = makeEmbed(guildId)
-            .setTitle(title)
-            .setDescription(description);
-
-          if (stage !== 'finished') {
-            embed.addFields({ name: 'Bets', value: renderBettingSummary(horses, betTotals, totalBets) });
-            embed.setFooter({ text: 'Live updates every 5 seconds' });
-          } else if (finalSummaryEmbed) {
-            embed = finalSummaryEmbed;
+          if (stage === 'finished' && finalSummaryContent) {
+            content = finalSummaryContent;
+          } else {
+            const betSummary = renderBettingSummary(horses, betTotals, totalBets);
+            content = formatRunningContent(raceLines, betSummary, currentTick);
           }
         }
 
         await interaction.editReply({
-          embeds: [embed],
+          content,
           components: buildComponents(stage, horses.length, joinButtonId, betButtonId, startButtonId),
           allowedMentions: { parse: [] },
         });
@@ -455,12 +472,9 @@ module.exports = {
       try {
         const { betTotals, totalBets } = summarizeBets(bets);
         const raceLines = renderRaceLines(horses, betTotals);
-        const embed = makeEmbed(guildId)
-          .setTitle(`🏇 Horse Race — Turn ${currentTick}`)
-          .setDescription(`🚩 The race is now in progress.\n${raceLines.join('\n')}`)
-          .addFields({ name: 'Bets', value: renderBettingSummary(horses, betTotals, totalBets) })
-          .setFooter({ text: 'Live updates every 5 seconds' });
-        await interaction.followUp({ embeds: [embed], allowedMentions: { parse: [] } });
+        const betSummary = renderBettingSummary(horses, betTotals, totalBets);
+        const content = formatRunningContent(raceLines, betSummary, currentTick);
+        await interaction.followUp({ content, allowedMentions: { parse: [] } });
       } catch (err) {
         console.error('Failed to send live race update:', err);
       }
@@ -541,26 +555,21 @@ module.exports = {
       return `${placeLabel} - ${name}`;
     });
 
-    const winnersEmbed = makeEmbed(guildId)
-      .setTitle('🏁 Horse Race - Winners')
-      .setDescription(podiumLines.join('\n'));
-
+    const summarySections = [
+      '🏁 Horse Race - Winners',
+      podiumLines.join('\n'),
+    ];
     if (playerSummaryLines.length) {
-      winnersEmbed.addFields({ name: 'Player stats', value: playerSummaryLines.join('\n') });
+      summarySections.push('Player stats', playerSummaryLines.join('\n'));
     }
     if (bets.size > 0) {
-      winnersEmbed.addFields({
-        name: 'Bets',
-        value: winners.length ? winners.join('\n') : '_No winning bets this time._',
-      });
+      summarySections.push('Bets', winners.length ? winners.join('\n') : '_No winning bets this time._');
       if (losers.length) {
-        winnersEmbed.addFields({ name: 'Lost bets', value: losers.join('\n') });
+        summarySections.push('Lost bets', losers.join('\n'));
       }
     }
-
-    finalSummaryEmbed = winnersEmbed;
-
-    await interaction.followUp({ embeds: [winnersEmbed], allowedMentions: { parse: [] } });
+    finalSummaryContent = summarySections.join('\n\n');
+    await interaction.followUp({ content: finalSummaryContent, allowedMentions: { parse: [] } });
     await buildAndSend();
     collector.stop('finished');
   },
