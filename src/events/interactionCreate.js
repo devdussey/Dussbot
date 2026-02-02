@@ -9,6 +9,7 @@ const logConfigManager = require('../utils/logConfigManager');
 const logConfigView = require('../utils/logConfigView');
 const botConfigStore = require('../utils/botConfigStore');
 const botConfigView = require('../utils/botConfigView');
+const modLogStore = require('../utils/modLogStore');
 const reactionRoleStore = require('../utils/reactionRoleStore');
 const reactionRoleManager = require('../utils/reactionRoleManager');
 const boosterManager = require('../utils/boosterRoleManager');
@@ -194,6 +195,7 @@ function getCategoryLabel(key) {
   return botConfigStore.getCategoryDefinition(key)?.label || key || 'This category';
 }
 
+const MODERATOR_COMMANDS = new Set(['ban', 'kick', 'jail', 'mute', 'unban', 'unmute']);
 const OWNER_COMMANDS = new Set(['wraith']);
 const ADMIN_COMMANDS = new Set([
   'analysis',
@@ -207,7 +209,6 @@ const ADMIN_COMMANDS = new Set([
   'backupdelete',
   'backuplist',
   'backupview',
-  'ban',
   'blessing',
   'botconfig',
   'botlook',
@@ -229,14 +230,11 @@ const ADMIN_COMMANDS = new Set([
   'inventory',
   'invitelogconfig',
   'isolate',
-  'jail',
-  'kick',
   'logconfig',
   'logtree',
   'memberlogconfig',
   'messagelogconfig',
   'massblessing',
-  'mute',
   'purge',
   'rredit',
   'removebg',
@@ -292,10 +290,28 @@ module.exports = {
             }
 
             const cmdName = interaction.commandName;
+            const isAdmin = interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
             if (OWNER_COMMANDS.has(cmdName) && !isOwner(interaction.user.id)) {
                 try { await interaction.reply({ content: 'Only the bot owner can run this command.', ephemeral: true }); } catch (_) {}
                 try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User is not a bot owner'); } catch (_) {}
                 return;
+            }
+
+            if (MODERATOR_COMMANDS.has(cmdName)) {
+                if (!interaction.inGuild()) {
+                    try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                const modRoleId = await modLogStore.getModeratorRole(interaction.guildId);
+                const hasModRole = Boolean(modRoleId && interaction.member?.roles?.cache?.has(modRoleId));
+                if (!hasModRole && !isAdmin) {
+                    const message = modRoleId
+                        ? 'The configured moderator role is required to run this command.'
+                        : 'No moderator role is configured; ask an admin to run /modconfig.';
+                    try { await interaction.reply({ content: message, ephemeral: true }); } catch (_) {}
+                    try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing moderator role'); } catch (_) {}
+                    return;
+                }
             }
 
             if (ADMIN_COMMANDS.has(cmdName)) {
@@ -303,7 +319,6 @@ module.exports = {
                     try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
                     return;
                 }
-                const isAdmin = interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
                 if (!isAdmin) {
                     try { await interaction.reply({ content: 'Administrator permission is required to use this command.', ephemeral: true }); } catch (_) {}
                     try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing Administrator'); } catch (_) {}

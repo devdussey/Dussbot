@@ -47,9 +47,12 @@ module.exports = {
 
     const user = interaction.options.getUser('target', true);
     const reasonRaw = interaction.options.getString('reason', true).trim();
+    if (!reasonRaw) {
+      return interaction.editReply({ content: 'Please provide a reason for the ban.' });
+    }
     const pruneDays = interaction.options.getInteger('prune_days') ?? 0;
     const pruneSeconds = Math.min(Math.max(pruneDays, 0), 7) * 86400;
-    const reason = reasonRaw.slice(0, 400) || 'No reason provided';
+    const reason = reasonRaw.slice(0, 400);
 
     if (user.id === interaction.user.id) {
       return interaction.editReply({ content: "You can't ban yourself." });

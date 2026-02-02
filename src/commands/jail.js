@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder, ChannelType } = require('discord.js');
 const store = require('../utils/jailStore');
+const modlog = require('../utils/modLogger');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 function parseDuration(str) {
@@ -57,13 +58,14 @@ module.exports = {
         .setDescription('Jail a member (remove roles, add jail role)')
         .addUserOption(opt => opt.setName('member').setDescription('Member to jail').setRequired(true))
         .addStringOption(opt => opt.setName('duration').setDescription('e.g., 10m, 1h, 2d').setRequired(false))
-        .addStringOption(opt => opt.setName('reason').setDescription('Reason').setRequired(false))
+        .addStringOption(opt => opt.setName('reason').setDescription('Reason for the jail (required)').setRequired(true))
         .addBooleanOption(opt => opt.setName('public').setDescription('Post response publicly (default: public)'))
     )
     .addSubcommand(sub =>
       sub.setName('remove')
         .setDescription('Unjail a member and restore previous roles')
         .addUserOption(opt => opt.setName('member').setDescription('Member to unjail').setRequired(true))
+        .addStringOption(opt => opt.setName('reason').setDescription('Reason for the unjailing (required)').setRequired(true))
         .addBooleanOption(opt => opt.setName('public').setDescription('Post response publicly (default: public)'))
     )
     .addSubcommand(sub =>
@@ -196,7 +198,11 @@ module.exports = {
     if (sub === 'add') {
       const targetUser = interaction.options.getUser('member', true);
       const durationStr = interaction.options.getString('duration');
-      const reason = interaction.options.getString('reason') || 'No reason provided';
+      const rawReason = interaction.options.getString('reason', true);
+      const reason = (rawReason || '').trim().slice(0, 400);
+      if (!reason) {
+        return interaction.reply({ content: 'Please provide a reason for the jail.', ephemeral });
+      }
       const config = await store.getConfig(interaction.guild.id);
       if (!config.jailRoleId) return interaction.reply({ content: 'Set a jail role first with /jail config role:<role>.', ephemeral });
 
@@ -237,11 +243,28 @@ module.exports = {
           { name: 'Removed roles', value: removed.length ? String(removed.length) : '0', inline: true },
         )
         .setTimestamp(new Date());
-      return interaction.reply({ embeds: [embed], ephemeral });
+      await interaction.reply({ embeds: [embed], ephemeral });
+      try {
+        await modlog.log(interaction, 'Member Jailed', {
+          target: `${member.user.tag} (${member.user.id})`,
+          reason,
+          color: 0xff0000,
+          extraFields: [
+            { name: 'Duration', value: until ? durationStr : 'Indefinite', inline: true },
+            { name: 'Removed roles', value: removed.length ? String(removed.length) : '0', inline: true },
+          ],
+        });
+      } catch (_) {}
+      return;
     }
 
     if (sub === 'remove') {
       const targetUser = interaction.options.getUser('member', true);
+      const rawReason = interaction.options.getString('reason', true);
+      const reason = (rawReason || '').trim().slice(0, 400);
+      if (!reason) {
+        return interaction.reply({ content: 'Please provide a reason for the unjail.', ephemeral });
+      }
       const config = await store.getConfig(interaction.guild.id);
       if (!config.jailRoleId) return interaction.reply({ content: 'Set a jail role first with /jail config.', ephemeral });
       let member;
@@ -261,7 +284,15 @@ module.exports = {
         try { await member.roles.add(role, 'Unjail: restoring previous roles'); } catch (_) {}
       }
       await store.removeJailed(interaction.guild.id, member.id);
-      return interaction.reply({ content: `Unjailed ${member.user.tag}.`, ephemeral });
+      await interaction.reply({ content: `Unjailed ${member.user.tag}. Reason: ${reason}`, ephemeral });
+      try {
+        await modlog.log(interaction, 'Member Unjailed', {
+          target: `${member.user.tag} (${member.user.id})`,
+          reason,
+          color: 0x57f287,
+        });
+      } catch (_) {}
+      return;
     }
 
     if (sub === 'status') {

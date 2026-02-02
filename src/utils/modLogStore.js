@@ -26,11 +26,30 @@ async function ensureLoaded() {
 
 async function ensureGuild(guildId) {
   await ensureLoaded();
-  const cur = cache[guildId];
-  if (cur && typeof cur === 'object') return cur;
-  const obj = { channelId: typeof cur === 'string' ? cur : null, mode: 'channel', enabled: true };
-  cache[guildId] = obj;
-  return obj;
+  let cur = cache[guildId];
+  if (!cur || typeof cur !== 'object') {
+    cur = {
+      channelId: typeof cur === 'string' ? cur : null,
+      moderatorRoleId: null,
+      mode: 'channel',
+      enabled: true,
+    };
+    cache[guildId] = cur;
+    return cur;
+  }
+  if (!Object.prototype.hasOwnProperty.call(cur, 'channelId')) {
+    cur.channelId = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(cur, 'moderatorRoleId')) {
+    cur.moderatorRoleId = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(cur, 'mode')) {
+    cur.mode = 'channel';
+  }
+  if (!Object.prototype.hasOwnProperty.call(cur, 'enabled')) {
+    cur.enabled = true;
+  }
+  return cur;
 }
 
 async function persist() {
@@ -81,5 +100,36 @@ async function setEnabled(guildId, enabled) {
   await persist();
 }
 
-module.exports = { get, set, clear, getMode, setMode, getEnabled, setEnabled };
+async function getModeratorRole(guildId) {
+  const g = await ensureGuild(guildId);
+  return g.moderatorRoleId || null;
+}
 
+async function setModeratorRole(guildId, roleId) {
+  const g = await ensureGuild(guildId);
+  g.moderatorRoleId = roleId ? String(roleId) : null;
+  await persist();
+}
+
+async function getConfig(guildId) {
+  const g = await ensureGuild(guildId);
+  return {
+    channelId: g.channelId || null,
+    moderatorRoleId: g.moderatorRoleId || null,
+    mode: g.mode || 'channel',
+    enabled: typeof g.enabled === 'boolean' ? g.enabled : true,
+  };
+}
+
+module.exports = {
+  get,
+  set,
+  clear,
+  getMode,
+  setMode,
+  getEnabled,
+  setEnabled,
+  getModeratorRole,
+  setModeratorRole,
+  getConfig,
+};

@@ -58,7 +58,10 @@ module.exports = {
     const user = interaction.options.getUser('target', true);
     const durationStr = interaction.options.getString('duration', true);
     const reasonRaw = interaction.options.getString('reason', true).trim();
-    const reason = reasonRaw.slice(0, 400) || 'No reason provided';
+    if (!reasonRaw) {
+      return interaction.editReply({ content: 'Please provide a reason for the mute.' });
+    }
+    const reason = reasonRaw.slice(0, 400);
 
     if (user.id === interaction.user.id) {
       return interaction.editReply({ content: "You can't mute yourself." });
