@@ -42,12 +42,13 @@ function renderTrack(position) {
 }
 
 function renderRaceLines(horses, finishOrder, betTotals) {
-  return horses.map((horse, index) => {
+  return horses.flatMap((horse, index) => {
     const lane = `\`${String(index + 1).padStart(2, '0')}\``;
     const track = renderTrack(horse.position);
     const nameRaw = horse.shortName || horse.name || `Horse ${index + 1}`;
     const safeName = escapeMarkdown(nameRaw).slice(0, 32);
     const label = horse.isPlayer ? `**${safeName}**` : safeName;
+    const mentionLine = horse.userId ? `**<@${horse.userId}>**` : label;
     const placementIndex = finishOrder.indexOf(horse);
     let suffix = '';
     if (placementIndex !== -1) {
@@ -60,7 +61,10 @@ function renderRaceLines(horses, finishOrder, betTotals) {
     }
     const betCount = betTotals.get(horse.id) || 0;
     const betText = betCount > 0 ? ` · Bets: ${betCount}` : '';
-    return `${lane} ${track} ${label}${suffix}${betText}`;
+    return [
+      mentionLine,
+      `${lane} ${track}${suffix}${betText}`,
+    ];
   });
 }
 
