@@ -3,6 +3,7 @@ const { PermissionsBitField, ChannelType } = require('discord.js');
 const logChannelTypeStore = require('./logChannelTypeStore');
 const { getFallbackKey } = require('./logEvents');
 const { parseOwnerIds } = require('./ownerIds');
+const { DEFAULT_NETWORK_RETRY_OPTIONS, retryAsync } = require('./networkRetry');
 
 const forumThreadCache = new Map();
 const DEFAULT_FORUM_ARCHIVE_MINUTES = 1440;
@@ -103,7 +104,7 @@ async function sendToForumChannel(channel, logKey, embeds, files) {
 
     if (thread) {
       try {
-        await thread.send(payload);
+        await retryAsync(() => thread.send(payload), DEFAULT_NETWORK_RETRY_OPTIONS);
         forumThreadCache.set(cacheKey, thread.id);
         return true;
       } catch (err) {
@@ -113,12 +114,12 @@ async function sendToForumChannel(channel, logKey, embeds, files) {
       }
     }
 
-    const created = await channel.threads.create({
+    const created = await retryAsync(() => channel.threads.create({
       name: threadName,
       autoArchiveDuration: resolveForumArchiveDuration(channel),
       reason: `Log thread for ${logKey}`,
       message: payload,
-    });
+    }), DEFAULT_NETWORK_RETRY_OPTIONS);
     forumThreadCache.set(cacheKey, created.id);
     return true;
   } catch (err) {
@@ -222,7 +223,7 @@ async function sendLog(options) {
                 const sent = await sendToForumChannel(channel, resolvedLogKey, embedsArray, filesArray || undefined);
                 sentSuccessfully = sentSuccessfully || sent;
               } else {
-                await channel.send(payload);
+                await retryAsync(() => channel.send(payload), DEFAULT_NETWORK_RETRY_OPTIONS);
                 sentSuccessfully = true;
               }
             } catch (err) {

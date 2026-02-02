@@ -1,5 +1,6 @@
 const fetch = globalThis.fetch;
 const { Blob } = require('node:buffer');
+const { retryFetch, DEFAULT_NETWORK_RETRY_OPTIONS } = require('./networkRetry');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_API;
 const OPENAI_TRANSCRIBE_MODEL = process.env.TRANSCRIBE_MODEL || 'whisper-1';
@@ -25,7 +26,7 @@ async function transcribeAttachment(attachment, prompt) {
     try { console.log(`[transcribe] Unrecognized content-type: ${ct}`); } catch (_) {}
   }
 
-  const fileRes = await fetch(attachment.url);
+  const fileRes = await retryFetch(fetch, attachment.url, undefined, DEFAULT_NETWORK_RETRY_OPTIONS);
   if (!fileRes.ok) {
     const text = await fileRes.text().catch(() => '');
     throw new Error(`Failed to download attachment: ${fileRes.status} ${text?.slice(0,200)}`);
@@ -45,13 +46,13 @@ async function transcribeAttachment(attachment, prompt) {
   form.append('model', OPENAI_TRANSCRIBE_MODEL);
   if (prompt) form.append('prompt', prompt);
 
-  const resp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  const resp = await retryFetch(fetch, 'https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: form,
-  });
+  }, DEFAULT_NETWORK_RETRY_OPTIONS);
 
   const bodyText = await resp.text();
   if (!resp.ok) {
