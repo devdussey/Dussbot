@@ -606,7 +606,9 @@ module.exports = {
               ChannelType.GuildAnnouncement,
               ChannelType.PublicThread,
               ChannelType.PrivateThread,
-            ))))
+            )
+        )
+    )
     .addSubcommand(sub =>
       sub
         .setName('list')
