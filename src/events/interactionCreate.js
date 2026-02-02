@@ -150,15 +150,12 @@ const COMMAND_CATEGORY_MAP = {
     backupview: 'admin',
     clone: 'admin',
     embed: 'admin',
-    rrcreate: 'admin',
-    rrdelete: 'admin',
-    rredit: 'admin',
-    rrlist: 'admin',
     say: 'admin',
     showbans: 'admin',
     vanityrole: 'admin',
     verify: 'admin',
     webhooks: 'admin',
+    reactionrole: 'admin',
 
     // Economy
     giverupee: 'economy',
@@ -236,13 +233,10 @@ const ADMIN_COMMANDS = new Set([
   'messagelogconfig',
   'massblessing',
   'purge',
-  'rredit',
+  'reactionrole',
   'removebg',
   'role',
   'roleclean',
-  'rrcreate',
-  'rrdelete',
-  'rrlist',
   'rupeeconfig',
   'rupeeboard',
   'say',
@@ -582,8 +576,12 @@ module.exports = {
 
                 const editPayload = {};
                 if (merged.ok) editPayload.components = merged.rows;
-                // Leave embeds unchanged; only update components.
-                if (interaction.message.embeds) editPayload.embeds = interaction.message.embeds;
+
+                const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { highlightRoleIds: personalRoles });
+                const summaryResult = reactionRoleManager.mergeSummaryEmbed(interaction.message.embeds, summary.embed, panel);
+                if (summaryResult.ok) {
+                    editPayload.embeds = summaryResult.embeds;
+                }
 
                 if (Object.keys(editPayload).length) {
                     try { await interaction.message.edit(editPayload); } catch (_) {}

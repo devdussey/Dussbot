@@ -138,6 +138,8 @@ function buildSummaryEmbed(panel, guild, opts = {}) {
 
   const embed = new EmbedBuilder().setDescription(lines.join('\n'));
   if (opts.title) embed.setTitle(opts.title);
+  const footerText = `${SUMMARY_FOOTER_PREFIX}${panel?.id || 'unknown'}`;
+  embed.setFooter({ text: footerText });
 
   try { applyDefaultColour(embed, guild?.id); } catch (_) {}
 
