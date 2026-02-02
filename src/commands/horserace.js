@@ -14,9 +14,9 @@ const { recordRace } = require('../utils/horseRaceStore');
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
-const TRACK_SLOTS = 80;
-const TICK_DELAY_MS = 5_000;
-const MAX_TICKS = TRACK_SLOTS * 2;
+const TRACK_SLOTS = 18;
+const TICK_DELAY_MS = 1_000;
+const MAX_TICKS = 25;
 const JOIN_WINDOW_MS = 60_000;
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 8;
@@ -35,37 +35,22 @@ function makeEmbed(guildId, colorFallback = 0x00f0ff) {
 
 function renderTrack(position) {
   const slots = Math.max(12, TRACK_SLOTS);
-  const finishIndex = slots - 1;
-  const arr = Array(slots).fill('—');
-  const clamped = Math.max(0, Math.min(position, finishIndex));
+  const arr = Array(slots).fill('·');
+  const clamped = Math.max(0, Math.min(position, slots - 1));
   arr[clamped] = '🏇';
-  return `${arr.join('')}🏁`;
+  return `🚦${arr.join('')}`;
 }
 
-function renderRaceLines(horses, finishOrder, betTotals) {
-  return horses.flatMap((horse, index) => {
-    const lane = `\`${String(index + 1).padStart(2, '0')}\``;
+function renderRaceLines(horses, betTotals) {
+  return horses.map((horse, index) => {
     const track = renderTrack(horse.position);
     const nameRaw = horse.shortName || horse.name || `Horse ${index + 1}`;
     const safeName = escapeMarkdown(nameRaw).slice(0, 32);
-    const label = horse.isPlayer ? `**${safeName}**` : safeName;
-    const mentionLine = horse.userId ? `**<@${horse.userId}>**` : label;
-    const placementIndex = finishOrder.indexOf(horse);
-    let suffix = '';
-    if (placementIndex !== -1) {
-      suffix = ` ${PLACE_EMOJIS[placementIndex] ?? `#${placementIndex + 1}`}`;
-    } else if (horse.finished) {
-      const orderIndex = finishOrder.length + 1;
-      suffix = ` #${orderIndex}`;
-    } else if (horse.isPlayer) {
-      suffix = ' ⭐';
-    }
+    const displayName = horse.userId ? `<@${horse.userId}>` : safeName;
     const betCount = betTotals.get(horse.id) || 0;
-    const betText = betCount > 0 ? ` · Bets: ${betCount}` : '';
-    return [
-      mentionLine,
-      `${lane} ${track}${suffix}${betText}`,
-    ];
+    const betText = betCount > 0 ? ` (${betCount} bet${betCount === 1 ? '' : 's'})` : '';
+    const starSuffix = horse.isPlayer && !horse.finished ? ' ⭐' : '';
+    return `${track} 🏁 [${displayName}]${betText}${starSuffix}`;
   });
 }
 
@@ -245,17 +230,19 @@ module.exports = {
               `Not enough racers joined in time (need at least ${MIN_PLAYERS}).\n${refundNote || 'No charges were made.'}`
             );
         } else {
-          const raceLines = renderRaceLines(horses, finishOrder, betTotals);
+          const raceLines = renderRaceLines(horses, betTotals);
           const title = stage === 'finished'
             ? '🏁 Horse Race — Final Standings'
             : `🏇 Horse Race — Turn ${currentTick}`;
+          const statusLine = stage === 'running' ? '🚩 The race is now in progress.' : '';
+          const description = statusLine ? `${statusLine}\n${raceLines.join('\n')}` : raceLines.join('\n');
           embed = makeEmbed(guildId)
             .setTitle(title)
-            .setDescription(raceLines.join('\n'));
+            .setDescription(description);
 
           if (stage !== 'finished') {
             embed.addFields({ name: 'Bets', value: renderBettingSummary(horses, betTotals, totalBets) });
-        embed.setFooter({ text: 'Live updates every 5 seconds' });
+            embed.setFooter({ text: 'Live updates every 5 seconds' });
           } else if (finalSummaryEmbed) {
             embed = finalSummaryEmbed;
           }
@@ -467,10 +454,10 @@ module.exports = {
     const sendLiveUpdate = async () => {
       try {
         const { betTotals, totalBets } = summarizeBets(bets);
-        const raceLines = renderRaceLines(horses, finishOrder, betTotals);
+        const raceLines = renderRaceLines(horses, betTotals);
         const embed = makeEmbed(guildId)
           .setTitle(`🏇 Horse Race — Turn ${currentTick}`)
-          .setDescription(raceLines.join('\n'))
+          .setDescription(`🚩 The race is now in progress.\n${raceLines.join('\n')}`)
           .addFields({ name: 'Bets', value: renderBettingSummary(horses, betTotals, totalBets) })
           .setFooter({ text: 'Live updates every 5 seconds' });
         await interaction.followUp({ embeds: [embed], allowedMentions: { parse: [] } });
