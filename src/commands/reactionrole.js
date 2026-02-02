@@ -544,7 +544,7 @@ module.exports = {
         .addStringOption(opt =>
           opt
             .setName('message_id')
-            .setDescription('Message ID that has the menu attached'))))
+            .setDescription('Message ID that has the menu attached')))
     .addSubcommand(sub =>
       sub
         .setName('edit')
