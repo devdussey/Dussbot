@@ -4,6 +4,7 @@ const {
   ButtonStyle,
   EmbedBuilder,
   ModalBuilder,
+  PermissionFlagsBits,
   SlashCommandBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -118,9 +119,10 @@ function renderWaitingState(horses, joinDeadline, betTotals, totalBets) {
   };
 }
 
-function buildComponents(stage, participantCount, joinButtonId, betButtonId) {
+function buildComponents(stage, participantCount, joinButtonId, betButtonId, startButtonId) {
   const joinDisabled = stage !== 'waiting' || participantCount >= MAX_PLAYERS;
   const betDisabled = stage !== 'waiting';
+  const startDisabled = stage !== 'waiting' || participantCount < MIN_PLAYERS;
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -133,6 +135,11 @@ function buildComponents(stage, participantCount, joinButtonId, betButtonId) {
       .setLabel('Place Bet')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(betDisabled),
+    new ButtonBuilder()
+      .setCustomId(startButtonId)
+      .setLabel('Start Race')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(startDisabled),
   );
 
   return [row];
@@ -156,6 +163,8 @@ module.exports = {
     const raceId = `${interaction.id}-${Date.now()}`;
     const joinButtonId = `horserace-join-${raceId}`;
     const betButtonId = `horserace-bet-${raceId}`;
+    const startButtonId = `horserace-start-${raceId}`;
+    const raceStarterId = interaction.user.id;
 
     const participants = new Map();
     const horses = [];
@@ -204,7 +213,7 @@ module.exports = {
       globalName: interaction.user.globalName,
     });
 
-    const joinDeadline = Date.now() + JOIN_WINDOW_MS;
+    let joinDeadline = Date.now() + JOIN_WINDOW_MS;
     let stage = 'waiting';
     let currentTick = 0;
     let finalSummaryEmbed = null;
@@ -254,7 +263,7 @@ module.exports = {
 
         await interaction.editReply({
           embeds: [embed],
-          components: buildComponents(stage, horses.length, joinButtonId, betButtonId),
+          components: buildComponents(stage, horses.length, joinButtonId, betButtonId, startButtonId),
           allowedMentions: { parse: [] },
         });
       } catch (err) {
@@ -386,9 +395,43 @@ module.exports = {
           if (err?.code === 'INTERACTION_COLLECTOR_ERROR') return;
           if (err?.message?.includes('Collector received no interactions')) return;
           console.error('Failed to process bet modal:', err);
-        }
       }
-    });
+    }
+    } else if (componentInteraction.customId === startButtonId) {
+      if (stage !== 'waiting') {
+        const embed = makeEmbed(guildId)
+          .setTitle('Race already started')
+          .setDescription('The race has already started and cannot be started again.');
+        await componentInteraction.reply({ embeds: [embed], ephemeral: true });
+        return;
+      }
+      if (componentInteraction.user.id !== raceStarterId) {
+        const embed = makeEmbed(guildId)
+          .setTitle('Only the lobby owner can start the race')
+          .setDescription('You must be the user who opened this race lobby to trigger the early start.');
+        await componentInteraction.reply({ embeds: [embed], ephemeral: true });
+        return;
+      }
+      if (!componentInteraction.member?.permissions?.has(PermissionFlagsBits.Administrator)) {
+        const embed = makeEmbed(guildId)
+          .setTitle('Admin-only control')
+          .setDescription('Only a server administrator can manually start the race.');
+        await componentInteraction.reply({ embeds: [embed], ephemeral: true });
+        return;
+      }
+      if (horses.length < MIN_PLAYERS) {
+        const embed = makeEmbed(guildId)
+          .setTitle('Not enough racers')
+          .setDescription(`You need at least ${MIN_PLAYERS} racers before the race can begin.`);
+        await componentInteraction.reply({ embeds: [embed], ephemeral: true });
+        return;
+      }
+      stage = 'running';
+      joinDeadline = Date.now();
+      await componentInteraction.deferUpdate();
+      await buildAndSend();
+    }
+  });
 
     collector.on('end', () => {
       clearInterval(joinInterval);
