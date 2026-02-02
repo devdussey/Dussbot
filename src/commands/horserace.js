@@ -395,9 +395,8 @@ module.exports = {
           if (err?.code === 'INTERACTION_COLLECTOR_ERROR') return;
           if (err?.message?.includes('Collector received no interactions')) return;
           console.error('Failed to process bet modal:', err);
-      }
-    }
-    } else if (componentInteraction.customId === startButtonId) {
+        }
+      } else if (componentInteraction.customId === startButtonId) {
       if (stage !== 'waiting') {
         const embed = makeEmbed(guildId)
           .setTitle('Race already started')
