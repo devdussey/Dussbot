@@ -57,8 +57,8 @@ module.exports = {
       sub.setName('add')
         .setDescription('Jail a member (remove roles, add jail role)')
         .addUserOption(opt => opt.setName('member').setDescription('Member to jail').setRequired(true))
-        .addStringOption(opt => opt.setName('duration').setDescription('e.g., 10m, 1h, 2d').setRequired(false))
         .addStringOption(opt => opt.setName('reason').setDescription('Reason for the jail (required)').setRequired(true))
+        .addStringOption(opt => opt.setName('duration').setDescription('e.g., 10m, 1h, 2d').setRequired(false))
         .addBooleanOption(opt => opt.setName('public').setDescription('Post response publicly (default: public)'))
     )
     .addSubcommand(sub =>
