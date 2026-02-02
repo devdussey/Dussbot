@@ -15,7 +15,7 @@ const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 const TRACK_SLOTS = 80;
 const TICK_DELAY_MS = 5_000;
-const MAX_TICKS = 6;
+const MAX_TICKS = TRACK_SLOTS * 2;
 const JOIN_WINDOW_MS = 60_000;
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 8;
@@ -452,6 +452,9 @@ module.exports = {
       }
 
       await sendLiveUpdate();
+      if (horses.every((horse) => horse.finished)) {
+        break;
+      }
       if (tick < MAX_TICKS) {
         await wait(TICK_DELAY_MS);
       }
