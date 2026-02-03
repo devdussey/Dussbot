@@ -40,11 +40,6 @@ module.exports = {
       await logger.logPermissionDenied(interaction, 'ban', 'Bot missing Ban Members');
       return interaction.editReply({ content: 'I need the Ban Members permission.' });
     }
-    if (!interaction.member.permissions?.has(PermissionsBitField.Flags.BanMembers)) {
-      await logger.logPermissionDenied(interaction, 'ban', 'User missing Ban Members');
-      return interaction.editReply({ content: 'You need Ban Members to use this command.' });
-    }
-
     const user = interaction.options.getUser('target', true);
     const reasonRaw = interaction.options.getString('reason', true).trim();
     if (!reasonRaw) {

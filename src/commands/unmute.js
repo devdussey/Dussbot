@@ -31,11 +31,6 @@ module.exports = {
       await logger.logPermissionDenied(interaction, 'unmute', 'Bot missing Moderate Members');
       return interaction.editReply({ content: 'I need the Moderate Members permission.' });
     }
-    if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ModerateMembers)) {
-      await logger.logPermissionDenied(interaction, 'unmute', 'User missing Moderate Members');
-      return interaction.editReply({ content: 'You need Moderate Members to use this command.' });
-    }
-
     const user = interaction.options.getUser('target', true);
     const reasonRaw = interaction.options.getString('reason', true) || '';
     const reason = reasonRaw.trim().slice(0, 400);

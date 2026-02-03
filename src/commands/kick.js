@@ -33,11 +33,6 @@ module.exports = {
       await logger.logPermissionDenied(interaction, 'kick', 'Bot missing Kick Members');
       return interaction.editReply({ content: 'I need the Kick Members permission.' });
     }
-    if (!interaction.member.permissions?.has(PermissionsBitField.Flags.KickMembers)) {
-      await logger.logPermissionDenied(interaction, 'kick', 'User missing Kick Members');
-      return interaction.editReply({ content: 'You need Kick Members to use this command.' });
-    }
-
     const user = interaction.options.getUser('target', true);
     const reasonRaw = interaction.options.getString('reason', true).trim();
     if (!reasonRaw) {
