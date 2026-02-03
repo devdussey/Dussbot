@@ -3,6 +3,7 @@ const messageLogStore = require('../utils/userMessageLogStore');
 const rupeeStore = require('../utils/rupeeStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const messageCountStore = require('../utils/messageCountStore');
 
 module.exports = {
   name: Events.MessageCreate,
@@ -14,6 +15,17 @@ module.exports = {
       await messageLogStore.recordMessage(message.guild.id, message.author.id, message);
     } catch (err) {
       console.error('Failed to update rupee message log', err);
+    }
+
+    try {
+      await messageCountStore.recordMessage(
+        message.guild.id,
+        message.author.id,
+        message.author?.tag || message.author?.username || message.author?.globalName || message.author?.id || null,
+        message.createdTimestamp,
+      );
+    } catch (err) {
+      console.error('Failed to update message leaderboard', err);
     }
 
     if (!smiteConfigStore.isEnabled(message.guild.id)) return;
