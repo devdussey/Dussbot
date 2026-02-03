@@ -39,6 +39,15 @@ const SHOP_ITEMS = [
     kind: 'timeout',
   },
   {
+    id: 'muzzle',
+    label: 'Muzzle',
+    cost: 5,
+    description: 'Mute a user across all voice channels for 5 minutes.',
+    requireModeratorTarget: false,
+    moderatorOnly: false,
+    kind: 'muzzle',
+  },
+  {
     id: 'nickname',
     label: 'Nickname Change',
     cost: 10,
@@ -64,8 +73,10 @@ const SHOP_ITEMS = [
 ];
 
 const TIMEOUT_DURATION_MS = 5 * 60_000;
+const MUZZLE_DURATION_MS = 5 * 60_000;
 const IMMUNITY_BUFFER_MS = 10 * 60_000; // After timeout ends
 const ROLE_ICON_FEATURE = 'ROLE_ICONS'; // Needed for gradient role colours
+const muzzleTimers = new Map();
 
 function makeEmbed(guildId) {
   return new EmbedBuilder().setColor(resolveEmbedColour(guildId, 0x00f0ff));
@@ -117,9 +128,34 @@ function buildShopEmbed({ guildId, balance, selectedItemId = null, blessingStatu
     });
   });
 
-  embed.setFooter({ text: 'STFU/Abuse Mod targets gain 10 minutes of immunity after their timeout ends.' });
+  embed.setFooter({ text: 'Targets gain 10 minutes of immunity after timeouts or muzzles expire.' });
 
   return embed;
+}
+
+function getMuzzleKey(guildId, userId) {
+  return `${guildId}:${userId}`;
+}
+
+function scheduleMuzzleLift(client, guildId, userId, durationMs, reason) {
+  const key = getMuzzleKey(guildId, userId);
+  if (muzzleTimers.has(key)) {
+    clearTimeout(muzzleTimers.get(key));
+  }
+  const timer = setTimeout(async () => {
+    muzzleTimers.delete(key);
+    try {
+      const guild = await client.guilds.fetch(guildId).catch(() => null);
+      if (!guild) return;
+      const member = await guild.members.fetch(userId).catch(() => null);
+      if (member?.voice?.serverMute) {
+        await member.voice.setMute(false, reason);
+      }
+    } catch (err) {
+      console.error('Failed to lift muzzle:', err?.message || err);
+    }
+  }, durationMs);
+  muzzleTimers.set(key, timer);
 }
 
 async function logRupeeStorePurchase({ interaction, itemLabel, cost, target, balance }) {
@@ -245,6 +281,62 @@ async function applyTimeoutPurchase({ interaction, item, targetMember }) {
   }
 
   await immunityStore.recordSilence(guild.id, targetMember.id, TIMEOUT_DURATION_MS, IMMUNITY_BUFFER_MS);
+
+  const newBalance = rupeeStore.getBalance(guild.id, actor.id);
+  return { success: true, newBalance };
+}
+
+async function applyMuzzlePurchase({ interaction, item, targetMember }) {
+  const guild = interaction.guild;
+  const actor = interaction.user;
+  const me = guild.members.me;
+
+  if (!me?.permissions?.has(PermissionsBitField.Flags.MuteMembers)) {
+    return { error: 'I need the Mute Members permission to muzzle members.' };
+  }
+
+  if (actor.id === targetMember.id) {
+    return { error: 'You cannot target yourself.' };
+  }
+  if (targetMember.user.bot) {
+    return { error: 'Bots cannot be targeted with this item.' };
+  }
+
+  const isAdminTarget = targetMember.permissions.has(PermissionsBitField.Flags.Administrator);
+  if (isAdminTarget) {
+    return { error: 'This item cannot be used on administrators.' };
+  }
+
+  const remainingMs = immunityStore.getRemainingMs(guild.id, targetMember.id);
+  if (remainingMs > 0) {
+    return { blockedMs: remainingMs };
+  }
+
+  const meHigher = me.roles.highest.comparePositionTo(targetMember.roles.highest) > 0;
+  if (!meHigher || !targetMember.moderatable) {
+    return { error: 'I cannot muzzle that member due to role hierarchy or permissions.' };
+  }
+
+  if (!targetMember.voice?.channelId) {
+    return { error: 'That user must be connected to a voice channel to be muzzled.' };
+  }
+
+  const paid = await rupeeStore.spendTokens(guild.id, actor.id, item.cost);
+  if (!paid) {
+    const balance = rupeeStore.getBalance(guild.id, actor.id);
+    return { error: `You need ${item.cost} rupee${item.cost === 1 ? '' : 's'} to buy ${item.label}. Balance: ${balance}.` };
+  }
+
+  const reason = `Muzzle purchased by ${actor.tag} (${actor.id})`;
+  try {
+    await targetMember.voice.setMute(true, reason);
+  } catch (err) {
+    await rupeeStore.addTokens(guild.id, actor.id, item.cost);
+    return { error: 'Failed to apply the muzzle. Your rupees were refunded.' };
+  }
+
+  scheduleMuzzleLift(interaction.client, guild.id, targetMember.id, MUZZLE_DURATION_MS, reason);
+  await immunityStore.recordSilence(guild.id, targetMember.id, MUZZLE_DURATION_MS, IMMUNITY_BUFFER_MS);
 
   const newBalance = rupeeStore.getBalance(guild.id, actor.id);
   return { success: true, newBalance };
@@ -511,7 +603,7 @@ module.exports = {
         });
         const freshItemRow = buildItemSelect(selectId, false);
 
-        if (selectedItem.kind === 'timeout') {
+        if (selectedItem.kind === 'timeout' || selectedItem.kind === 'muzzle') {
           if (selectedItem.moderatorOnly) {
             const moderators = await getModerators(interaction.guild);
             const modRow = buildModeratorSelect(`${targetSelectBase}:${itemId}`, moderators, false);
@@ -520,7 +612,10 @@ module.exports = {
               components: [freshItemRow, modRow],
             });
           } else {
-            const enabledUserRow = buildUserSelect(`${targetSelectBase}:${itemId}`, false, `Pick a target for ${selectedItem.label}`);
+            const placeholder = selectedItem.kind === 'muzzle'
+              ? 'Pick a target to muzzle'
+              : `Pick a target for ${selectedItem.label}`;
+            const enabledUserRow = buildUserSelect(`${targetSelectBase}:${itemId}`, false, placeholder);
             await componentInteraction.update({
               embeds: [updatedEmbed],
               components: [freshItemRow, enabledUserRow],
@@ -724,7 +819,7 @@ module.exports = {
           return;
         }
 
-        if (selectedItem.kind !== 'timeout') {
+        if (selectedItem.kind !== 'timeout' && selectedItem.kind !== 'muzzle') {
           await componentInteraction.reply({ content: 'This item no longer requires a target.', ephemeral: true });
           return;
         }
@@ -748,17 +843,21 @@ module.exports = {
           return;
         }
 
-        const result = await applyTimeoutPurchase({
+        const applyFn = selectedItem.kind === 'timeout'
+          ? applyTimeoutPurchase
+          : applyMuzzlePurchase;
+        const result = await applyFn({
           interaction,
           item: selectedItem,
           targetMember,
         });
 
         if (result.blockedMs) {
+          const blockVerb = selectedItem.kind === 'muzzle' ? 'can\'t be muzzled' : 'can\'t be silenced';
           const embed = makeEmbed(guildId)
             .setTitle('Target is immune')
             .setDescription(
-              `${targetMember.displayName || targetMember.user.username} can't be silenced for ${formatMinutes(result.blockedMs)}.`
+              `${targetMember.displayName || targetMember.user.username} ${blockVerb} for ${formatMinutes(result.blockedMs)}.`
             );
           await componentInteraction.reply({ embeds: [embed], ephemeral: true });
           return;
@@ -772,21 +871,29 @@ module.exports = {
           return;
         }
 
+        const durationMs = selectedItem.kind === 'timeout' ? TIMEOUT_DURATION_MS : MUZZLE_DURATION_MS;
         const successEmbed = makeEmbed(guildId)
           .setTitle(`${selectedItem.label} applied`)
           .setDescription(
-            `${selectedItem.label} used on ${targetMember} for ${formatMinutes(TIMEOUT_DURATION_MS)}.\n` +
+            `${selectedItem.label} used on ${targetMember} for ${formatMinutes(durationMs)}.\n` +
             `Remaining balance: ${result.newBalance} rupee${result.newBalance === 1 ? '' : 's'}.`
           );
         await componentInteraction.reply({ embeds: [successEmbed], ephemeral: true });
 
+        const isMuzzle = selectedItem.kind === 'muzzle';
         const publicEmbed = makeEmbed(guildId)
-          .setTitle(`${selectedItem.label} deployed`)
+          .setTitle(isMuzzle ? 'Muzzle deployed' : `${selectedItem.label} deployed`)
           .setDescription(
-            `${interaction.user} used **${selectedItem.label}** on ${targetMember} for ${formatMinutes(TIMEOUT_DURATION_MS)}.`
+            isMuzzle
+              ? `${interaction.user} has muzzled ${targetMember} for ${formatMinutes(durationMs)}.`
+              : `${interaction.user} used **${selectedItem.label}** on ${targetMember} for ${formatMinutes(durationMs)}.`
           )
           .setThumbnail(targetMember.displayAvatarURL({ extension: 'png', size: 256 }))
-          .setFooter({ text: 'Targets gain 10 minutes of immunity after their timeout ends.' });
+          .setFooter({
+            text: isMuzzle
+              ? 'Target is immune for 10 minutes after the muzzle ends.'
+              : 'Targets gain 10 minutes of immunity after their timeout ends.',
+          });
 
         await interaction.channel?.send({
           embeds: [publicEmbed],
