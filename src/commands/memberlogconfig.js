@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionsBitField, ChannelType, EmbedBuilder } = require('discord.js');
 const logChannelTypeStore = require('../utils/logChannelTypeStore');
 const logSender = require('../utils/logSender');
+const { getFallbackKey } = require('../utils/logEvents');
 
 const GROUP_KEY = 'member';
 const ACTIONS = {
@@ -16,9 +17,26 @@ const STATUS_COLORS = {
   test: 0x3498db,
 };
 
-function formatEntry(entry) {
+async function getFallbackChannelId(guildId, key, entry, cache) {
+  if (entry?.channelId) return null;
+  const fallbackKey = getFallbackKey(key);
+  if (!fallbackKey) return null;
+  if (!cache[fallbackKey]) {
+    cache[fallbackKey] = await logChannelTypeStore.getEntry(guildId, fallbackKey);
+  }
+  const fallbackEntry = cache[fallbackKey];
+  if (!fallbackEntry || fallbackEntry.enabled === false) return null;
+  return fallbackEntry.channelId || null;
+}
+
+function formatEntry(entry, fallbackChannelId = null) {
   const enabledText = entry?.enabled === false ? 'Disabled' : 'Enabled';
-  const channelText = entry?.channelId ? `<#${entry.channelId}>` : 'No channel set';
+  let channelText = 'No channel set';
+  if (entry?.channelId) {
+    channelText = `<#${entry.channelId}>`;
+  } else if (fallbackChannelId) {
+    channelText = `<#${fallbackChannelId}> (fallback)`;
+  }
   return `${enabledText} — ${channelText}`;
 }
 
@@ -61,8 +79,8 @@ function buildSummaryEmbed({ status, scopeLabel, channel, entries, testResults }
       { name: 'Channel', value: channel ? `${channel}` : 'Not provided', inline: true },
     );
 
-  for (const [label, entry] of entries) {
-    embed.addFields({ name: label, value: formatEntry(entry), inline: false });
+  for (const { label, entry, fallbackChannelId } of entries) {
+    embed.addFields({ name: label, value: formatEntry(entry, fallbackChannelId), inline: false });
   }
 
   if (testResults) {
@@ -192,10 +210,19 @@ module.exports = {
         // eslint-disable-next-line no-await-in-loop
         currentEntries[key] = await logChannelTypeStore.getEntry(guild.id, key);
       }
+      const preFallbackCache = {};
+      const preEffectiveChannels = {};
+      for (const key of keys) {
+        const entry = currentEntries[key];
+        const directChannel = entry?.channelId;
+        // eslint-disable-next-line no-await-in-loop
+        const fallbackChannel = directChannel ? null : await getFallbackChannelId(guild.id, key, entry, preFallbackCache);
+        preEffectiveChannels[key] = directChannel || fallbackChannel || null;
+      }
 
       const needsChannel = (status === 'enable' || status === 'test')
         && !channel
-        && keys.some(key => !currentEntries[key]?.channelId);
+        && keys.some(key => !preEffectiveChannels[key]);
 
       if (needsChannel) {
         return interaction.editReply({
@@ -220,10 +247,19 @@ module.exports = {
       }
 
       const entries = [];
+      const postFallbackCache = {};
       for (const key of keys) {
         // eslint-disable-next-line no-await-in-loop
         const entry = await logChannelTypeStore.getEntry(guild.id, key);
-        entries.push([labelForKey(key), entry]);
+        const fallbackChannelId = entry?.channelId
+          ? null
+          // eslint-disable-next-line no-await-in-loop
+          : await getFallbackChannelId(guild.id, key, entry, postFallbackCache);
+        entries.push({
+          label: labelForKey(key),
+          entry,
+          fallbackChannelId,
+        });
       }
 
       let testResults = null;
