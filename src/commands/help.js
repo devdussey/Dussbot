@@ -21,6 +21,7 @@ const categories = {
   'Moderation & Enforcement': [
 
     { cmd: '/showbans', desc: 'Fetch and cache the server ban list for cross-server checks', perm: 'Ban Members' },
+    { cmd: '/banlist', desc: 'List current bans (public reply optional)', perm: 'Ban Members' },
 
     { cmd: '/mute', desc: 'Timeout a member for a set duration (reason required)', perm: 'Moderate Members' },
 

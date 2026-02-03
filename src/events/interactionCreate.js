@@ -125,6 +125,7 @@ const COMMAND_CATEGORY_MAP = {
     // Moderation
     automodconfig: 'moderation',
     ban: 'moderation',
+    banlist: 'moderation',
     isolate: 'moderation',
     jail: 'moderation',
     kick: 'moderation',
@@ -192,7 +193,7 @@ function getCategoryLabel(key) {
   return botConfigStore.getCategoryDefinition(key)?.label || key || 'This category';
 }
 
-const MODERATOR_COMMANDS = new Set(['ban', 'kick', 'jail', 'mute', 'unban', 'unmute']);
+const MODERATOR_COMMANDS = new Set(['ban', 'banlist', 'kick', 'jail', 'mute', 'unban', 'unmute']);
 const OWNER_COMMANDS = new Set(['wraith']);
 const ADMIN_COMMANDS = new Set([
   'analysis',
