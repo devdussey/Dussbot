@@ -6,12 +6,12 @@ const {
 const { isOwner } = require('../utils/ownerIds');
 const messageLogStore = require('../utils/userMessageLogStore');
 
-const DEFAULT_LIMIT = 1000;
+const MIN_LIMIT = 10;
 const MAX_LIMIT = 5000;
 
 function clampLimit(value) {
-  const num = Number.isFinite(value) ? value : DEFAULT_LIMIT;
-  return Math.min(Math.max(Math.trunc(num), 10), MAX_LIMIT);
+  const num = Number.isFinite(value) ? value : MAX_LIMIT;
+  return Math.min(Math.max(Math.trunc(num), MIN_LIMIT), MAX_LIMIT);
 }
 
 function formatCount(count, noun) {
@@ -36,8 +36,8 @@ module.exports = {
       .setRequired(true))
     .addIntegerOption((option) => option
       .setName('limit')
-      .setDescription(`Maximum number of messages to scan (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT})`)
-      .setMinValue(10)
+      .setDescription(`Maximum number of messages to scan (max ${MAX_LIMIT}; omit to fetch the full channel history)`)
+      .setMinValue(MIN_LIMIT)
       .setMaxValue(MAX_LIMIT)
       .setRequired(false)),
 
@@ -51,7 +51,8 @@ module.exports = {
 
     const channel = interaction.options.getChannel('channel', true);
     const requestedLimit = interaction.options.getInteger('limit');
-    const maxToScan = clampLimit(requestedLimit ?? DEFAULT_LIMIT);
+    const maxToScan = requestedLimit === null ? null : clampLimit(requestedLimit);
+    const fetchEntireHistory = maxToScan === null;
 
     if (typeof channel?.isTextBased !== 'function' || !channel.isTextBased()) {
       return interaction.reply({
@@ -87,9 +88,10 @@ module.exports = {
     let before;
 
     try {
-      while (scanned < maxToScan) {
-        const remaining = maxToScan - scanned;
-        const fetchLimit = Math.min(100, Math.max(1, remaining));
+      while (true) {
+        if (!fetchEntireHistory && scanned >= maxToScan) break;
+        const remaining = fetchEntireHistory ? 100 : Math.max(1, maxToScan - scanned);
+        const fetchLimit = Math.min(100, remaining);
         const options = { limit: fetchLimit };
         if (before) options.before = before;
 
@@ -141,7 +143,9 @@ module.exports = {
     if (skippedBots > 0) {
       summaryLines.push(`Skipped ${formatCount(skippedBots, 'bot/system message')}.`);
     }
-    if (scanned >= maxToScan) {
+    if (fetchEntireHistory) {
+      summaryLines.push('Fetched all available history from that channel.');
+    } else if (scanned >= maxToScan) {
       summaryLines.push(`Reached the configured scan limit of ${maxToScan}. Run again to fetch older history.`);
     }
     if (!stored) {
