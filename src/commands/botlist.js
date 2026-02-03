@@ -3,6 +3,7 @@ const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 const MAX_FIELDS_PER_EMBED = 25;
 const MAX_EMBEDS = 10;
+const AUDIT_FETCH_LIMIT = 100;
 
 function formatPermissions(permissions) {
     if (!permissions.length) return 'None';
@@ -17,6 +18,43 @@ function chunkArray(items, size) {
         chunks.push(items.slice(i, i + size));
     }
     return chunks;
+}
+
+async function loadBotAddAuditEntries(guild, botIds) {
+    const botAddMap = new Map();
+    const pendingIds = new Set(botIds);
+    let before;
+
+    while (pendingIds.size) {
+        const options = { type: AuditLogEvent.BotAdd, limit: AUDIT_FETCH_LIMIT };
+        if (before) {
+            options.before = before;
+        }
+
+        const auditLogs = await guild.fetchAuditLogs(options);
+        const entries = [...auditLogs.entries.values()];
+        if (!entries.length) {
+            break;
+        }
+
+        for (const entry of entries) {
+            if (!botAddMap.has(entry.targetId)) {
+                botAddMap.set(entry.targetId, entry);
+                pendingIds.delete(entry.targetId);
+            }
+        }
+
+        if (entries.length < AUDIT_FETCH_LIMIT) {
+            break;
+        }
+
+        before = entries[entries.length - 1]?.id;
+        if (!before) {
+            break;
+        }
+    }
+
+    return botAddMap;
 }
 
 module.exports = {
@@ -59,17 +97,16 @@ module.exports = {
         }
 
         let auditLogError = false;
-        const botAddMap = new Map();
-        try {
-            const auditLogs = await guild.fetchAuditLogs({ type: AuditLogEvent.BotAdd, limit: 200 });
-            for (const entry of auditLogs.entries.values()) {
-                if (!botAddMap.has(entry.targetId)) {
-                    botAddMap.set(entry.targetId, entry);
-                }
+        let botAddMap = new Map();
+
+        if (botMembers.length) {
+            try {
+                const botIds = botMembers.map(member => member.id);
+                botAddMap = await loadBotAddAuditEntries(guild, botIds);
+            } catch (err) {
+                auditLogError = true;
+                console.warn('Bot list: failed to fetch audit logs', err);
             }
-        } catch (err) {
-            auditLogError = true;
-            console.warn('Bot list: failed to fetch audit logs', err);
         }
 
         const fields = botMembers.map((member, index) => {
