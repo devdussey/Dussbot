@@ -51,7 +51,8 @@ module.exports = {
         } catch (_) {}
 
         try {
-            const roleIds = store.getGuildRoles(member.guild.id);
+            const targetType = member.user?.bot ? 'bot' : 'member';
+            const roleIds = store.getEffectiveRoles(member.guild.id, targetType);
             if (!roleIds.length) return;
 
             const me = member.guild.members.me;

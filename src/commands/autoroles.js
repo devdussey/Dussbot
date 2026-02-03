@@ -1,6 +1,33 @@
-const { SlashCommandBuilder, PermissionsBitField, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const logger = require('../utils/securityLogger');
 const store = require('../utils/autorolesStore');
+
+const TARGET_OPTIONS = [
+    { name: 'All joins (members + bots)', value: 'all' },
+    { name: 'Humans only', value: 'member' },
+    { name: 'Bots only', value: 'bot' },
+];
+
+const TARGET_LABELS = {
+    all: 'all joining members',
+    member: 'human members only',
+    bot: 'bots only',
+};
+
+const TARGET_TITLES = {
+    all: 'All joins (members + bots)',
+    member: 'Humans only',
+    bot: 'Bots only',
+};
+
+function formatRoleList(guild, ids) {
+    return ids
+        .map(id => {
+            const role = guild.roles.cache.get(id);
+            return role ? `<@&${role.id}>` : `Unknown(${id})`;
+        })
+        .join(', ');
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,6 +42,11 @@ module.exports = {
                         .setDescription('Role to auto-assign on join')
                         .setRequired(true)
                 )
+                .addStringOption(opt =>
+                    opt.setName('target')
+                        .setDescription('Who should receive this autorole (default is every join)')
+                        .addChoices(...TARGET_OPTIONS)
+                )
         )
         .addSubcommand(sub =>
             sub
@@ -24,6 +56,11 @@ module.exports = {
                     opt.setName('role')
                         .setDescription('Role to remove')
                         .setRequired(true)
+                )
+                .addStringOption(opt =>
+                    opt.setName('target')
+                        .setDescription('Which autorole list to remove from (defaults to shared list)')
+                        .addChoices(...TARGET_OPTIONS)
                 )
         )
         .addSubcommand(sub =>
@@ -35,6 +72,11 @@ module.exports = {
             sub
                 .setName('clear')
                 .setDescription('Clear all autoroles')
+                .addStringOption(opt =>
+                    opt.setName('target')
+                        .setDescription('Limit clearing to a specific target list')
+                        .addChoices(...TARGET_OPTIONS)
+                )
         ),
 
     async execute(interaction) {
@@ -58,6 +100,8 @@ module.exports = {
 
         if (sub === 'add') {
             const role = interaction.options.getRole('role', true);
+            const target = interaction.options.getString('target') || 'all';
+            const targetLabel = TARGET_LABELS[target] || TARGET_LABELS.all;
 
             // Validate role is assignable by bot
             if (role.managed) {
@@ -69,26 +113,53 @@ module.exports = {
                 return interaction.reply({ content: 'My role must be higher than the target role.', ephemeral: true });
             }
 
-            const added = store.addGuildRole(interaction.guild.id, role.id);
-            return interaction.reply({ content: added ? `Added <@&${role.id}> to autoroles.` : `<@&${role.id}> is already in autoroles.`, ephemeral: true });
+            const added = store.addGuildRole(interaction.guild.id, role.id, target);
+            return interaction.reply({
+                content: added
+                    ? `Added <@&${role.id}> to autoroles for ${targetLabel}.`
+                    : `<@&${role.id}> is already configured for ${targetLabel}.`,
+                ephemeral: true,
+            });
         }
 
         if (sub === 'remove') {
             const role = interaction.options.getRole('role', true);
-            const removed = store.removeGuildRole(interaction.guild.id, role.id);
-            return interaction.reply({ content: removed ? `Removed <@&${role.id}> from autoroles.` : `<@&${role.id}> was not in autoroles.`, ephemeral: true });
+            const target = interaction.options.getString('target') || 'all';
+            const targetLabel = TARGET_LABELS[target] || TARGET_LABELS.all;
+            const removed = store.removeGuildRole(interaction.guild.id, role.id, target);
+            return interaction.reply({
+                content: removed ? `Removed <@&${role.id}> from autoroles for ${targetLabel}.` : `<@&${role.id}> was not configured for ${targetLabel}.`,
+                ephemeral: true,
+            });
         }
 
         if (sub === 'list') {
-            const ids = store.getGuildRoles(interaction.guild.id);
-            if (!ids.length) {
+            const allIds = store.getGuildRoles(interaction.guild.id, 'all');
+            const humanIds = store.getGuildRoles(interaction.guild.id, 'member');
+            const botIds = store.getGuildRoles(interaction.guild.id, 'bot');
+            const sections = [];
+            if (allIds.length) {
+                sections.push(`**${TARGET_TITLES.all}**: ${formatRoleList(interaction.guild, allIds)}`);
+            }
+            if (humanIds.length) {
+                sections.push(`**${TARGET_TITLES.member}**: ${formatRoleList(interaction.guild, humanIds)}`);
+            }
+            if (botIds.length) {
+                sections.push(`**${TARGET_TITLES.bot}**: ${formatRoleList(interaction.guild, botIds)}`);
+            }
+            if (!sections.length) {
                 return interaction.reply({ content: 'No autoroles configured.', ephemeral: true });
             }
-            const names = ids.map(id => interaction.guild.roles.cache.get(id) ? `<@&${id}>` : `Unknown(${id})`);
-            return interaction.reply({ content: `Autoroles: ${names.join(', ')}`, ephemeral: true });
+            return interaction.reply({ content: `Autoroles:\n${sections.join('\n\n')}`, ephemeral: true });
         }
 
         if (sub === 'clear') {
+            const target = interaction.options.getString('target');
+            if (target) {
+                store.clearGuildRoles(interaction.guild.id, target);
+                const targetLabel = TARGET_LABELS[target] || TARGET_LABELS.all;
+                return interaction.reply({ content: `Cleared autoroles configured for ${targetLabel}.`, ephemeral: true });
+            }
             store.clearGuildRoles(interaction.guild.id);
             return interaction.reply({ content: 'Cleared all autoroles for this server.', ephemeral: true });
         }
