@@ -1,4 +1,5 @@
 const { Events, ActivityType } = require('discord.js');
+const consoleMessageRelay = require('../utils/consoleMessageRelay');
 
 module.exports = {
   name: Events.ClientReady,
@@ -20,12 +21,18 @@ module.exports = {
     }
 
     // Install console.error relay to a Discord channel or owner DMs
-  try {
-    const relay = require('../utils/errorConsoleRelay');
-    relay.install(client);
-  } catch (e) {
-    console.warn('Failed to install error console relay:', e?.message || e);
-  }
+    try {
+      const relay = require('../utils/errorConsoleRelay');
+      relay.install(client);
+    } catch (e) {
+      console.warn('Failed to install error console relay:', e?.message || e);
+    }
+
+    try {
+      consoleMessageRelay.install(client);
+    } catch (e) {
+      console.warn('Failed to install console message relay:', e?.message || e);
+    }
 
     // Start automessage scheduler for timed messages/embeds
     try {
