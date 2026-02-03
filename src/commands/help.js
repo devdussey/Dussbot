@@ -133,7 +133,7 @@ const categories = {
 
     { cmd: '/rupeestore', desc: 'Spend rupees on nickname changes, custom roles, STFU, and Abuse Mod', perm: null },
 
-    { cmd: '/blessing', desc: 'Claim a daily blessing worth 1 rupee', perm: null },
+    { cmd: '/blessing', desc: 'Claim a daily blessing worth 1 rupee', perm: 'Administrator' },
 
     { cmd: '/massblessing', desc: 'Give every user in the server 1 rupee', perm: 'Administrator' },
 

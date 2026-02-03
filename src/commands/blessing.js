@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const coinStore = require('../utils/coinStore');
 const rupeeStore = require('../utils/rupeeStore');
 
@@ -24,6 +24,13 @@ module.exports = {
   async execute(interaction) {
     if (!interaction.inGuild()) {
       return interaction.reply({ content: 'Blessings are only tracked inside servers.', ephemeral: true });
+    }
+
+    if (!interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({
+        content: 'Only administrators may run /blessing.',
+        ephemeral: true,
+      });
     }
 
     await interaction.deferReply({ ephemeral: true });
