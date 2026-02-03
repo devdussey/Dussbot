@@ -55,6 +55,7 @@ function ensureUserRecord(guildId, userId) {
       primary: null,
       secondary: null,
       active: 'primary',
+      hoist: false,
     };
   }
 
@@ -63,6 +64,7 @@ function ensureUserRecord(guildId, userId) {
   if (typeof rec.primary !== 'string') rec.primary = null;
   if (typeof rec.secondary !== 'string') rec.secondary = null;
   if (rec.active !== 'primary' && rec.active !== 'secondary') rec.active = 'primary';
+  if (typeof rec.hoist !== 'boolean') rec.hoist = false;
   return rec;
 }
 
@@ -84,6 +86,7 @@ async function upsertUserRecord(guildId, userId, patch) {
   if ('primary' in safePatch) rec.primary = typeof safePatch.primary === 'string' ? safePatch.primary : null;
   if ('secondary' in safePatch) rec.secondary = typeof safePatch.secondary === 'string' ? safePatch.secondary : null;
   if ('active' in safePatch) rec.active = safePatch.active === 'secondary' ? 'secondary' : 'primary';
+  if ('hoist' in safePatch) rec.hoist = safePatch.hoist === true;
 
   await saveStore();
   return rec;

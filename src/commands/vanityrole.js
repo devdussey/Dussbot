@@ -238,6 +238,7 @@ async function handleVanityRoleSetup(interaction, inputs) {
     const secondaryRaw = inputs?.secondary ? inputs.secondary.trim() : '';
     const useRaw = inputs?.use ? inputs.use.trim().toLowerCase() : '';
     const roleId = inputs?.roleId ? String(inputs.roleId) : null;
+    const hoistPreference = typeof rec?.hoist === 'boolean' ? rec.hoist : false;
 
     if (!roleId) {
       return interaction.editReply({ content: 'Select a role first with `/vanityrole setup role:@Role`.' });
@@ -275,6 +276,7 @@ async function handleVanityRoleSetup(interaction, inputs) {
       primary: primaryIn ? primary : rec?.primary ?? null,
       secondary: secondaryIn ? secondary : rec?.secondary ?? null,
       active: use || rec?.active || 'primary',
+      hoist: hoistPreference,
     };
 
     if (merged.active === 'secondary' && !merged.secondary) {
@@ -304,6 +306,12 @@ async function handleVanityRoleSetup(interaction, inputs) {
       } catch (_) {}
     }
 
+    if (typeof merged.hoist === 'boolean') {
+      try {
+        await role.setHoist(merged.hoist, reason);
+      } catch (_) {}
+    }
+
     if (!member.roles.cache.has(role.id)) {
       try { await member.roles.add(role, reason); } catch (err) {
         throw new Error(`I created the role, but couldn't assign it to you: ${err.message || 'Unknown error'}`);
@@ -317,6 +325,7 @@ async function handleVanityRoleSetup(interaction, inputs) {
       primary: merged.primary,
       secondary: merged.secondary,
       active: picked.active,
+      hoist: merged.hoist,
     });
 
     try { await modlog.log(interaction, created ? 'Vanity Role Created' : 'Vanity Role Updated', {
@@ -327,6 +336,7 @@ async function handleVanityRoleSetup(interaction, inputs) {
         { name: 'Primary', value: saved.primary || 'not set', inline: true },
         { name: 'Secondary', value: saved.secondary || 'not set', inline: true },
         { name: 'Gradient Primary', value: saved.active, inline: true },
+        { name: 'Displayed Separately', value: saved.hoist ? 'yes' : 'no', inline: true },
         { name: 'Position', value: `${role.position} (desired ${pos.desired})`, inline: true },
       ],
     }); } catch (_) {}
@@ -407,6 +417,17 @@ module.exports = {
             .setName('url')
             .setDescription('Direct PNG/JPG link under 256KB (will be resized to 64x64)')
             .setRequired(false)
+        )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName('display')
+        .setDescription('Toggle whether your vanity role displays separately from online members')
+        .addBooleanOption(opt =>
+          opt
+            .setName('hoist')
+            .setDescription('Display the role separately from online members')
+            .setRequired(true)
         )
     ),
 
@@ -528,6 +549,38 @@ module.exports = {
         }); } catch (_) {}
 
         return interaction.editReply({ content: `Updated the icon for ${role}.` });
+      }
+
+      if (sub === 'display') {
+        if (!rec?.roleId) return interaction.editReply({ content: 'No vanity role found. Run `/vanityrole setup` first.' });
+        const role = interaction.guild.roles.cache.get(rec.roleId) || await interaction.guild.roles.fetch(rec.roleId).catch(() => null);
+        if (!role) return interaction.editReply({ content: 'Your saved vanity role no longer exists. Run `/vanityrole setup` to recreate it.' });
+        if (role.managed) return interaction.editReply({ content: 'Your vanity role is managed and cannot be edited.' });
+        if (me.roles.highest.comparePositionTo(role) <= 0) return interaction.editReply({ content: 'My highest role must be above your vanity role.' });
+
+        const hoist = interaction.options.getBoolean('hoist', true);
+        const reason = `Vanity role display setting for ${interaction.user.tag} (${interaction.user.id}) via /vanityrole`;
+        try {
+          await role.setHoist(hoist, reason);
+        } catch (err) {
+          return interaction.editReply({ content: 'Unable to update display setting. Make sure my role is above yours and I have Manage Roles.' });
+        }
+        await upsertUserRecord(interaction.guildId, interaction.user.id, { hoist });
+
+        try { await modlog.log(interaction, 'Vanity Role Display Changed', {
+          target: `${interaction.user.tag} (${interaction.user.id})`,
+          reason: hoist ? 'Displaying role separately from online members' : 'Displaying role with online members',
+          extraFields: [
+            { name: 'Role', value: `${role} (${role.id})`, inline: false },
+            { name: 'Displayed Separately', value: hoist ? 'yes' : 'no', inline: true },
+          ],
+        }); } catch (_) {}
+
+        return interaction.editReply({
+          content: hoist
+            ? `Now displaying ${role} separately from online members.`
+            : `Now displaying ${role} with the rest of the online members.`,
+        });
       }
 
       if (sub === 'colour') {
