@@ -1,10 +1,15 @@
-const { Events } = require('discord.js');
+const { Events, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const coinStore = require('../utils/coinStore');
+const rupeeStore = require('../utils/rupeeStore');
+const smiteConfigStore = require('../utils/smiteConfigStore');
 const {
   getVoiceCoinRewardPerMinute,
   MS_PER_MINUTE,
 } = require('../utils/economyConfig');
+const { resolveEmbedColour } = require('../utils/guildColourStore');
 
+const RUPEE_VOICE_INTERVAL_MS = 15 * MS_PER_MINUTE;
+const VOICE_RUPEE_EMBED_COLOR = 0x00f0ff;
 const sessions = new Map();
 
 function getKey(guildId, userId) {
@@ -13,15 +18,15 @@ function getKey(guildId, userId) {
 
 async function awardCoins(guildId, userId, session, deltaMs) {
   if (!guildId || !userId || !session) return;
-  session.remainderMs = (session.remainderMs || 0) + deltaMs;
+  session.coinRemainderMs = (session.coinRemainderMs || 0) + deltaMs;
   const rewardPerMinute = getVoiceCoinRewardPerMinute();
   if (rewardPerMinute <= 0) {
-    session.remainderMs = 0;
+    session.coinRemainderMs = 0;
     return;
   }
-  const fullMinutes = Math.floor(session.remainderMs / MS_PER_MINUTE);
+  const fullMinutes = Math.floor(session.coinRemainderMs / MS_PER_MINUTE);
   if (fullMinutes <= 0) return;
-  session.remainderMs -= fullMinutes * MS_PER_MINUTE;
+  session.coinRemainderMs -= fullMinutes * MS_PER_MINUTE;
   const coins = fullMinutes * rewardPerMinute;
   await coinStore.addCoins(guildId, userId, coins);
 }
@@ -56,7 +61,7 @@ module.exports = {
       if (!session.inVoice && isInVoice) {
         session.inVoice = true;
         session.lastTimestamp = now;
-        session.remainderMs = session.remainderMs || 0;
+        session.coinRemainderMs = session.coinRemainderMs || 0;
         return;
       }
 
@@ -67,7 +72,7 @@ module.exports = {
         }
         session.inVoice = false;
         session.lastTimestamp = now;
-        session.remainderMs = 0;
+        session.coinRemainderMs = 0;
         sessions.delete(key);
       }
     } catch (err) {
