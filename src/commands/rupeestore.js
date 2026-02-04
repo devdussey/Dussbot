@@ -55,6 +55,13 @@ const SHOP_ITEMS = [
     kind: 'nickname',
   },
   {
+    id: 'nickname_member',
+    label: 'Nickname a Member',
+    cost: 20,
+    description: "Change another member's nickname instantly (bot role must sit above the target).",
+    kind: 'nickname_member',
+  },
+  {
     id: 'custom_role_solid',
     label: 'Custom Role — Solid',
     cost: 5,
@@ -400,6 +407,53 @@ async function applyNicknamePurchase({ interaction, newNickname, cost }) {
   return { success: true, newBalance };
 }
 
+async function applyMemberNicknamePurchase({ interaction, targetMember, newNickname, cost }) {
+  const guild = interaction.guild;
+  const actor = interaction.user;
+  const me = guild.members.me;
+
+  if (!me?.permissions?.has(PermissionsBitField.Flags.ManageNicknames)) {
+    return { error: 'I need the Manage Nicknames permission to rename members.' };
+  }
+
+  if (!targetMember) {
+    return { error: 'Could not resolve that member.' };
+  }
+
+  if (targetMember.user.bot) {
+    return { error: 'Bots cannot be nicknamed with this item.' };
+  }
+
+  if (actor.id === targetMember.id) {
+    return { error: 'Pick someone else to rename using this item.' };
+  }
+
+  if (targetMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return { error: 'This item cannot be used on administrators.' };
+  }
+
+  if (!targetMember.manageable || me.roles.highest.comparePositionTo(targetMember.roles.highest) <= 0) {
+    return { error: 'I cannot change that member due to role hierarchy. Move my role above them and try again.' };
+  }
+
+  const paid = await rupeeStore.spendTokens(guild.id, actor.id, cost);
+  if (!paid) {
+    const balance = rupeeStore.getBalance(guild.id, actor.id);
+    return { error: `You need ${cost} rupees to rename a member. Balance: ${balance}.` };
+  }
+
+  const reason = `Nickname a Member purchased by ${actor.tag} (${actor.id}) for ${targetMember.id}`;
+  try {
+    await targetMember.setNickname(newNickname, reason);
+  } catch (err) {
+    await rupeeStore.addTokens(guild.id, actor.id, cost);
+    return { error: `Failed to change nickname: ${err.message || err}` };
+  }
+
+  const newBalance = rupeeStore.getBalance(guild.id, actor.id);
+  return { success: true, newBalance };
+}
+
 async function applyCustomRolePurchase({ interaction, mode, colors, roleName, cost }) {
   const guild = interaction.guild;
   const actor = interaction.user;
@@ -603,8 +657,14 @@ module.exports = {
         });
         const freshItemRow = buildItemSelect(selectId, false);
 
-        if (selectedItem.kind === 'timeout' || selectedItem.kind === 'muzzle') {
-          if (selectedItem.moderatorOnly) {
+        if (selectedItem.kind === 'timeout' || selectedItem.kind === 'muzzle' || selectedItem.kind === 'nickname_member') {
+          if (selectedItem.kind === 'nickname_member') {
+            const enabledUserRow = buildUserSelect(`${targetSelectBase}:${itemId}`, false, 'Pick a member to rename');
+            await componentInteraction.update({
+              embeds: [updatedEmbed],
+              components: [freshItemRow, enabledUserRow],
+            });
+          } else if (selectedItem.moderatorOnly) {
             const moderators = await getModerators(interaction.guild);
             const modRow = buildModeratorSelect(`${targetSelectBase}:${itemId}`, moderators, false);
             await componentInteraction.update({
@@ -819,7 +879,7 @@ module.exports = {
           return;
         }
 
-        if (selectedItem.kind !== 'timeout' && selectedItem.kind !== 'muzzle') {
+        if (selectedItem.kind !== 'timeout' && selectedItem.kind !== 'muzzle' && selectedItem.kind !== 'nickname_member') {
           await componentInteraction.reply({ content: 'This item no longer requires a target.', ephemeral: true });
           return;
         }
@@ -840,6 +900,85 @@ module.exports = {
           targetMember = await interaction.guild.members.fetch(targetId);
         } catch (_) {
           await componentInteraction.reply({ content: 'Could not find that member in this server.', ephemeral: true });
+          return;
+        }
+
+        if (selectedItem.kind === 'nickname_member') {
+          const modalId = `rupeestore-nickname-member-${interaction.id}-${targetMember.id}`;
+          const modal = new ModalBuilder()
+            .setCustomId(modalId)
+            .setTitle('Nickname a Member')
+            .addComponents(
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('nickname')
+                  .setLabel(`New nickname for ${targetMember.displayName || targetMember.user.username}`)
+                  .setStyle(TextInputStyle.Short)
+                  .setMaxLength(32)
+                  .setMinLength(1)
+                  .setPlaceholder('Enter the nickname')
+                  .setRequired(true),
+              ),
+            );
+
+          await componentInteraction.showModal(modal);
+
+          let submission;
+          try {
+            submission = await componentInteraction.awaitModalSubmit({
+              time: 120_000,
+              filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+            });
+          } catch (_) {
+            return;
+          }
+
+          const nicknameRaw = submission.fields.getTextInputValue('nickname') || '';
+          const nickname = nicknameRaw.trim().slice(0, 32);
+          if (!nickname) {
+            await submission.reply({ content: 'Please enter a valid nickname.', ephemeral: true });
+            return;
+          }
+
+          const result = await applyMemberNicknamePurchase({
+            interaction,
+            targetMember,
+            newNickname: nickname,
+            cost: selectedItem.cost,
+          });
+
+          if (result.error) {
+            await submission.reply({ content: result.error, ephemeral: true });
+            return;
+          }
+
+          const successEmbed = makeEmbed(guildId)
+            .setTitle('Nickname updated')
+            .setDescription(
+              `${targetMember} is now known as **${escapeMarkdown(nickname)}**.\n` +
+              `Remaining balance: ${result.newBalance} rupee${result.newBalance === 1 ? '' : 's'}.`
+            );
+          await submission.reply({ embeds: [successEmbed], ephemeral: true });
+
+          await logRupeeStorePurchase({
+            interaction,
+            itemLabel: selectedItem.label,
+            cost: selectedItem.cost,
+            target: targetMember,
+            balance: Number.isFinite(result.newBalance) ? result.newBalance : rupeeStore.getBalance(guildId, interaction.user.id),
+          });
+
+          const refreshedEmbed = buildShopEmbed({
+            guildId,
+            balance: rupeeStore.getBalance(guildId, interaction.user.id),
+            blessingStatus: formatBlessingStatus(guildId, userId),
+          });
+          const freshItemRow = buildItemSelect(selectId, false);
+          const resetUserRow = buildUserSelect(targetSelectBase, true);
+          await interaction.editReply({
+            embeds: [refreshedEmbed],
+            components: [freshItemRow, resetUserRow],
+          });
           return;
         }
 
