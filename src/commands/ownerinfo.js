@@ -56,6 +56,13 @@ module.exports = {
     const client = interaction.client;
     const guilds = [...client.guilds.cache.values()]
       .sort((a, b) => a.name.localeCompare(b.name));
+    const excludedGuildId = process.env.GUILD_ID?.trim() || null;
+    const visibleGuilds = excludedGuildId
+      ? guilds.filter(guild => guild.id !== excludedGuildId)
+      : guilds;
+    const excludedGuild = excludedGuildId
+      ? guilds.find(guild => guild.id === excludedGuildId) ?? null
+      : null;
     const ownerIds = parseOwnerIds();
     const ownerUsers = [];
 
@@ -68,7 +75,7 @@ module.exports = {
       }
     }
 
-    const guildSummaries = await Promise.all(guilds.map(async guild => {
+    const guildSummaries = await Promise.all(visibleGuilds.map(async guild => {
       const ownerIdFallback = guild.ownerId ?? 'Unknown';
       let ownerTag = 'Unknown';
       let ownerId = ownerIdFallback;
@@ -96,16 +103,35 @@ module.exports = {
       sum + (typeof memberCount === 'number' ? memberCount : 0)
     ), 0);
 
+    const embedFields = [
+      { name: 'Servers', value: String(visibleGuilds.length), inline: true },
+      { name: 'Total Members', value: numberWithCommas(totalMembers), inline: true },
+      { name: 'Commands Loaded', value: String(client.commands?.size ?? 0), inline: true },
+    ];
+
+    if (excludedGuild) {
+      embedFields.push({
+        name: 'Excluded Server',
+        value: `${excludedGuild.name} (${excludedGuild.id})`,
+        inline: true,
+      });
+    } else if (excludedGuildId) {
+      embedFields.push({
+        name: 'Excluded Server',
+        value: 'Configured but not cached',
+        inline: true,
+      });
+    }
+
+    embedFields.push(
+      { name: 'Owners', value: formatOwners(ownerIds, ownerUsers), inline: false },
+      { name: 'Server Owners & Members', value: formatServerOwners(guildSummaries), inline: false },
+    );
+
     const embed = new EmbedBuilder()
       .setTitle('Owner Info')
       .setColor(resolveEmbedColour(interaction.guildId, 0x5b5bff))
-      .addFields(
-        { name: 'Servers', value: String(guilds.length), inline: true },
-        { name: 'Total Members', value: numberWithCommas(totalMembers), inline: true },
-        { name: 'Commands Loaded', value: String(client.commands?.size ?? 0), inline: true },
-        { name: 'Owners', value: formatOwners(ownerIds, ownerUsers), inline: false },
-        { name: 'Server Owners & Members', value: formatServerOwners(guildSummaries), inline: false },
-      )
+      .addFields(embedFields)
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed] });
