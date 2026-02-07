@@ -1,7 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { isOwner, parseOwnerIds } = require('../utils/ownerIds');
-const MEMBER_PREVIEW_LIMIT = 5;
+
+const MEMBER_CHUNK_LIMIT = 1900;
 
 function formatOwners(ownerIds, ownerUsers) {
   if (!ownerIds.length) return 'No owner IDs configured.';
@@ -12,43 +13,65 @@ function formatOwners(ownerIds, ownerUsers) {
   }).join('\n');
 }
 
-function formatServerOwners(guildSummaries) {
-  if (!guildSummaries.length) return 'No servers found.';
-  const lines = guildSummaries.map(({ name, id, ownerTag, ownerId, memberCount, memberPreview, extraPreview }) => {
-    const ownerLabel = ownerTag || 'Unknown';
-    const ownerIdentifier = ownerId || 'Unknown';
-    const membersLabel = typeof memberCount === 'number'
-      ? numberWithCommas(memberCount)
-      : (memberCount ?? 'Unknown');
-    let line = `${name} (${id}) — Owner: ${ownerLabel} (${ownerIdentifier}) — Members: ${membersLabel}`;
-    if (memberPreview.length) {
-      const extraText = extraPreview > 0 ? `, +${extraPreview} more` : '';
-      line += `\nMembers preview: ${memberPreview.join(', ')}${extraText}`;
-    } else if (typeof memberCount === 'number' && memberCount > 0) {
-      line += '\nMember preview: not cached';
-    }
-    return line;
-  });
-
-  let value = '';
-  let remaining = lines.length;
+function chunkLines(lines, limit) {
+  const chunks = [];
+  let current = '';
 
   for (const line of lines) {
-    const next = value ? `${value}\n${line}` : line;
-    if (next.length > 1000) break;
-    value = next;
-    remaining -= 1;
+    if (!current) {
+      current = line;
+      continue;
+    }
+    if (current.length + 1 + line.length <= limit) {
+      current += `\n${line}`;
+    } else {
+      chunks.push(current);
+      current = line;
+    }
   }
 
-  if (remaining > 0) {
-    value = `${value}\n...and ${remaining} more`;
+  if (current) {
+    chunks.push(current);
   }
 
-  return value;
+  return chunks;
+}
+
+function buildMemberListChunks(guildSummaries) {
+  if (!guildSummaries.length) {
+    return ['No visible servers to report.'];
+  }
+
+  const lines = [];
+
+  for (const summary of guildSummaries) {
+    const ownerLabel = summary.ownerTag || 'Unknown';
+    const ownerIdentifier = summary.ownerId || 'Unknown';
+    lines.push(`${summary.name} (${summary.id}) — Owner: ${ownerLabel} (${ownerIdentifier})`);
+    if (summary.members.length) {
+      for (const memberLine of summary.members) {
+        lines.push(`• ${memberLine}`);
+      }
+    } else {
+      lines.push('• Member list could not be loaded.');
+    }
+    lines.push('');
+  }
+
+  return chunkLines(lines, MEMBER_CHUNK_LIMIT);
 }
 
 function numberWithCommas(value) {
   return value.toLocaleString?.() ?? String(value);
+}
+
+async function tryFetchMembers(guild) {
+  try {
+    const fetched = await guild.members.fetch();
+    return [...fetched.values()];
+  } catch {
+    return [...guild.members.cache.values()];
+  }
 }
 
 module.exports = {
@@ -98,24 +121,19 @@ module.exports = {
         }
       }
 
-      const cachedMembers = [...guild.members.cache.values()];
-      const memberPreviewUsers = cachedMembers
+      const members = (await tryFetchMembers(guild))
         .filter(member => member.user && !member.user.bot)
-        .slice(0, MEMBER_PREVIEW_LIMIT)
         .map(member => member.user);
-      const memberPreview = memberPreviewUsers.map(user => `${user.tag} (${user.id})`);
-      const estimatedMemberCount = typeof guild.memberCount === 'number'
-        ? guild.memberCount
-        : cachedMembers.length;
+      const uniqueMembers = [...new Map(members.map(user => [user.id, user])).values()];
+      const memberLines = uniqueMembers.map(user => `${user.tag} (${user.id})`);
 
       return {
         name: guild.name,
         id: guild.id,
         ownerTag,
         ownerId,
-        memberCount: typeof guild.memberCount === 'number' ? guild.memberCount : estimatedMemberCount,
-        memberPreview,
-        extraPreview: Math.max(0, estimatedMemberCount - memberPreview.length),
+        memberCount: memberLines.length,
+        members: memberLines,
       };
     }));
 
@@ -145,15 +163,20 @@ module.exports = {
 
     embedFields.push(
       { name: 'Owners', value: formatOwners(ownerIds, ownerUsers), inline: false },
-      { name: 'Server Owners & Members', value: formatServerOwners(guildSummaries), inline: false },
     );
 
+    const memberChunks = buildMemberListChunks(guildSummaries);
     const embed = new EmbedBuilder()
       .setTitle('Owner Info')
       .setColor(resolveEmbedColour(interaction.guildId, 0x5b5bff))
       .addFields(embedFields)
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    const initialContent = memberChunks.shift() ?? 'No member list available.';
+    await interaction.reply({ embeds: [embed], content: initialContent });
+
+    for (const chunk of memberChunks) {
+      await interaction.followUp({ content: chunk });
+    }
   },
 };
