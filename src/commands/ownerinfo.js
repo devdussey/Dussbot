@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { isOwner, parseOwnerIds } = require('../utils/ownerIds');
+const MEMBER_PREVIEW_LIMIT = 5;
 
 function formatOwners(ownerIds, ownerUsers) {
   if (!ownerIds.length) return 'No owner IDs configured.';
@@ -13,13 +14,20 @@ function formatOwners(ownerIds, ownerUsers) {
 
 function formatServerOwners(guildSummaries) {
   if (!guildSummaries.length) return 'No servers found.';
-  const lines = guildSummaries.map(({ name, id, ownerTag, ownerId, memberCount }) => {
+  const lines = guildSummaries.map(({ name, id, ownerTag, ownerId, memberCount, memberPreview, extraPreview }) => {
     const ownerLabel = ownerTag || 'Unknown';
     const ownerIdentifier = ownerId || 'Unknown';
     const membersLabel = typeof memberCount === 'number'
       ? numberWithCommas(memberCount)
       : (memberCount ?? 'Unknown');
-    return `${name} (${id}) — Owner: ${ownerLabel} (${ownerIdentifier}) — Members: ${membersLabel}`;
+    let line = `${name} (${id}) — Owner: ${ownerLabel} (${ownerIdentifier}) — Members: ${membersLabel}`;
+    if (memberPreview.length) {
+      const extraText = extraPreview > 0 ? `, +${extraPreview} more` : '';
+      line += `\nMembers preview: ${memberPreview.join(', ')}${extraText}`;
+    } else if (typeof memberCount === 'number' && memberCount > 0) {
+      line += '\nMember preview: not cached';
+    }
+    return line;
   });
 
   let value = '';
@@ -90,12 +98,24 @@ module.exports = {
         }
       }
 
+      const cachedMembers = [...guild.members.cache.values()];
+      const memberPreviewUsers = cachedMembers
+        .slice(0, MEMBER_PREVIEW_LIMIT)
+        .map(member => member.user)
+        .filter(Boolean);
+      const memberPreview = memberPreviewUsers.map(user => `${user.tag} (${user.id})`);
+      const estimatedMemberCount = typeof guild.memberCount === 'number'
+        ? guild.memberCount
+        : cachedMembers.length;
+
       return {
         name: guild.name,
         id: guild.id,
         ownerTag,
         ownerId,
-        memberCount: typeof guild.memberCount === 'number' ? guild.memberCount : null,
+        memberCount: typeof guild.memberCount === 'number' ? guild.memberCount : estimatedMemberCount,
+        memberPreview,
+        extraPreview: Math.max(0, estimatedMemberCount - memberPreview.length),
       };
     }));
 
