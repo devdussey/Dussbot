@@ -100,9 +100,9 @@ module.exports = {
 
       const cachedMembers = [...guild.members.cache.values()];
       const memberPreviewUsers = cachedMembers
+        .filter(member => member.user && !member.user.bot)
         .slice(0, MEMBER_PREVIEW_LIMIT)
-        .map(member => member.user)
-        .filter(Boolean);
+        .map(member => member.user);
       const memberPreview = memberPreviewUsers.map(user => `${user.tag} (${user.id})`);
       const estimatedMemberCount = typeof guild.memberCount === 'number'
         ? guild.memberCount
