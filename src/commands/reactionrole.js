@@ -193,7 +193,9 @@ async function handleCreate(interaction) {
   }
 
   const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild);
-  const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, panel);
+  const mergeOpts = {};
+  if (useEmbed && newEmbed) mergeOpts.preferredIndex = 0;
+  const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, panel, mergeOpts);
   const finalEmbeds = summaryResult.ok ? summaryResult.embeds : embedsToUse;
 
   const editPayload = { components: merged.rows, embeds: finalEmbeds };
@@ -425,7 +427,11 @@ async function handleEdit(interaction) {
   }
 
   const summary = reactionRoleManager.buildSummaryEmbed(updatedPanel, interaction.guild);
-  const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, updatedPanel);
+  const mergeOpts = {};
+  const summaryFooter = `${reactionRoleManager.SUMMARY_FOOTER_PREFIX}${updatedPanel.id}`;
+  const firstEmbed = embedsToUse[0];
+  if (firstEmbed?.footer?.text === summaryFooter) mergeOpts.preferredIndex = 0;
+  const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, updatedPanel, mergeOpts);
   if (summaryResult.ok) {
     embedsToUse = summaryResult.embeds;
   }

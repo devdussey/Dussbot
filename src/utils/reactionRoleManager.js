@@ -146,6 +146,21 @@ function buildSummaryEmbed(panel, guild, opts = {}) {
   return { embed, missingRoleIds: missing };
 }
 
+function mergeSummaryIntoEmbed(existingEmbed, summaryJson) {
+  if (!existingEmbed) return summaryJson;
+  const next = { ...existingEmbed };
+  if (typeof summaryJson.description === 'string') {
+    next.description = summaryJson.description;
+  }
+  if (summaryJson.title) {
+    next.title = summaryJson.title;
+  }
+  if (summaryJson.footer) {
+    next.footer = { ...summaryJson.footer };
+  }
+  return next;
+}
+
 function isSummaryEmbed(embed, panelId, roleIds) {
   const footerText = (embed?.footer?.text || '');
   if (footerText.includes(SUMMARY_FOOTER_PREFIX)) return true;
@@ -167,6 +182,14 @@ function mergeSummaryEmbed(existingEmbeds, summaryEmbed, panel, opts = {}) {
   if (!summaryJson) return { ok: false, error: 'invalid_summary', embeds };
   const panelId = panel?.id || panel;
   const roleIds = Array.isArray(panel?.roleIds) ? panel.roleIds : [];
+  const preferredIndex = Number.isInteger(opts.preferredIndex) ? opts.preferredIndex : null;
+  if (preferredIndex !== null && preferredIndex >= 0 && preferredIndex < embeds.length) {
+    const merged = mergeSummaryIntoIndex(embeds, summaryJson, panelId, roleIds, preferredIndex);
+    if (merged) {
+      return { ok: true, embeds: merged.embeds, replaced: true };
+    }
+  }
+
   const filtered = embeds.filter(e => !isSummaryEmbed(e, panelId, roleIds));
   if (filtered.length === embeds.length && embeds.length >= 10) {
     return { ok: false, error: 'max_embeds', embeds };
@@ -174,6 +197,29 @@ function mergeSummaryEmbed(existingEmbeds, summaryEmbed, panel, opts = {}) {
   const next = [...filtered, summaryJson];
   const replaced = filtered.length !== embeds.length;
   return { ok: true, embeds: next, replaced, inserted: !replaced };
+}
+
+function mergeSummaryIntoIndex(embeds, summaryJson, panelId, roleIds, targetIndex) {
+  const cleaned = [];
+  let targetEmbed = null;
+  let finalIndex = null;
+  for (let i = 0; i < embeds.length; i += 1) {
+    const embed = embeds[i];
+    if (i === targetIndex) {
+      targetEmbed = embed;
+      finalIndex = cleaned.length;
+      cleaned.push(embed);
+      continue;
+    }
+    if (isSummaryEmbed(embed, panelId, roleIds)) {
+      continue;
+    }
+    cleaned.push(embed);
+  }
+  if (!targetEmbed || finalIndex === null) return null;
+  const mergedEmbed = mergeSummaryIntoEmbed(targetEmbed, summaryJson);
+  const next = cleaned.map((embed, idx) => (idx === finalIndex ? mergedEmbed : embed));
+  return { embeds: next };
 }
 
 function removeSummaryEmbed(existingEmbeds, panelId) {
@@ -218,4 +264,5 @@ module.exports = {
   buildSummaryEmbed,
   mergeSummaryEmbed,
   removeSummaryEmbed,
+  SUMMARY_FOOTER_PREFIX,
 };
