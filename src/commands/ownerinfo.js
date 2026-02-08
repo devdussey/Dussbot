@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { isOwner, parseOwnerIds } = require('../utils/ownerIds');
 
-const MEMBER_CHUNK_LIMIT = 1900;
+const DETAIL_FIELD_LIMIT = 1000;
 
 function formatOwners(ownerIds, ownerUsers) {
   if (!ownerIds.length) return 'No owner IDs configured.';
@@ -37,28 +37,29 @@ function chunkLines(lines, limit) {
   return chunks;
 }
 
-function buildMemberListChunks(guildSummaries) {
+function buildDetailChunks(guildSummaries) {
   if (!guildSummaries.length) {
-    return ['No visible servers to report.'];
+    return ['Other Servers:\nNo visible servers to report.'];
   }
 
-  const lines = [];
+  const lines = ['Other Servers:'];
 
   for (const summary of guildSummaries) {
     const ownerLabel = summary.ownerTag || 'Unknown';
     const ownerIdentifier = summary.ownerId || 'Unknown';
     lines.push(`${summary.name} (${summary.id}) — Owner: ${ownerLabel} (${ownerIdentifier})`);
     if (summary.members.length) {
+      lines.push('Members:');
       for (const memberLine of summary.members) {
         lines.push(`• ${memberLine}`);
       }
     } else {
-      lines.push('• Member list could not be loaded.');
+      lines.push('Members: (none cached)');
     }
     lines.push('');
   }
 
-  return chunkLines(lines, MEMBER_CHUNK_LIMIT);
+  return chunkLines(lines, DETAIL_FIELD_LIMIT);
 }
 
 function numberWithCommas(value) {
@@ -101,7 +102,7 @@ module.exports = {
       try {
         const user = await client.users.fetch(ownerId);
         ownerUsers.push(user);
-      } catch (error) {
+      } catch {
         ownerUsers.push(null);
       }
     }
@@ -165,18 +166,21 @@ module.exports = {
       { name: 'Owners', value: formatOwners(ownerIds, ownerUsers), inline: false },
     );
 
-    const memberChunks = buildMemberListChunks(guildSummaries);
+    const detailChunks = buildDetailChunks(guildSummaries);
+    detailChunks.forEach((chunk, index) => {
+      embedFields.push({
+        name: index === 0 ? 'Other Servers' : `Other Servers (cont. ${index})`,
+        value: chunk,
+        inline: false,
+      });
+    });
+
     const embed = new EmbedBuilder()
       .setTitle('Owner Info')
       .setColor(resolveEmbedColour(interaction.guildId, 0x5b5bff))
       .addFields(embedFields)
       .setTimestamp();
 
-    const initialContent = memberChunks.shift() ?? 'No member list available.';
-    await interaction.reply({ embeds: [embed], content: initialContent });
-
-    for (const chunk of memberChunks) {
-      await interaction.followUp({ content: chunk });
-    }
+    return interaction.reply({ embeds: [embed] });
   },
 };
