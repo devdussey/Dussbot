@@ -134,6 +134,11 @@ function buildSummaryEmbed(panel, guild, opts = {}) {
     lines.push(`${emojiPart}<@&${role.id}> - ${count} ${plural} (${percent}%)${selectionSuffix}`);
   }
 
+  if (ids.length) {
+    const totalLine = `**Total Members Across Roles:** ${totalMembers}`;
+    lines.unshift(totalLine);
+  }
+
   if (!lines.length) lines.push('No roles configured yet.');
 
   const embed = new EmbedBuilder().setDescription(lines.join('\n'));
