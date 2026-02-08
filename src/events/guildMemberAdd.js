@@ -73,24 +73,25 @@ module.exports = {
         // Send welcome embed if configured (best-effort; do not block joins)
         try {
             const cfg = welcomeStore.get(member.guild.id);
-            if (!cfg || !cfg.channelId || !cfg.embed) return;
-            const channel = await member.guild.channels.fetch(cfg.channelId).catch(() => null);
-            if (!channel || !channel.isTextBased?.()) return;
+            if (cfg && cfg.channelId && cfg.embed) {
+                const channel = await member.guild.channels.fetch(cfg.channelId).catch(() => null);
+                if (channel && channel.isTextBased?.()) {
+                    // Build embed from stored JSON and replace placeholders in text fields
+                    const replacer = (s) => String(s || '')
+                        .replaceAll('{user}', `${member.user.tag}`)
+                        .replaceAll('{mention}', `<@${member.id}>`)
+                        .replaceAll('{guild}', `${member.guild.name}`)
+                        .replaceAll('{memberCount}', `${member.guild.memberCount}`);
 
-            // Build embed from stored JSON and replace placeholders in text fields
-            const replacer = (s) => String(s || '')
-                .replaceAll('{user}', `${member.user.tag}`)
-                .replaceAll('{mention}', `<@${member.id}>`)
-                .replaceAll('{guild}', `${member.guild.name}`)
-                .replaceAll('{memberCount}', `${member.guild.memberCount}`);
+                    const base = EmbedBuilder.from(cfg.embed);
+                    const data = base.toJSON();
+                    if (data.title) base.setTitle(replacer(data.title));
+                    if (data.description) base.setDescription(replacer(data.description));
+                    if (data.footer?.text) base.setFooter({ text: replacer(data.footer.text), iconURL: data.footer.icon_url || undefined });
 
-            const base = EmbedBuilder.from(cfg.embed);
-            const data = base.toJSON();
-            if (data.title) base.setTitle(replacer(data.title));
-            if (data.description) base.setDescription(replacer(data.description));
-            if (data.footer?.text) base.setFooter({ text: replacer(data.footer.text), iconURL: data.footer.icon_url || undefined });
-
-            await channel.send({ content: replacer('Welcome {mention}!'), embeds: [base] });
+                    await channel.send({ content: replacer('Welcome {mention}!'), embeds: [base] });
+                }
+            }
         } catch (e) {
             // swallow
         }
