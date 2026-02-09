@@ -8,6 +8,7 @@ const MAX_USER_LEADERBOARD = 25;
 const MAX_TOP_USERS_PER_WORD = 3;
 
 let cache = null;
+let isDirty = false;
 
 function ensureStoreFile() {
     try {
@@ -39,6 +40,7 @@ async function saveStore() {
     ensureStoreFile();
     const safe = cache && typeof cache === 'object' ? cache : { guilds: {} };
     await writeJson(STORE_FILE_NAME, safe);
+    isDirty = false;
 }
 
 function ensureGuildData(guildId) {
@@ -135,12 +137,20 @@ async function recordMessage(guildId, userId, userTag, content, options = {}) {
         }
     }
     guild.summary.totalMessages += 1;
-    await saveStore();
+    isDirty = true;
+    if (options.persist !== false) {
+        await saveStore();
+    }
     return {
         processedWords,
         messageCount: userEntry.messageCount,
         wordCount: userEntry.wordCount,
     };
+}
+
+async function flushStore() {
+    if (!isDirty) return;
+    await saveStore();
 }
 
 function getGuildSummary(guildId) {
@@ -229,4 +239,5 @@ module.exports = {
     getGuildSummary,
     MAX_WORD_LEADERBOARD,
     MAX_USER_LEADERBOARD,
+    flushStore,
 };

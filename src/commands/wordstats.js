@@ -4,6 +4,7 @@ const {
     getUserLeaderboard,
     getGuildSummary,
     recordMessage,
+    flushStore,
     MAX_WORD_LEADERBOARD,
     MAX_USER_LEADERBOARD,
 } = require('../utils/wordStatsStore');
@@ -225,6 +226,7 @@ async function handleSync(interaction) {
                         message.author.id,
                         message.author?.tag || message.author?.username || message.author?.globalName || message.author.id,
                         message.content || '',
+                        { persist: false },
                     );
                     if (result?.processedWords) {
                         processedWords += result.processedWords;
@@ -239,9 +241,14 @@ async function handleSync(interaction) {
             errors.push(`${channel.name || channel.id}: ${err?.message || 'Unknown error'}`);
         }
         await interaction.editReply({
-        content: `Scanning ${channelIndex}/${channelsToScan.length}: ${channel.name || channel.id} (${formatNumber(processedMessages)} messages recorded so far)...`,
-    });
-}
+            content: `Scanning ${channelIndex}/${channelsToScan.length}: ${channel.name || channel.id} (${formatNumber(processedMessages)} messages recorded so far)...`,
+        });
+    }
+    try {
+        await flushStore();
+    } catch (err) {
+        errors.push(`word stats store: ${err?.message || 'Failed to save'}`);
+    }
     const summaryLines = [
         `Backfill complete (${formatNumber(processedMessages)} messages, ${formatNumber(processedWords)} words added).`,
         `Channels scanned: ${formatNumber(channelsToScan.length)} (up to ${describeLimit(perChannelLimit)} messages per channel).`,
