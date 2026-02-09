@@ -15,6 +15,8 @@ const DEFAULT_LEADERBOARD_LIMIT = 10;
 const DEFAULT_BACKFILL_PER_CHANNEL = 1000;
 const MAX_BACKFILL_PER_CHANNEL = 3000;
 const FETCH_BATCH_SIZE = 100;
+const PROGRESS_UPDATE_MESSAGE_DELTA = 200;
+const PROGRESS_UPDATE_INTERVAL_MS = 2500;
 
 const numberFormatter = new Intl.NumberFormat('en-US');
 
@@ -36,6 +38,10 @@ function formatNumber(value) {
 function describeLimit(limit) {
     if (!Number.isFinite(limit)) return 'full history';
     return formatNumber(limit);
+}
+
+function buildSyncProgressLine(channelIndex, totalChannels, channelLabel, messageCount) {
+    return `Scanning ${channelIndex}/${totalChannels}: ${channelLabel} (${formatNumber(messageCount)} messages recorded so far)...`;
 }
 
 function buildCodeBlock(lines) {
@@ -251,10 +257,13 @@ async function handleSync(interaction) {
     let processedWords = 0;
     let channelIndex = 0;
     const errors = [];
+    let lastProgressMessageCount = 0;
+    let lastProgressTimestamp = Date.now();
     for (const channel of channelsToScan) {
         channelIndex += 1;
         let fetched = 0;
         let before = null;
+        const channelLabel = channel.name || channel.id;
         try {
             while (!Number.isFinite(perChannelLimit) || fetched < perChannelLimit) {
                 const batchSize = Math.min(FETCH_BATCH_SIZE, perChannelLimit - fetched);
@@ -275,6 +284,22 @@ async function handleSync(interaction) {
                         processedWords += result.processedWords;
                     }
                     processedMessages += 1;
+                    const now = Date.now();
+                    if (
+                        processedMessages - lastProgressMessageCount >= PROGRESS_UPDATE_MESSAGE_DELTA ||
+                        now - lastProgressTimestamp >= PROGRESS_UPDATE_INTERVAL_MS
+                    ) {
+                        lastProgressMessageCount = processedMessages;
+                        lastProgressTimestamp = now;
+                        await interaction.editReply({
+                            content: buildSyncProgressLine(
+                                channelIndex,
+                                channelsToScan.length,
+                                channelLabel,
+                                processedMessages,
+                            ),
+                        });
+                    }
                 }
                 fetched += batch.size;
                 before = batch.last()?.id;
@@ -284,7 +309,7 @@ async function handleSync(interaction) {
             errors.push(`${channel.name || channel.id}: ${err?.message || 'Unknown error'}`);
         }
         await interaction.editReply({
-            content: `Scanning ${channelIndex}/${channelsToScan.length}: ${channel.name || channel.id} (${formatNumber(processedMessages)} messages recorded so far)...`,
+            content: buildSyncProgressLine(channelIndex, channelsToScan.length, channelLabel, processedMessages),
         });
     }
     try {
