@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { ensureFileSync, writeJson, resolveDataPath } = require('./dataDir');
-const { extractWords } = require('./wordStatsParser');
+const { extractWords, normalizeWord } = require('./wordStatsParser');
 
 const STORE_FILE_NAME = 'word_stats.json';
 const MAX_WORD_LEADERBOARD = 50;
@@ -206,6 +206,18 @@ function getWordLeaderboard(guildId, options = {}) {
     return { entries, totalWords: summary.totalWords, uniqueWords: summary.uniqueWords, limit };
 }
 
+function getWordDetails(guildId, value) {
+    if (!guildId || !value) return null;
+    const normalized = normalizeWord(value);
+    if (!normalized) return null;
+    const store = loadStore();
+    const guild = store.guilds?.[guildId];
+    const entry = guild?.words?.[normalized];
+    const count = Number.isFinite(entry?.count) ? Math.floor(entry.count) : 0;
+    const topUsers = entry ? getWordTopContributors(entry.perUser, 1) : [];
+    return { word: normalized, count, topUsers };
+}
+
 function getUserLeaderboard(guildId, options = {}) {
     const limitRaw = Number.isFinite(options.limit) ? Math.trunc(options.limit) : 10;
     const limit = Math.max(1, Math.min(limitRaw, MAX_USER_LEADERBOARD));
@@ -235,6 +247,7 @@ function getUserLeaderboard(guildId, options = {}) {
 module.exports = {
     recordMessage,
     getWordLeaderboard,
+    getWordDetails,
     getUserLeaderboard,
     getGuildSummary,
     MAX_WORD_LEADERBOARD,

@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const {
     getWordLeaderboard,
+    getWordDetails,
     getUserLeaderboard,
     getGuildSummary,
     recordMessage,
@@ -73,6 +74,12 @@ module.exports = {
                         .setDescription('How many words to return (max 30).')
                         .setMinValue(1)
                         .setMaxValue(30),
+                )
+                .addStringOption(option =>
+                    option
+                        .setName('word')
+                        .setDescription('Show stats for a specific word.')
+                        .setMinLength(1),
                 ),
         )
         .addSubcommand(subcommand =>
@@ -132,6 +139,10 @@ module.exports = {
 };
 
 async function handleWords(interaction) {
+    const requestedWord = interaction.options.getString('word');
+    if (requestedWord) {
+        return handleWordDetail(interaction, requestedWord);
+    }
     const limit = clampPositiveInt(
         interaction.options.getInteger('limit'),
         1,
@@ -145,6 +156,38 @@ async function handleWords(interaction) {
     const header = `Out of ${formatNumber(stats.totalWords)} words and ${formatNumber(stats.uniqueWords)} unique words, the ${stats.entries.length} most common words are:`;
     const lines = stats.entries.map(buildWordLine);
     return interaction.reply({ content: `${header}\n${buildCodeBlock(lines)}` });
+}
+
+async function handleWordDetail(interaction, rawWord) {
+    const requestedLabel = String(rawWord ?? '').trim();
+    const displayRequest = requestedLabel || 'that word';
+    const detail = getWordDetails(interaction.guildId, rawWord);
+    if (!detail) {
+        return interaction.reply({
+            content: `I couldn't interpret ${displayRequest} as a tracked word.`,
+            ephemeral: true,
+        });
+    }
+    if (!detail.count) {
+        return interaction.reply({
+            content: `No uses of “${detail.word}” have been recorded yet.`,
+            ephemeral: true,
+        });
+    }
+    const normalized = detail.word;
+    const header =
+        requestedLabel && requestedLabel !== normalized
+            ? `Word stats for “${requestedLabel}” (normalized to “${normalized}”):`
+            : `Word stats for “${normalized}”:`;
+    const topUser = detail.topUsers?.[0];
+    const lines = [
+        header,
+        `• Total uses: ${formatNumber(detail.count)}`,
+        topUser
+            ? `• Most frequent user: ${formatUserLabel(topUser)} (${formatNumber(topUser.count)} uses)`
+            : '• Most frequent user: n/a',
+    ];
+    return interaction.reply({ content: lines.join('\n') });
 }
 
 async function handleLeaderboard(interaction) {
