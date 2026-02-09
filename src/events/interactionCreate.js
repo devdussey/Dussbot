@@ -861,6 +861,49 @@ module.exports = {
                 }
                 return;
             }
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('suggest:open:')) {
+                if (!interaction.inGuild()) return;
+
+                const channelId = interaction.customId.slice('suggest:open:'.length);
+                let channel = null;
+                try { channel = await interaction.guild.channels.fetch(channelId); } catch (_) {}
+                if (!channel || !channel.isTextBased?.()) {
+                    try { await interaction.reply({ content: 'That suggestion panel is no longer available.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                const modal = new ModalBuilder()
+                    .setCustomId(`suggest:submit:${channelId}`)
+                    .setTitle('Share a Suggestion');
+                const suggestionInput = new TextInputBuilder()
+                    .setCustomId('suggest:suggestion')
+                    .setLabel('Suggestion')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setMinLength(1)
+                    .setMaxLength(1000)
+                    .setPlaceholder('What would you like to see improved or added?')
+                    .setRequired(true);
+                const reasoningInput = new TextInputBuilder()
+                    .setCustomId('suggest:reasoning')
+                    .setLabel('Reasoning / Context')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setMinLength(1)
+                    .setMaxLength(1000)
+                    .setPlaceholder('Why would this change help or matter?')
+                    .setRequired(true);
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(suggestionInput),
+                    new ActionRowBuilder().addComponents(reasoningInput),
+                );
+
+                try {
+                    await interaction.showModal(modal);
+                } catch (_) {
+                    try { await interaction.reply({ content: 'Could not open the suggestion form. Please try again.', ephemeral: true }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('confess:open:')) {
                 if (!interaction.inGuild()) return;
 
@@ -1052,6 +1095,60 @@ module.exports = {
                 }
 
                 try { await interaction.reply({ content: 'Your confession has been sent anonymously.', ephemeral: true }); } catch (_) {}
+                return;
+            }
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('suggest:submit:')) {
+                if (!interaction.inGuild()) return;
+
+                const channelId = interaction.customId.slice('suggest:submit:'.length);
+                const suggestion = (interaction.fields.getTextInputValue('suggest:suggestion') || '').trim();
+                const reasoning = (interaction.fields.getTextInputValue('suggest:reasoning') || '').trim();
+
+                if (!suggestion || !reasoning) {
+                    try { await interaction.reply({ content: 'Both suggestion and reasoning are required.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                let channel = null;
+                try { channel = await interaction.guild.channels.fetch(channelId); } catch (_) {}
+
+                if (!channel || !channel.isTextBased?.()) {
+                    try { await interaction.reply({ content: 'The suggestion channel is no longer available. Please inform an admin.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                const sanitize = (text) => text
+                    .replace(/@/g, '@\u200b')
+                    .replace(/#/g, '#\u200b')
+                    .replace(/&/g, '&\u200b');
+
+                const embed = new EmbedBuilder()
+                    .setTitle('Anonymous Suggestion')
+                    .setTimestamp()
+                    .addFields(
+                        { name: 'Suggestion', value: sanitize(suggestion) },
+                        { name: 'Reasoning / Context', value: sanitize(reasoning) },
+                    );
+
+                try {
+                    const { applyDefaultColour } = require('../utils/guildColourStore');
+                    applyDefaultColour(embed, interaction.guildId);
+                } catch (_) {}
+
+                const button = new ButtonBuilder()
+                    .setCustomId(`suggest:open:${channel.id}`)
+                    .setLabel('Share an Anonymous Suggestion')
+                    .setStyle(ButtonStyle.Primary);
+                const buttonRow = new ActionRowBuilder().addComponents(button);
+
+                try {
+                    await channel.send({ embeds: [embed], components: [buttonRow] });
+                } catch (_) {
+                    try { await interaction.reply({ content: 'Failed to send your suggestion. Please try again later.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                try { await interaction.reply({ content: 'Your suggestion has been submitted anonymously.', ephemeral: true }); } catch (_) {}
                 return;
             }
             // Welcome embed setup modal

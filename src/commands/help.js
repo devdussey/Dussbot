@@ -80,6 +80,7 @@ const categories = {
   'Server Setup & Messaging': [
 
     { cmd: '/confessconfig', desc: 'Post the anonymous confession button to a channel', perm: 'Manage Server' },
+    { cmd: '/suggestconfig', desc: 'Post the anonymous suggestion button to a channel', perm: 'Manage Server' },
 
     { cmd: '/autobump add/remove/enable/disable/list', desc: 'Schedule automatic bumps for server listing sites', perm: 'Manage Server' },
 
