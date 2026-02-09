@@ -32,9 +32,9 @@ function formatNumber(value) {
 }
 
 function buildCodeBlock(lines) {
-    if (!lines.length) return '```
-*(none)*
-```';
+    if (!lines.length) {
+        return ['```', '*(none)*', '```'].join('\n');
+    }
     return ['```', ...lines, '```'].join('\n');
 }
 
