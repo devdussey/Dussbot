@@ -172,10 +172,6 @@ const COMMAND_CATEGORY_MAP = {
     horserace: 'games',
     horseracestandings: 'games',
     sentancerush: 'games',
-    triviacategories: 'games',
-    triviarankings: 'games',
-    triviastart: 'games',
-    triviastop: 'games',
     wordrush: 'games',
 
     // Automations
@@ -244,10 +240,6 @@ const ADMIN_COMMANDS = new Set([
   'sentancerush',
   'showbans',
   'summarize',
-  'triviacategories',
-  'triviarankings',
-  'triviastart',
-  'triviastop',
   'transcribe',
   'transriptconfig',
   'vanityrole',

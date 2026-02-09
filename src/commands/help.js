@@ -145,14 +145,6 @@ const categories = {
 
     { cmd: '/sentancerush start/end/settings', desc: 'SentenceRush lobby, stop, and settings (guess the hidden sentence)', perm: 'Manage Server (settings)' },
 
-    { cmd: '/triviastart', desc: 'Start a multi-round trivia match in the channel', perm: null },
-
-    { cmd: '/triviastop', desc: 'End an active trivia session early', perm: null },
-
-    { cmd: '/triviacategories', desc: 'Browse the available trivia categories and difficulties', perm: null },
-
-    { cmd: '/triviarankings', desc: 'Show the trivia leaderboard for this server', perm: null },
-
   ],
 
   'Utilities & Insights': [
