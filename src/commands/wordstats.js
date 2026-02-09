@@ -31,6 +31,11 @@ function formatNumber(value) {
     return numberFormatter.format(Math.max(normalized, 0));
 }
 
+function describeLimit(limit) {
+    if (!Number.isFinite(limit)) return 'full history';
+    return formatNumber(limit);
+}
+
 function buildCodeBlock(lines) {
     if (!lines.length) {
         return ['```', '*(none)*', '```'].join('\n');
@@ -97,13 +102,15 @@ module.exports = {
                 .addChannelOption(option =>
                     option.setName('channel').setDescription('Optional channel to focus the scan on.'),
                 )
-                .addIntegerOption(option =>
-                    option
-                        .setName('messages')
-                        .setDescription(`Max messages to read per channel (default ${DEFAULT_BACKFILL_PER_CHANNEL}, max ${MAX_BACKFILL_PER_CHANNEL}).`)
-                        .setMinValue(100)
-                        .setMaxValue(MAX_BACKFILL_PER_CHANNEL),
-                ),
+        .addIntegerOption(option =>
+            option
+                .setName('messages')
+                .setDescription(
+                    `Max messages to read per channel (default ${DEFAULT_BACKFILL_PER_CHANNEL}, max ${MAX_BACKFILL_PER_CHANNEL}, 0 for full history).`,
+                )
+                .setMinValue(0)
+                .setMaxValue(MAX_BACKFILL_PER_CHANNEL),
+        ),
         ),
     async execute(interaction) {
         const subcommand = interaction.options.getSubcommand();
@@ -168,12 +175,15 @@ async function handleSync(interaction) {
         return interaction.reply({ content: 'Manage Server permission is required to run this sync.', ephemeral: true });
     }
     await interaction.deferReply({ ephemeral: true });
-    const perChannelLimit = clampPositiveInt(
-        interaction.options.getInteger('messages'),
-        100,
-        MAX_BACKFILL_PER_CHANNEL,
-        DEFAULT_BACKFILL_PER_CHANNEL,
-    );
+    const requestedMessages = interaction.options.getInteger('messages');
+    let perChannelLimit;
+    if (requestedMessages === null) {
+        perChannelLimit = DEFAULT_BACKFILL_PER_CHANNEL;
+    } else if (requestedMessages <= 0) {
+        perChannelLimit = Infinity;
+    } else {
+        perChannelLimit = clampPositiveInt(requestedMessages, 1, MAX_BACKFILL_PER_CHANNEL, DEFAULT_BACKFILL_PER_CHANNEL);
+    }
     const requestedChannel = interaction.options.getChannel('channel');
     const guild = interaction.guild;
     const me = guild.members.me;
@@ -202,7 +212,7 @@ async function handleSync(interaction) {
         let fetched = 0;
         let before = null;
         try {
-            while (fetched < perChannelLimit) {
+            while (!Number.isFinite(perChannelLimit) || fetched < perChannelLimit) {
                 const batchSize = Math.min(FETCH_BATCH_SIZE, perChannelLimit - fetched);
                 const fetchOptions = { limit: batchSize };
                 if (before) fetchOptions.before = before;
@@ -229,12 +239,12 @@ async function handleSync(interaction) {
             errors.push(`${channel.name || channel.id}: ${err?.message || 'Unknown error'}`);
         }
         await interaction.editReply({
-            content: `Scanning ${channelIndex}/${channelsToScan.length}: ${channel.name || channel.id} (${formatNumber(processedMessages)} messages recorded so far)...`,
-        });
-    }
+        content: `Scanning ${channelIndex}/${channelsToScan.length}: ${channel.name || channel.id} (${formatNumber(processedMessages)} messages recorded so far)...`,
+    });
+}
     const summaryLines = [
         `Backfill complete (${formatNumber(processedMessages)} messages, ${formatNumber(processedWords)} words added).`,
-        `Channels scanned: ${formatNumber(channelsToScan.length)} (up to ${formatNumber(perChannelLimit)} messages per channel).`,
+        `Channels scanned: ${formatNumber(channelsToScan.length)} (up to ${describeLimit(perChannelLimit)} messages per channel).`,
         'Rescanning the same messages will add duplicates, so limit this command to new history or a fresh store.',
     ];
     if (errors.length) {
