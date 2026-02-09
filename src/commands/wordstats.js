@@ -187,7 +187,7 @@ async function handleWordDetail(interaction, rawWord) {
             ? `• Most frequent user: ${formatUserLabel(topUser)} (${formatNumber(topUser.count)} uses)`
             : '• Most frequent user: n/a',
     ];
-    return interaction.reply({ content: lines.join('\n') });
+    return interaction.reply({ content: buildCodeBlock(lines) });
 }
 
 async function handleLeaderboard(interaction) {
