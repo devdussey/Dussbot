@@ -37,13 +37,21 @@ module.exports = {
       const newBalance = Number.isFinite(result.tokens) ? result.tokens : rupeeStore.getBalance(message.guild.id, message.author.id);
       const amountText = result.awarded === 1 ? 'a rupee' : `${result.awarded} rupees`;
       const earnedText = `${message.author} has earned ${amountText}! They now have ${newBalance}!`;
+      const announcement = `${earnedText}\n\nTo spend your rupees, type /rupeestore.`;
       const embed = new EmbedBuilder()
         .setColor(resolveEmbedColour(message.guild.id, 0x00f0ff))
-        .setDescription(`${earnedText}\n\nTo spend your rupees, type /rupeestore.`)
+        .setDescription(announcement)
         .setThumbnail(message.author.displayAvatarURL({ extension: 'png', size: 256 }));
       try {
         await message.channel?.send({ embeds: [embed] });
-      } catch (_) {}
+      } catch (_) {
+        try {
+          await message.channel?.send({
+            content: announcement,
+            allowedMentions: { users: [message.author.id] },
+          });
+        } catch (_) {}
+      }
     } catch (err) {
       console.error('Failed to award rupees', err);
     }
