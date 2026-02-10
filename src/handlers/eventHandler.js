@@ -1,11 +1,12 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('../utils/logger')('EventHandler');
 
 function loadEvents(client) {
     const eventsPath = path.join(__dirname, '..', 'events');
 
     if (!fs.existsSync(eventsPath)) {
-        console.log('Events directory not found, creating...');
+        logger.warn('Events directory not found, creating...');
         fs.mkdirSync(eventsPath, { recursive: true });
         return;
     }
@@ -19,7 +20,7 @@ function loadEvents(client) {
         try {
             event = require(filePath);
         } catch (error) {
-            console.error(`Failed to load event ${file}:`, error);
+            logger.error(`Failed to load event ${file}:`, error);
             continue;
         }
 
@@ -29,9 +30,8 @@ function loadEvents(client) {
             client.on(event.name, (...args) => event.execute(...args));
         }
 
-        console.log(`✓ Loaded event: ${event.name}`);
+        logger.success(`✓ Loaded event: ${event.name}`);
     }
 }
 
 module.exports = { loadEvents };
-

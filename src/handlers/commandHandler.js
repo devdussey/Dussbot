@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('../utils/logger')('CommandHandler');
 
 function loadCommands(client, commandsPath = path.join(__dirname, '..', 'commands')) {
     if (!fs.existsSync(commandsPath)) {
-        console.log('Commands directory not found, creating...');
+        logger.warn('Commands directory not found, creating...');
         fs.mkdirSync(commandsPath, { recursive: true });
         return;
     }
@@ -26,19 +27,19 @@ function loadCommands(client, commandsPath = path.join(__dirname, '..', 'command
         try {
             command = require(filePath);
         } catch (err) {
-            console.log(`⚠ Failed to load command at ${filePath}: ${err.message}`);
+            logger.warn(`⚠ Failed to load command at ${filePath}: ${err.message}`);
             continue;
         }
 
         if ('data' in command && 'execute' in command) {
             client.commands.set(command.data.name, command);
-            console.log(`✓ Loaded command: ${command.data.name}`);
+            logger.success(`✓ Loaded command: ${command.data.name}`);
         } else {
-            console.log(`⚠ The command at ${filePath} is missing a required "data" or "execute" property.`);
+            logger.warn(`⚠ The command at ${filePath} is missing a required "data" or "execute" property.`);
         }
     }
 
-    console.log(`Loaded ${client.commands.size} commands.`);
+    logger.info(`Loaded ${client.commands.size} commands.`);
 }
 
 module.exports = { loadCommands };

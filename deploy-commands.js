@@ -1,6 +1,7 @@
 const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const logger = require('./src/utils/logger')('DeployCommands');
 require('dotenv').config();
 
 function getAllCommandFiles(dir) {
@@ -24,16 +25,16 @@ for (const filePath of files) {
         const json = command.data.toJSON();
         if (nameToFile.has(json.name)) {
             const firstPath = nameToFile.get(json.name);
-            console.log(`[WARNING] Duplicate slash command name '${json.name}' in ${filePath}; skipping (already defined in ${firstPath}).`);
+            logger.warn(`[WARNING] Duplicate slash command name '${json.name}' in ${filePath}; skipping (already defined in ${firstPath}).`);
             continue;
         }
         nameToFile.set(json.name, filePath);
         commands.push(json);
     } else {
-        console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+        logger.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
     }
 }
-console.log('Commands to deploy:', Array.from(nameToFile.keys()).join(', ') || '(none)');
+logger.info('Commands to deploy: ' + (Array.from(nameToFile.keys()).join(', ') || '(none)'));
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes('--dry-run') || process.env.DRY_RUN === '1';
@@ -42,7 +43,7 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
     try {
-        console.log(`Preparing to refresh ${commands.length} application (/) commands${isDryRun ? ' [DRY-RUN]' : ''}.`);
+        logger.info(`Preparing to refresh ${commands.length} application (/) commands${isDryRun ? ' [DRY-RUN]' : ''}.`);
 
         const env = (process.env.NODE_ENV || '').trim().toLowerCase();
         const clientId = process.env.CLIENT_ID;
@@ -58,32 +59,32 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
         // Guild-scoped commands appear instantly, whereas global updates may take up to an hour to propagate.
         if (env === 'development' && guildIds.length > 0) {
             // Deploy to one or more guilds for faster iteration
-            console.log(`Target scope: guild (${guildIds.join(', ')})`);
+            logger.info(`Target scope: guild (${guildIds.join(', ')})`);
             if (!isDryRun) {
                 for (const gid of guildIds) {
                     const data = await rest.put(
                         Routes.applicationGuildCommands(clientId, gid),
                         { body: commands },
                     );
-                    console.log(`Successfully reloaded ${data.length} guild application (/) commands for guild ${gid}.`);
+                    logger.success(`Successfully reloaded ${data.length} guild application (/) commands for guild ${gid}.`);
                 }
             } else {
-                console.log('DRY-RUN: Skipping REST deployment for guild scope.');
+                logger.info('DRY-RUN: Skipping REST deployment for guild scope.');
             }
         } else {
             // Deploy globally (slower propagation across Discord)
-            console.log('Target scope: global');
+            logger.info('Target scope: global');
             if (!isDryRun) {
                 const data = await rest.put(
                     Routes.applicationCommands(clientId),
                     { body: commands },
                 );
-                console.log(`Successfully reloaded ${data.length} global application (/) commands.`);
+                logger.success(`Successfully reloaded ${data.length} global application (/) commands.`);
             } else {
-                console.log('DRY-RUN: Skipping REST deployment for global scope.');
+                logger.info('DRY-RUN: Skipping REST deployment for global scope.');
             }
         }
     } catch (error) {
-        console.error('Error deploying commands:', error);
+        logger.error('Error deploying commands:', error);
     }
 })();

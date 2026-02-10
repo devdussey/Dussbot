@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
 const { loadCommands } = require('./handlers/commandHandler');
 const { loadEvents } = require('./handlers/eventHandler');
+const logger = require('./utils/logger')('Bot');
 require('dotenv').config();
 require('./utils/embedColourEnforcer');
 
@@ -37,11 +38,15 @@ loadEvents(client);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', error => {
-    console.error('Unhandled promise rejection:', error);
+    logger.error('Unhandled promise rejection:', error);
+});
+
+client.once('ready', () => {
+    logger.success(`Logged in as ${client.user?.tag || client.user?.id || 'discord bot'}`);
 });
 
 // Login to Discord
 client.login(process.env.DISCORD_TOKEN).catch(error => {
-    console.error('Failed to login:', error);
+    logger.error('Failed to login:', error);
     process.exit(1);
 });
