@@ -23,8 +23,17 @@ module.exports = {
       const enabled = await boosterConfigStore.isEnabled(guild.id);
       if (!enabled) return;
 
-      const hadBoost = Boolean(oldMember?.premiumSinceTimestamp || oldMember?.premiumSince);
-      const hasBoost = Boolean(newMember?.premiumSinceTimestamp || newMember?.premiumSince);
+      const premiumRoleId = guild.roles.premiumSubscriberRole?.id || null;
+      const hadBoost = Boolean(
+        oldMember?.premiumSinceTimestamp ||
+        oldMember?.premiumSince ||
+        (premiumRoleId && oldMember?.roles?.cache?.has(premiumRoleId))
+      );
+      const hasBoost = Boolean(
+        newMember?.premiumSinceTimestamp ||
+        newMember?.premiumSince ||
+        (premiumRoleId && newMember?.roles?.cache?.has(premiumRoleId))
+      );
 
       if (hasBoost && !hadBoost) {
         try {
