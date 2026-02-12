@@ -127,7 +127,6 @@ function buildMenuRow(panel, guild) {
 function buildSummaryEmbed(panel, guild, opts = {}) {
   const ids = Array.isArray(panel?.roleIds) ? panel.roleIds : [];
   const emojiMap = panel?.emojis && typeof panel.emojis === 'object' ? panel.emojis : {};
-  const highlightIds = new Set(Array.isArray(opts.highlightRoleIds) ? opts.highlightRoleIds : []);
   const roleCounts = opts.roleCounts && typeof opts.roleCounts === 'object' ? opts.roleCounts : null;
   const lines = [];
   const missing = [];
@@ -148,11 +147,10 @@ function buildSummaryEmbed(panel, guild, opts = {}) {
 
   for (const entry of roleData) {
     const { role, count, emoji } = entry;
-    const selectionSuffix = highlightIds.has(role.id) ? ' (you have this)' : '';
     const percent = totalMembers > 0 ? Math.round((count / totalMembers) * 100) : 0;
     const emojiPart = emoji ? `${emoji} ` : '';
     const plural = count === 1 ? 'Member' : 'Members';
-    lines.push(`${emojiPart}<@&${role.id}> - ${count} ${plural} (${percent}%)${selectionSuffix}`);
+    lines.push(`${emojiPart}<@&${role.id}> - ${count} ${plural} (${percent}%)`);
   }
 
   if (!lines.length) lines.push('No roles configured yet.');
