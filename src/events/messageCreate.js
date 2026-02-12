@@ -37,11 +37,17 @@ module.exports = {
         } catch (_) { matched = false; }
 
         if (matched) {
-          try { await message.reply({ content: String(rule.reply || '').slice(0, 2000) }); } catch (_) {}
+          const content = String(rule.reply || '').slice(0, 2000).trim();
+          const mediaUrl = String(rule.mediaUrl || '').trim();
+          if (!content && !mediaUrl) continue;
+          const payload = {
+            ...(content ? { content } : {}),
+            ...(mediaUrl ? { files: [mediaUrl] } : {}),
+          };
+          try { await message.reply(payload); } catch (_) {}
           // do not break; allow multiple rules to respond if applicable
         }
       }
     } catch (_) { /* swallow */ }
   }
 };
-

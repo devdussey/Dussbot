@@ -59,6 +59,7 @@ function addRule(guildId, rule) {
     id,
     trigger: String(rule.trigger || '').slice(0, 300),
     reply: String(rule.reply || '').slice(0, 2000),
+    mediaUrl: String(rule.mediaUrl || '').slice(0, 1000),
     match: (rule.match || 'contains'),
     caseSensitive: !!rule.caseSensitive,
     channelId: rule.channelId || null,
@@ -84,4 +85,3 @@ module.exports = {
   addRule,
   removeRule,
 };
-

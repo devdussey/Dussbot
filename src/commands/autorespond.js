@@ -29,7 +29,12 @@ module.exports = {
         .addStringOption(opt =>
           opt.setName('reply')
             .setDescription('Reply text to send')
-            .setRequired(true)
+            .setRequired(false)
+        )
+        .addStringOption(opt =>
+          opt.setName('media_url')
+            .setDescription('Direct image or GIF URL to attach')
+            .setRequired(false)
         )
         .addStringOption(opt =>
           opt.setName('match')
@@ -88,19 +93,39 @@ module.exports = {
 
     if (sub === 'add') {
       const trigger = interaction.options.getString('trigger', true);
-      const reply = interaction.options.getString('reply', true);
+      const reply = interaction.options.getString('reply') || '';
+      const mediaUrl = interaction.options.getString('media_url') || '';
       const match = interaction.options.getString('match') || 'contains';
       const caseSensitive = interaction.options.getBoolean('case_sensitive') || false;
       const channel = interaction.options.getChannel('channel');
+
+      const trimmedReply = reply.trim();
+      const trimmedMediaUrl = mediaUrl.trim();
+      if (!trimmedReply && !trimmedMediaUrl) {
+        return interaction.editReply({ content: 'Provide at least one response type: `reply` text or `media_url`.' });
+      }
+
+      if (trimmedMediaUrl) {
+        let parsed = null;
+        try { parsed = new URL(trimmedMediaUrl); } catch (_) {}
+        if (!parsed || !['http:', 'https:'].includes(parsed.protocol)) {
+          return interaction.editReply({ content: 'The `media_url` must be a valid `http` or `https` URL.' });
+        }
+      }
+
       const rule = store.addRule(guildId, {
-        trigger, reply, match, caseSensitive, channelId: channel?.id || null,
+        trigger, reply: trimmedReply, mediaUrl: trimmedMediaUrl, match, caseSensitive, channelId: channel?.id || null,
       });
       // Enabling autorespond automatically if adding first rule
       try {
         const cfg = store.getGuildConfig(guildId);
         if (!cfg.enabled) store.setEnabled(guildId, true);
       } catch (_) {}
-      return interaction.editReply({ content: `Added rule #${rule.id}: when ${match}${caseSensitive ? ' (case)' : ''} '${trigger}'${rule.channelId ? ` in <#${rule.channelId}>` : ''} -> reply '${reply}'.` });
+      const responseLabel = [
+        rule.reply ? `text '${rule.reply}'` : null,
+        rule.mediaUrl ? `media ${rule.mediaUrl}` : null,
+      ].filter(Boolean).join(' + ');
+      return interaction.editReply({ content: `Added rule #${rule.id}: when ${match}${caseSensitive ? ' (case)' : ''} '${trigger}'${rule.channelId ? ` in <#${rule.channelId}>` : ''} -> ${responseLabel}.` });
     }
 
     if (sub === 'remove') {
@@ -116,7 +141,10 @@ module.exports = {
         lines.push('No rules configured. Use /autorespond add to create one.');
       } else {
         for (const r of cfg.rules) {
-          lines.push(`#${r.id}: [${r.match}${r.caseSensitive ? ', case' : ''}] '${r.trigger}' -> '${r.reply.replace(/\n/g, ' ')}'${r.channelId ? ` in <#${r.channelId}>` : ''}`);
+          const textPart = r.reply ? `'${String(r.reply).replace(/\n/g, ' ')}'` : null;
+          const mediaPart = r.mediaUrl ? `media ${r.mediaUrl}` : null;
+          const output = [textPart, mediaPart].filter(Boolean).join(' + ') || '(empty response)';
+          lines.push(`#${r.id}: [${r.match}${r.caseSensitive ? ', case' : ''}] '${r.trigger}' -> ${output}${r.channelId ? ` in <#${r.channelId}>` : ''}`);
         }
       }
       return interaction.editReply({ content: lines.join('\n') });

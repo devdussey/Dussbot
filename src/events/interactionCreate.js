@@ -570,16 +570,6 @@ module.exports = {
                 const editPayload = {};
                 if (merged.ok) editPayload.components = merged.rows;
 
-                const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { highlightRoleIds: personalRoles });
-                const summaryResult = reactionRoleManager.mergeSummaryEmbed(interaction.message.embeds, summary.embed, panel);
-                if (summaryResult.ok) {
-                    editPayload.embeds = summaryResult.embeds;
-                }
-
-                if (Object.keys(editPayload).length) {
-                    try { await interaction.message.edit(editPayload); } catch (_) {}
-                }
-
                 const notes = [];
                 if (updateError) notes.push(updateError);
                 if (blockedAdd.length) notes.push('Some selected roles could not be added due to role hierarchy.');
@@ -596,6 +586,16 @@ module.exports = {
                     for (const id of toRemove) finalRoleSet.delete(id);
                 }
                 const personalRoles = panelRoleIds.filter(id => finalRoleSet.has(id));
+                const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { highlightRoleIds: personalRoles });
+                const summaryResult = reactionRoleManager.mergeSummaryEmbed(interaction.message.embeds, summary.embed, panel);
+                if (summaryResult.ok) {
+                    editPayload.embeds = summaryResult.embeds;
+                }
+
+                if (Object.keys(editPayload).length) {
+                    try { await interaction.message.edit(editPayload); } catch (_) {}
+                }
+
                 const selectionLine = personalRoles.length
                     ? `You have selected: ${personalRoles.map(id => `<@&${id}>`).join(', ')}.`
                     : 'You have selected: none.';
