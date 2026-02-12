@@ -42,9 +42,17 @@ function describeLimit(limit) {
     return formatNumber(limit);
 }
 
-function buildSyncProgressLine(completedChannels, totalChannels, messageCount, activeLabel = null) {
+function buildSyncProgressLine(
+    completedChannels,
+    totalChannels,
+    fetchedCount,
+    recordedCount,
+    duplicateCount,
+    ignoredCount,
+    activeLabel = null,
+) {
     const activeSuffix = activeLabel ? ` (active: ${activeLabel})` : '';
-    return `Scanning ${formatNumber(completedChannels)}/${formatNumber(totalChannels)} channels${activeSuffix} - ${formatNumber(messageCount)} messages recorded so far...`;
+    return `Scanning ${formatNumber(completedChannels)}/${formatNumber(totalChannels)} channels${activeSuffix} - fetched ${formatNumber(fetchedCount)}, recorded ${formatNumber(recordedCount)}, duplicates ${formatNumber(duplicateCount)}, ignored ${formatNumber(ignoredCount)}...`;
 }
 
 function buildCodeBlock(lines) {
@@ -293,7 +301,9 @@ async function handleSync(interaction) {
         if (!channel.isTextBased()) continue;
         if (channel.isThread?.()) continue;
         if (!channel.viewable) continue;
-        if (!me.permissionsIn(channel).has(PermissionsBitField.Flags.ViewChannel)) continue;
+        const perms = me.permissionsIn(channel);
+        if (!perms.has(PermissionsBitField.Flags.ViewChannel)) continue;
+        if (!perms.has(PermissionsBitField.Flags.ReadMessageHistory)) continue;
         channelsToScan.push(channel);
     }
     if (!channelsToScan.length) {
@@ -302,6 +312,8 @@ async function handleSync(interaction) {
     let processedMessages = 0;
     let processedWords = 0;
     let duplicateMessages = 0;
+    let fetchedMessages = 0;
+    let ignoredMessages = 0;
     let completedChannels = 0;
     const errors = [];
     let nextChannelIndex = 0;
@@ -317,7 +329,15 @@ async function handleSync(interaction) {
         progressQueue = progressQueue
             .then(() =>
                 interaction.editReply({
-                    content: buildSyncProgressLine(completedChannels, channelsToScan.length, processedMessages, activeLabel),
+                    content: buildSyncProgressLine(
+                        completedChannels,
+                        channelsToScan.length,
+                        fetchedMessages,
+                        processedMessages,
+                        duplicateMessages,
+                        ignoredMessages,
+                        activeLabel,
+                    ),
                 }),
             )
             .catch(() => {});
@@ -328,9 +348,6 @@ async function handleSync(interaction) {
         const channelLabel = channel.name || channel.id;
         let fetched = 0;
         let before = null;
-        let channelMessages = 0;
-        let channelWords = 0;
-        let channelDuplicates = 0;
         let channelOldestTimestamp = null;
         try {
             while (!Number.isFinite(perChannelLimit) || fetched < perChannelLimit) {
@@ -340,8 +357,12 @@ async function handleSync(interaction) {
                 if (before) fetchOptions.before = before;
                 const batch = await channel.messages.fetch(fetchOptions);
                 if (!batch.size) break;
+                fetchedMessages += batch.size;
                 for (const message of batch.values()) {
-                    if (!message.author?.id || message.author.bot) continue;
+                    if (!message.author?.id || message.author.bot) {
+                        ignoredMessages += 1;
+                        continue;
+                    }
                     if (Number.isFinite(message.createdTimestamp)) {
                         if (channelOldestTimestamp === null || message.createdTimestamp < channelOldestTimestamp) {
                             channelOldestTimestamp = message.createdTimestamp;
@@ -355,13 +376,13 @@ async function handleSync(interaction) {
                         { persist: false, messageId: message.id },
                     );
                     if (result?.isDuplicate) {
-                        channelDuplicates += 1;
+                        duplicateMessages += 1;
                         continue;
                     }
                     if (result?.processedWords) {
-                        channelWords += result.processedWords;
+                        processedWords += result.processedWords;
                     }
-                    channelMessages += 1;
+                    processedMessages += 1;
                 }
                 fetched += batch.size;
                 before = batch.last()?.id;
@@ -371,14 +392,11 @@ async function handleSync(interaction) {
         } catch (err) {
             return {
                 channelLabel,
-                channelMessages,
-                channelWords,
-                channelDuplicates,
                 channelOldestTimestamp,
                 error: err?.message || 'Unknown error',
             };
         }
-        return { channelLabel, channelMessages, channelWords, channelDuplicates, channelOldestTimestamp, error: null };
+        return { channelLabel, channelOldestTimestamp, error: null };
     };
 
     const worker = async () => {
@@ -387,9 +405,6 @@ async function handleSync(interaction) {
             nextChannelIndex += 1;
             if (index >= channelsToScan.length) break;
             const result = await scanChannel(channelsToScan[index]);
-            processedMessages += result.channelMessages;
-            processedWords += result.channelWords;
-            duplicateMessages += result.channelDuplicates;
             completedChannels += 1;
             if (result.error) {
                 errors.push(`${result.channelLabel}: ${result.error}`);
@@ -406,7 +421,10 @@ async function handleSync(interaction) {
                         content: buildSyncProgressLine(
                             completedChannels,
                             channelsToScan.length,
+                            fetchedMessages,
                             processedMessages,
+                            duplicateMessages,
+                            ignoredMessages,
                             completedChannels < channelsToScan.length ? result.channelLabel : null,
                         ),
                     }),
@@ -425,10 +443,12 @@ async function handleSync(interaction) {
     }
     const summaryLines = [
         `Backfill complete (${formatNumber(processedMessages)} messages, ${formatNumber(processedWords)} words added).`,
+        `Fetched from Discord: ${formatNumber(fetchedMessages)} messages total.`,
         `Duplicates skipped: ${formatNumber(duplicateMessages)} already-recorded messages.`,
+        `Ignored (bots/system/no author): ${formatNumber(ignoredMessages)} messages.`,
         `Channels scanned: ${formatNumber(channelsToScan.length)} (up to ${describeLimit(perChannelLimit)} messages per channel, concurrency ${formatNumber(workerCount)}).`,
         `Oldest fetched message: ${oldestTimestamp ? `${formatSyncDate(oldestTimestamp)} (${oldestChannelLabel || 'unknown channel'})` : 'none found in fetched history.'}`,
-        'Rescanning the same messages will add duplicates, so limit this command to new history or a fresh store.',
+        'Rescanning the same messages is safe; duplicates are skipped by message ID.',
     ];
     if (errors.length) {
         const displayErrors = errors.slice(0, 5).map(err => `- ${err}`);
