@@ -226,7 +226,8 @@ async function handleCreate(interaction) {
     return interaction.editReply({ content: 'That message already has the maximum number of component rows.' });
   }
 
-  const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild);
+  const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, panel);
+  const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { roleCounts });
   const mergeOpts = {};
   if (useEmbed && newEmbed) mergeOpts.preferredIndex = 0;
   const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, panel, mergeOpts);
@@ -460,7 +461,8 @@ async function handleEdit(interaction) {
     embedsToUse = [embed];
   }
 
-  const summary = reactionRoleManager.buildSummaryEmbed(updatedPanel, interaction.guild);
+  const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, updatedPanel);
+  const summary = reactionRoleManager.buildSummaryEmbed(updatedPanel, interaction.guild, { roleCounts });
   const mergeOpts = {};
   const summaryFooter = `${reactionRoleManager.SUMMARY_FOOTER_PREFIX}${updatedPanel.id}`;
   const firstEmbed = embedsToUse[0];

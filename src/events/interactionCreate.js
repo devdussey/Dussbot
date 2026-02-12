@@ -586,7 +586,11 @@ module.exports = {
                     for (const id of toRemove) finalRoleSet.delete(id);
                 }
                 const personalRoles = panelRoleIds.filter(id => finalRoleSet.has(id));
-                const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { highlightRoleIds: personalRoles });
+                const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, panel);
+                const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, {
+                    highlightRoleIds: personalRoles,
+                    roleCounts,
+                });
                 const summaryResult = reactionRoleManager.mergeSummaryEmbed(interaction.message.embeds, summary.embed, panel);
                 if (summaryResult.ok) {
                     editPayload.embeds = summaryResult.embeds;

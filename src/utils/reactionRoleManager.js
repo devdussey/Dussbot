@@ -52,6 +52,22 @@ function getRoleCount(role) {
   return 0;
 }
 
+async function fetchPanelRoleCounts(guild, panel) {
+  const ids = Array.isArray(panel?.roleIds) ? panel.roleIds : [];
+  const counts = {};
+
+  try {
+    await guild?.members?.fetch();
+  } catch (_) {}
+
+  for (const id of ids.slice(0, MAX_OPTIONS)) {
+    const role = guild?.roles?.cache?.get(id) || null;
+    counts[id] = getRoleCount(role);
+  }
+
+  return counts;
+}
+
 function buildRoleOptions(guild, panel) {
   const ids = Array.isArray(panel?.roleIds) ? panel.roleIds : [];
   const emojiMap = panel?.emojis && typeof panel.emojis === 'object' ? panel.emojis : {};
@@ -108,6 +124,7 @@ function buildSummaryEmbed(panel, guild, opts = {}) {
   const ids = Array.isArray(panel?.roleIds) ? panel.roleIds : [];
   const emojiMap = panel?.emojis && typeof panel.emojis === 'object' ? panel.emojis : {};
   const highlightIds = new Set(Array.isArray(opts.highlightRoleIds) ? opts.highlightRoleIds : []);
+  const roleCounts = opts.roleCounts && typeof opts.roleCounts === 'object' ? opts.roleCounts : null;
   const lines = [];
   const missing = [];
   let totalMembers = 0;
@@ -120,7 +137,7 @@ function buildSummaryEmbed(panel, guild, opts = {}) {
       lines.push(`- Role deleted (ID ${id})`);
       continue;
     }
-    const count = getRoleCount(role);
+    const count = Number.isFinite(roleCounts?.[id]) ? Math.max(0, Number(roleCounts[id])) : getRoleCount(role);
     totalMembers += count;
     roleData.push({ role, count, emoji: formatEmojiForEmbed(emojiMap[id]) });
   }
@@ -261,6 +278,7 @@ module.exports = {
   buildMenuRow,
   upsertMenuRow,
   removeMenuRow,
+  fetchPanelRoleCounts,
   buildSummaryEmbed,
   mergeSummaryEmbed,
   removeSummaryEmbed,
