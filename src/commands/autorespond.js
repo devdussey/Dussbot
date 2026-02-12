@@ -38,12 +38,11 @@ module.exports = {
         )
         .addStringOption(opt =>
           opt.setName('match')
-            .setDescription('How to match the trigger')
+            .setDescription('Match mode: contains(anywhere), exact(whole msg), starts_with(beginning)')
             .addChoices(
-              { name: 'contains', value: 'contains' },
-              { name: 'equals', value: 'equals' },
-              { name: 'starts_with', value: 'starts_with' },
-              { name: 'regex', value: 'regex' },
+              { name: 'contains - trigger appears anywhere in the message', value: 'contains' },
+              { name: 'exact match - message must equal trigger', value: 'equals' },
+              { name: 'starts with - message must begin with trigger', value: 'starts_with' },
             )
         )
         .addBooleanOption(opt =>
