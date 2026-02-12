@@ -509,12 +509,37 @@ async function handleList(interaction) {
     return interaction.reply({ content: 'No reaction role panels configured yet.', ephemeral: true });
   }
 
-  const lines = panels.map(panel => {
+  const panelViews = await Promise.all(panels.map(async (panel) => {
     const mode = panel.multi ? 'multi' : 'single';
     const link = `https://discord.com/channels/${interaction.guildId}/${panel.channelId}/${panel.messageId}`;
     const roles = panel.roleIds.length ? panel.roleIds.map(id => `<@&${id}>`).join(', ') : 'None';
-    return `#${panel.id} | ${mode} | <#${panel.channelId}> | ${link}\n    Roles: ${roles}`;
-  });
+    let status = 'unknown';
+    let channelLabel = `<#${panel.channelId}>`;
+
+    let channel = null;
+    try { channel = await interaction.guild.channels.fetch(panel.channelId); } catch (_) {}
+    if (!channel) {
+      status = 'missing-channel';
+      channelLabel = `#unknown (${panel.channelId})`;
+      return `#${panel.id} | ${mode} | ${status} | ${channelLabel}\nRoles: ${roles}`;
+    }
+
+    if (!channel.isTextBased?.()) {
+      status = 'invalid-channel';
+      return `#${panel.id} | ${mode} | ${status} | ${channelLabel}\nRoles: ${roles}`;
+    }
+
+    let message = null;
+    try { message = await channel.messages.fetch(panel.messageId); } catch (_) {}
+    status = message ? 'live' : 'missing-message';
+
+    if (message) {
+      return `#${panel.id} | ${mode} | ${status} | ${channelLabel} | ${link}\nRoles: ${roles}`;
+    }
+    return `#${panel.id} | ${mode} | ${status} | ${channelLabel} | message ${panel.messageId}\nRoles: ${roles}`;
+  }));
+
+  const lines = panelViews;
 
   const chunks = chunkLines(lines, 1850);
   if (!chunks.length) {
