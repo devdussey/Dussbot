@@ -14,8 +14,9 @@ const DEFAULT_WORD_LIMIT = 20;
 const DEFAULT_LEADERBOARD_LIMIT = 10;
 const DEFAULT_BACKFILL_PER_CHANNEL = 1000;
 const MAX_BACKFILL_PER_CHANNEL = 3000;
+const DEFAULT_SYNC_CONCURRENCY = 1;
+const MAX_SYNC_CONCURRENCY = 5;
 const FETCH_BATCH_SIZE = 100;
-const PROGRESS_UPDATE_MESSAGE_DELTA = 200;
 const PROGRESS_UPDATE_INTERVAL_MS = 2500;
 
 const numberFormatter = new Intl.NumberFormat('en-US');
@@ -40,8 +41,9 @@ function describeLimit(limit) {
     return formatNumber(limit);
 }
 
-function buildSyncProgressLine(channelIndex, totalChannels, channelLabel, messageCount) {
-    return `Scanning ${channelIndex}/${totalChannels}: ${channelLabel} (${formatNumber(messageCount)} messages recorded so far)...`;
+function buildSyncProgressLine(completedChannels, totalChannels, messageCount, activeLabel = null) {
+    const activeSuffix = activeLabel ? ` (active: ${activeLabel})` : '';
+    return `Scanning ${formatNumber(completedChannels)}/${formatNumber(totalChannels)} channels${activeSuffix} - ${formatNumber(messageCount)} messages recorded so far...`;
 }
 
 function buildCodeBlock(lines) {
@@ -64,6 +66,13 @@ function buildWordLine(entry, index) {
 function buildLeaderboardLine(entry, index, metricField, metricLabel) {
     const label = formatUserLabel(entry);
     return `${index + 1}. ${formatNumber(entry[metricField])} ${metricLabel} - ${label}`;
+}
+
+function formatSyncDate(timestampMs) {
+    if (!Number.isFinite(timestampMs) || timestampMs <= 0) return 'n/a';
+    const iso = new Date(timestampMs).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+    const unixSeconds = Math.floor(timestampMs / 1000);
+    return `${iso} (<t:${unixSeconds}:R>)`;
 }
 
 module.exports = {
@@ -116,15 +125,24 @@ module.exports = {
                 .addChannelOption(option =>
                     option.setName('channel').setDescription('Optional channel to focus the scan on.'),
                 )
-        .addIntegerOption(option =>
-            option
-                .setName('messages')
-                .setDescription(
-                    `Max messages to read per channel (default ${DEFAULT_BACKFILL_PER_CHANNEL}, max ${MAX_BACKFILL_PER_CHANNEL}, 0 for full history).`,
+                .addIntegerOption(option =>
+                    option
+                        .setName('messages')
+                        .setDescription(
+                            `Max messages to read per channel (default ${DEFAULT_BACKFILL_PER_CHANNEL}, max ${MAX_BACKFILL_PER_CHANNEL}, 0 for full history).`,
+                        )
+                        .setMinValue(0)
+                        .setMaxValue(MAX_BACKFILL_PER_CHANNEL),
                 )
-                .setMinValue(0)
-                .setMaxValue(MAX_BACKFILL_PER_CHANNEL),
-        ),
+                .addIntegerOption(option =>
+                    option
+                        .setName('concurrency')
+                        .setDescription(
+                            `How many channels to scan in parallel (default ${DEFAULT_SYNC_CONCURRENCY}, max ${MAX_SYNC_CONCURRENCY}).`,
+                        )
+                        .setMinValue(1)
+                        .setMaxValue(MAX_SYNC_CONCURRENCY),
+                ),
         ),
     async execute(interaction) {
         const subcommand = interaction.options.getSubcommand();
@@ -226,6 +244,12 @@ async function handleSync(interaction) {
     }
     await interaction.deferReply({ ephemeral: true });
     const requestedMessages = interaction.options.getInteger('messages');
+    const concurrency = clampPositiveInt(
+        interaction.options.getInteger('concurrency'),
+        1,
+        MAX_SYNC_CONCURRENCY,
+        DEFAULT_SYNC_CONCURRENCY,
+    );
     let perChannelLimit;
     if (requestedMessages === null) {
         perChannelLimit = DEFAULT_BACKFILL_PER_CHANNEL;
@@ -255,24 +279,50 @@ async function handleSync(interaction) {
     }
     let processedMessages = 0;
     let processedWords = 0;
-    let channelIndex = 0;
+    let completedChannels = 0;
     const errors = [];
-    let lastProgressMessageCount = 0;
+    let nextChannelIndex = 0;
+    let oldestTimestamp = null;
+    let oldestChannelLabel = null;
     let lastProgressTimestamp = Date.now();
-    for (const channel of channelsToScan) {
-        channelIndex += 1;
+
+    let progressQueue = Promise.resolve();
+    const queueProgressUpdate = async activeLabel => {
+        const now = Date.now();
+        if (now - lastProgressTimestamp < PROGRESS_UPDATE_INTERVAL_MS) return;
+        lastProgressTimestamp = now;
+        progressQueue = progressQueue
+            .then(() =>
+                interaction.editReply({
+                    content: buildSyncProgressLine(completedChannels, channelsToScan.length, processedMessages, activeLabel),
+                }),
+            )
+            .catch(() => {});
+        await progressQueue;
+    };
+
+    const scanChannel = async channel => {
+        const channelLabel = channel.name || channel.id;
         let fetched = 0;
         let before = null;
-        const channelLabel = channel.name || channel.id;
+        let channelMessages = 0;
+        let channelWords = 0;
+        let channelOldestTimestamp = null;
         try {
             while (!Number.isFinite(perChannelLimit) || fetched < perChannelLimit) {
-                const batchSize = Math.min(FETCH_BATCH_SIZE, perChannelLimit - fetched);
+                const remaining = Number.isFinite(perChannelLimit) ? perChannelLimit - fetched : FETCH_BATCH_SIZE;
+                const batchSize = Math.min(FETCH_BATCH_SIZE, remaining);
                 const fetchOptions = { limit: batchSize };
                 if (before) fetchOptions.before = before;
                 const batch = await channel.messages.fetch(fetchOptions);
                 if (!batch.size) break;
                 for (const message of batch.values()) {
                     if (!message.author?.id || message.author.bot) continue;
+                    if (Number.isFinite(message.createdTimestamp)) {
+                        if (channelOldestTimestamp === null || message.createdTimestamp < channelOldestTimestamp) {
+                            channelOldestTimestamp = message.createdTimestamp;
+                        }
+                    }
                     const result = await recordMessage(
                         guild.id,
                         message.author.id,
@@ -281,37 +331,63 @@ async function handleSync(interaction) {
                         { persist: false },
                     );
                     if (result?.processedWords) {
-                        processedWords += result.processedWords;
+                        channelWords += result.processedWords;
                     }
-                    processedMessages += 1;
-                    const now = Date.now();
-                    if (
-                        processedMessages - lastProgressMessageCount >= PROGRESS_UPDATE_MESSAGE_DELTA ||
-                        now - lastProgressTimestamp >= PROGRESS_UPDATE_INTERVAL_MS
-                    ) {
-                        lastProgressMessageCount = processedMessages;
-                        lastProgressTimestamp = now;
-                        await interaction.editReply({
-                            content: buildSyncProgressLine(
-                                channelIndex,
-                                channelsToScan.length,
-                                channelLabel,
-                                processedMessages,
-                            ),
-                        });
-                    }
+                    channelMessages += 1;
                 }
                 fetched += batch.size;
                 before = batch.last()?.id;
                 if (batch.size < batchSize) break;
+                await queueProgressUpdate(channelLabel);
             }
         } catch (err) {
-            errors.push(`${channel.name || channel.id}: ${err?.message || 'Unknown error'}`);
+            return {
+                channelLabel,
+                channelMessages,
+                channelWords,
+                channelOldestTimestamp,
+                error: err?.message || 'Unknown error',
+            };
         }
-        await interaction.editReply({
-            content: buildSyncProgressLine(channelIndex, channelsToScan.length, channelLabel, processedMessages),
-        });
-    }
+        return { channelLabel, channelMessages, channelWords, channelOldestTimestamp, error: null };
+    };
+
+    const worker = async () => {
+        while (true) {
+            const index = nextChannelIndex;
+            nextChannelIndex += 1;
+            if (index >= channelsToScan.length) break;
+            const result = await scanChannel(channelsToScan[index]);
+            processedMessages += result.channelMessages;
+            processedWords += result.channelWords;
+            completedChannels += 1;
+            if (result.error) {
+                errors.push(`${result.channelLabel}: ${result.error}`);
+            }
+            if (Number.isFinite(result.channelOldestTimestamp)) {
+                if (oldestTimestamp === null || result.channelOldestTimestamp < oldestTimestamp) {
+                    oldestTimestamp = result.channelOldestTimestamp;
+                    oldestChannelLabel = result.channelLabel;
+                }
+            }
+            progressQueue = progressQueue
+                .then(() =>
+                    interaction.editReply({
+                        content: buildSyncProgressLine(
+                            completedChannels,
+                            channelsToScan.length,
+                            processedMessages,
+                            completedChannels < channelsToScan.length ? result.channelLabel : null,
+                        ),
+                    }),
+                )
+                .catch(() => {});
+            await progressQueue;
+        }
+    };
+
+    const workerCount = Math.min(concurrency, channelsToScan.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
     try {
         await flushStore();
     } catch (err) {
@@ -319,7 +395,8 @@ async function handleSync(interaction) {
     }
     const summaryLines = [
         `Backfill complete (${formatNumber(processedMessages)} messages, ${formatNumber(processedWords)} words added).`,
-        `Channels scanned: ${formatNumber(channelsToScan.length)} (up to ${describeLimit(perChannelLimit)} messages per channel).`,
+        `Channels scanned: ${formatNumber(channelsToScan.length)} (up to ${describeLimit(perChannelLimit)} messages per channel, concurrency ${formatNumber(workerCount)}).`,
+        `Oldest fetched message: ${oldestTimestamp ? `${formatSyncDate(oldestTimestamp)} (${oldestChannelLabel || 'unknown channel'})` : 'none found in fetched history.'}`,
         'Rescanning the same messages will add duplicates, so limit this command to new history or a fresh store.',
     ];
     if (errors.length) {
