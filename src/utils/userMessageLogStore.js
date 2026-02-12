@@ -114,13 +114,36 @@ function trimList(list) {
   }
 }
 
+function buildEntryKey(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (entry.id) return `id:${entry.id}`;
+  const channelId = entry.channelId || '';
+  const createdTimestamp = Number.isFinite(entry.createdTimestamp) ? entry.createdTimestamp : 0;
+  const content = entry.content || '';
+  return `fallback:${channelId}:${createdTimestamp}:${content}`;
+}
+
+function appendUniqueEntries(list, entries) {
+  if (!Array.isArray(list) || !Array.isArray(entries) || !entries.length) return 0;
+  const seen = new Set(list.map((entry) => buildEntryKey(entry)).filter(Boolean));
+  let added = 0;
+  for (const entry of entries) {
+    const key = buildEntryKey(entry);
+    if (!key || seen.has(key)) continue;
+    list.push(entry);
+    seen.add(key);
+    added += 1;
+  }
+  return added;
+}
+
 async function recordMessage(guildId, userId, message) {
   if (!guildId || !userId) return;
   const entry = buildEntryFromMessage(message, userId);
   if (!entry) return;
 
   const list = ensureGuildUser(guildId, userId);
-  list.push(entry);
+  appendUniqueEntries(list, [entry]);
   trimList(list);
   await saveStore();
 }
@@ -137,13 +160,11 @@ async function recordMessagesBulk(guildId, userId, messages) {
   entries.sort((a, b) => (a.createdTimestamp || 0) - (b.createdTimestamp || 0));
 
   const list = ensureGuildUser(guildId, userId);
-  for (const entry of entries) {
-    list.push(entry);
-  }
+  const added = appendUniqueEntries(list, entries);
   trimList(list);
   await saveStore();
 
-  return { added: entries.length, total: list.length };
+  return { added, total: list.length };
 }
 
 function getRecentMessages(guildId, userId, limit = MAX_PER_USER) {
