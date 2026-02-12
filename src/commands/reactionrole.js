@@ -554,6 +554,73 @@ async function handleList(interaction) {
   return null;
 }
 
+async function handleRefreshAll(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const panels = reactionRoleStore.listPanels(interaction.guildId);
+  if (!panels.length) {
+    return interaction.editReply({ content: 'No reaction role panels configured yet.' });
+  }
+
+  let refreshed = 0;
+  let skipped = 0;
+  const issues = [];
+
+  for (const panel of panels) {
+    let channel = null;
+    try { channel = await interaction.guild.channels.fetch(panel.channelId); } catch (_) {}
+    if (!channel || !channel.isTextBased?.()) {
+      skipped += 1;
+      issues.push(`#${panel.id}: channel missing or not text-based.`);
+      continue;
+    }
+
+    let message = null;
+    try { message = await channel.messages.fetch(panel.messageId); } catch (_) {}
+    if (!message || !message.editable) {
+      skipped += 1;
+      issues.push(`#${panel.id}: message missing or not editable.`);
+      continue;
+    }
+
+    const menu = reactionRoleManager.buildMenuRow(panel, interaction.guild);
+    const mergedMenu = reactionRoleManager.upsertMenuRow(message.components, menu.customId, menu.row);
+    if (!mergedMenu.ok) {
+      skipped += 1;
+      issues.push(`#${panel.id}: component rows are full.`);
+      continue;
+    }
+
+    const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, panel);
+    const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { roleCounts });
+    const mergedSummary = reactionRoleManager.mergeSummaryEmbed(message.embeds, summary.embed, panel);
+
+    const payload = { components: mergedMenu.rows };
+    if (mergedSummary.ok) payload.embeds = mergedSummary.embeds;
+
+    try {
+      await message.edit(payload);
+      refreshed += 1;
+    } catch (_) {
+      skipped += 1;
+      issues.push(`#${panel.id}: failed to edit message.`);
+    }
+  }
+
+  const lines = [
+    `Refreshed ${refreshed}/${panels.length} reaction role panels.`,
+  ];
+  if (skipped) lines.push(`Skipped ${skipped}.`);
+  if (issues.length) {
+    lines.push('');
+    lines.push('Issues:');
+    lines.push(...issues.slice(0, 20));
+    if (issues.length > 20) lines.push(`...and ${issues.length - 20} more.`);
+  }
+
+  return interaction.editReply({ content: lines.join('\n').slice(0, 1900) });
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('reactionrole')
@@ -686,7 +753,11 @@ module.exports = {
     .addSubcommand(sub =>
       sub
         .setName('list')
-        .setDescription('List reaction role panels for this server')),
+        .setDescription('List reaction role panels for this server'))
+    .addSubcommand(sub =>
+      sub
+        .setName('refreshall')
+        .setDescription('Rebuild menus and summary embeds for all reaction role panels')),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -710,6 +781,9 @@ module.exports = {
     }
     if (subcommand === 'list') {
       return handleList(interaction);
+    }
+    if (subcommand === 'refreshall') {
+      return handleRefreshAll(interaction);
     }
 
     return interaction.reply({ content: 'Unknown reaction role subcommand.', ephemeral: true });
