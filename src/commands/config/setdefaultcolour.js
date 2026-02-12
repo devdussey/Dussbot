@@ -15,7 +15,7 @@ opt
 .setDescription("#RGB, #RRGGBB, 0xRRGGBB or 'reset'")
 .setRequired(true)
 )
-.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), // why: avoid random users changing server-wide style
+.setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
 
 async execute(interaction) {

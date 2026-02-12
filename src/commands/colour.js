@@ -12,7 +12,7 @@ module.exports = {
     )
     .addSubcommand(sub => sub.setName('get').setDescription('Show the current default embed colour'))
     .addSubcommand(sub => sub.setName('reset').setDescription('Reset to the bot\'s default colour'))
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     if (!interaction.inGuild()) return interaction.reply({ content: 'Use this in a server.', ephemeral: true });
@@ -44,4 +44,3 @@ module.exports = {
     return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
   },
 };
-

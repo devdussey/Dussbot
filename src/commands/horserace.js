@@ -4,7 +4,6 @@ const {
   ButtonStyle,
   EmbedBuilder,
   ModalBuilder,
-  PermissionFlagsBits,
   SlashCommandBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -423,13 +422,6 @@ module.exports = {
         const embed = makeEmbed(guildId)
           .setTitle('Only the lobby owner can start the race')
           .setDescription('You must be the user who opened this race lobby to trigger the early start.');
-        await componentInteraction.reply({ embeds: [embed], ephemeral: true });
-        return;
-      }
-      if (!componentInteraction.member?.permissions?.has(PermissionFlagsBits.Administrator)) {
-        const embed = makeEmbed(guildId)
-          .setTitle('Admin-only control')
-          .setDescription('Only a server administrator can manually start the race.');
         await componentInteraction.reply({ embeds: [embed], ephemeral: true });
         return;
       }
