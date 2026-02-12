@@ -17,6 +17,8 @@ const DEFAULT_BACKFILL_PER_CHANNEL = 1000;
 const MAX_BACKFILL_PER_CHANNEL = 3000;
 const DEFAULT_SYNC_CONCURRENCY = 1;
 const MAX_SYNC_CONCURRENCY = 5;
+const DEFAULT_CHECKPOINT_MINUTES = 5;
+const MAX_CHECKPOINT_MINUTES = 30;
 const FETCH_BATCH_SIZE = 100;
 const PROGRESS_UPDATE_INTERVAL_MS = 2500;
 
@@ -82,6 +84,12 @@ function formatSyncDate(timestampMs) {
     const iso = new Date(timestampMs).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
     const unixSeconds = Math.floor(timestampMs / 1000);
     return `${iso} (<t:${unixSeconds}:R>)`;
+}
+
+function truncateForDiscord(content, max = 1900) {
+    const text = String(content || '');
+    if (text.length <= max) return text;
+    return `${text.slice(0, max - 24)}\n... (truncated)`;
 }
 
 module.exports = {
@@ -151,6 +159,15 @@ module.exports = {
                         )
                         .setMinValue(1)
                         .setMaxValue(MAX_SYNC_CONCURRENCY),
+                )
+                .addIntegerOption(option =>
+                    option
+                        .setName('checkpoint_minutes')
+                        .setDescription(
+                            `Post in-channel progress checkpoints every N minutes (default ${DEFAULT_CHECKPOINT_MINUTES}, max ${MAX_CHECKPOINT_MINUTES}).`,
+                        )
+                        .setMinValue(1)
+                        .setMaxValue(MAX_CHECKPOINT_MINUTES),
                 ),
         )
         .addSubcommand(subcommand =>
@@ -280,6 +297,13 @@ async function handleSync(interaction) {
         MAX_SYNC_CONCURRENCY,
         DEFAULT_SYNC_CONCURRENCY,
     );
+    const checkpointMinutes = clampPositiveInt(
+        interaction.options.getInteger('checkpoint_minutes'),
+        1,
+        MAX_CHECKPOINT_MINUTES,
+        DEFAULT_CHECKPOINT_MINUTES,
+    );
+    const checkpointIntervalMs = checkpointMinutes * 60 * 1000;
     let perChannelLimit;
     if (requestedMessages === null) {
         perChannelLimit = DEFAULT_BACKFILL_PER_CHANNEL;
@@ -320,6 +344,51 @@ async function handleSync(interaction) {
     let oldestTimestamp = null;
     let oldestChannelLabel = null;
     let lastProgressTimestamp = Date.now();
+    let lastCheckpointTimestamp = Date.now();
+    let channelFallbackUsed = false;
+
+    const safeEditReply = async (content, { allowChannelFallback = false } = {}) => {
+        try {
+            await interaction.editReply({ content: truncateForDiscord(content) });
+            return true;
+        } catch (err) {
+            if (!allowChannelFallback) return false;
+            if (channelFallbackUsed) return false;
+            const channel = interaction.channel;
+            if (!channel || typeof channel.send !== 'function') return false;
+            try {
+                channelFallbackUsed = true;
+                const mention = interaction.user ? `<@${interaction.user.id}> ` : '';
+                await channel.send(`${mention}${truncateForDiscord(content)}`);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+    };
+
+    const maybeSendCheckpoint = async (activeLabel, force = false) => {
+        const now = Date.now();
+        if (!force && now - lastCheckpointTimestamp < checkpointIntervalMs) return;
+        lastCheckpointTimestamp = now;
+        const channel = interaction.channel;
+        if (!channel || typeof channel.send !== 'function') return;
+        const checkpoint = [
+            `Wordstats sync checkpoint (${checkpointMinutes}m interval):`,
+            buildSyncProgressLine(
+                completedChannels,
+                channelsToScan.length,
+                fetchedMessages,
+                processedMessages,
+                duplicateMessages,
+                ignoredMessages,
+                activeLabel,
+            ),
+        ].join('\n');
+        try {
+            await channel.send(truncateForDiscord(checkpoint));
+        } catch (_) {}
+    };
 
     let progressQueue = Promise.resolve();
     const queueProgressUpdate = async activeLabel => {
@@ -328,8 +397,8 @@ async function handleSync(interaction) {
         lastProgressTimestamp = now;
         progressQueue = progressQueue
             .then(() =>
-                interaction.editReply({
-                    content: buildSyncProgressLine(
+                safeEditReply(
+                    buildSyncProgressLine(
                         completedChannels,
                         channelsToScan.length,
                         fetchedMessages,
@@ -338,10 +407,11 @@ async function handleSync(interaction) {
                         ignoredMessages,
                         activeLabel,
                     ),
-                }),
+                ),
             )
             .catch(() => {});
         await progressQueue;
+        await maybeSendCheckpoint(activeLabel);
     };
 
     const scanChannel = async channel => {
@@ -417,8 +487,8 @@ async function handleSync(interaction) {
             }
             progressQueue = progressQueue
                 .then(() =>
-                    interaction.editReply({
-                        content: buildSyncProgressLine(
+                    safeEditReply(
+                        buildSyncProgressLine(
                             completedChannels,
                             channelsToScan.length,
                             fetchedMessages,
@@ -427,10 +497,11 @@ async function handleSync(interaction) {
                             ignoredMessages,
                             completedChannels < channelsToScan.length ? result.channelLabel : null,
                         ),
-                    }),
+                    ),
                 )
                 .catch(() => {});
             await progressQueue;
+            await maybeSendCheckpoint(completedChannels < channelsToScan.length ? result.channelLabel : null);
         }
     };
 
@@ -456,5 +527,10 @@ async function handleSync(interaction) {
         summaryLines.push(...displayErrors);
         if (errors.length > 5) summaryLines.push(`- ...and ${errors.length - 5} more errors.`);
     }
-    return interaction.editReply({ content: summaryLines.join('\n') });
+    const delivered = await safeEditReply(summaryLines.join('\n'), { allowChannelFallback: true });
+    await maybeSendCheckpoint('complete', true);
+    if (!delivered) {
+        console.error('Failed to deliver /wordstats sync summary');
+    }
+    return null;
 }
