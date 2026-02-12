@@ -1,5 +1,6 @@
 const { Events, ActivityType } = require('discord.js');
 const consoleMessageRelay = require('../utils/consoleMessageRelay');
+const healthchecksHeartbeat = require('../utils/healthchecksHeartbeat');
 
 module.exports = {
   name: Events.ClientReady,
@@ -32,6 +33,12 @@ module.exports = {
       consoleMessageRelay.install(client);
     } catch (e) {
       console.warn('Failed to install console message relay:', e?.message || e);
+    }
+
+    try {
+      healthchecksHeartbeat.install();
+    } catch (e) {
+      console.warn('Failed to start Healthchecks heartbeat:', e?.message || e);
     }
 
     // Start automessage scheduler for timed messages/embeds
