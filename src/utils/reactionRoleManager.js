@@ -1,4 +1,10 @@
-const { ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder } = require('discord.js');
+const {
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require('discord.js');
 const { applyDefaultColour } = require('./guildColourStore');
 
 const MAX_OPTIONS = 25;
@@ -121,6 +127,60 @@ function buildMenuRow(panel, guild) {
     customId,
     row: new ActionRowBuilder().addComponents(menu),
     missingRoleIds: missing,
+  };
+}
+
+function buildPersonalMenuRow(panel, guild, selectedRoleIds = []) {
+  const customId = `rr:mine:select:${panel.id}`;
+  const selectedSet = new Set(Array.isArray(selectedRoleIds) ? selectedRoleIds : []);
+  const { options, missing } = buildRoleOptions(guild, panel);
+  let finalOptions = options.map(option => ({
+    ...option,
+    default: selectedSet.has(option.value),
+  }));
+  let disabled = false;
+
+  if (!finalOptions.length) {
+    finalOptions = [{ label: 'No roles available', value: 'none', default: true }];
+    disabled = true;
+  }
+
+  if (!panel.multi) {
+    let foundDefault = false;
+    finalOptions = finalOptions.map(option => {
+      if (option.default && !foundDefault) {
+        foundDefault = true;
+        return option;
+      }
+      return { ...option, default: false };
+    });
+  }
+
+  const maxValues = panel.multi ? Math.min(finalOptions.length, MAX_OPTIONS) : 1;
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(customId)
+    .setPlaceholder('Update your selections')
+    .setMinValues(0)
+    .setMaxValues(maxValues)
+    .setDisabled(disabled)
+    .addOptions(finalOptions);
+
+  return {
+    customId,
+    row: new ActionRowBuilder().addComponents(menu),
+    missingRoleIds: missing,
+  };
+}
+
+function buildMySelectionsRow(panel) {
+  const customId = `rr:mine:${panel.id}`;
+  const button = new ButtonBuilder()
+    .setCustomId(customId)
+    .setLabel('My Selections')
+    .setStyle(ButtonStyle.Secondary);
+  return {
+    customId,
+    row: new ActionRowBuilder().addComponents(button),
   };
 }
 
@@ -286,6 +346,8 @@ function removeMenuRow(existingRows, customId) {
 
 module.exports = {
   buildMenuRow,
+  buildPersonalMenuRow,
+  buildMySelectionsRow,
   upsertMenuRow,
   removeMenuRow,
   fetchPanelRoleCounts,

@@ -225,13 +225,19 @@ async function handleCreate(interaction) {
     reactionRoleStore.removePanel(interaction.guildId, panel.id);
     return interaction.editReply({ content: 'That message already has the maximum number of component rows.' });
   }
+  const mine = reactionRoleManager.buildMySelectionsRow(panel);
+  const mergedWithMine = reactionRoleManager.upsertMenuRow(merged.rows, mine.customId, mine.row);
+  if (!mergedWithMine.ok) {
+    reactionRoleStore.removePanel(interaction.guildId, panel.id);
+    return interaction.editReply({ content: 'That message already has the maximum number of component rows.' });
+  }
 
   const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, panel);
   const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { roleCounts });
   const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, panel);
   const finalEmbeds = summaryResult.ok ? summaryResult.embeds : embedsToUse;
 
-  const editPayload = { components: merged.rows, embeds: finalEmbeds };
+  const editPayload = { components: mergedWithMine.rows, embeds: finalEmbeds };
   if (embedFiles.length) editPayload.files = embedFiles;
 
   try {
@@ -281,13 +287,14 @@ async function handleDelete(interaction) {
       if (message?.editable) {
         const hadSummary = reactionRoleManager.hasSummaryEmbed(message.embeds, panel);
         const res = reactionRoleManager.removeMenuRow(message.components, `rr:select:${panel.id}`);
+        const mineRes = reactionRoleManager.removeMenuRow(res.rows, `rr:mine:${panel.id}`);
         const summaryRes = reactionRoleManager.removeSummaryEmbed(message.embeds, panel);
         const payload = {};
-        if (res.removed) payload.components = res.rows;
+        if (res.removed || mineRes.removed) payload.components = mineRes.rows;
         if (summaryRes.removed) payload.embeds = summaryRes.embeds;
         if (Object.keys(payload).length) {
           await message.edit(payload);
-          removedMenu = res.removed;
+          removedMenu = res.removed || mineRes.removed;
           removedSummary = summaryRes.removed || !hadSummary;
         } else if (!hadSummary) {
           removedSummary = true;
@@ -423,6 +430,11 @@ async function handleEdit(interaction) {
   if (!merged.ok) {
     return interaction.editReply({ content: 'That message already has the maximum number of component rows.' });
   }
+  const mine = reactionRoleManager.buildMySelectionsRow(updatedPanel);
+  const mergedWithMine = reactionRoleManager.upsertMenuRow(merged.rows, mine.customId, mine.row);
+  if (!mergedWithMine.ok) {
+    return interaction.editReply({ content: 'That message already has the maximum number of component rows.' });
+  }
 
   let embedsToUse = Array.isArray(targetMessage.embeds) ? targetMessage.embeds : [];
   let embedFiles = [];
@@ -464,7 +476,7 @@ async function handleEdit(interaction) {
   }
 
   const editPayload = {
-    components: merged.rows,
+    components: mergedWithMine.rows,
     embeds: embedsToUse,
   };
   if (contentInput !== null) editPayload.content = contentInput;
@@ -590,12 +602,19 @@ async function handleRefreshAll(interaction) {
       issues.push(`#${panel.id}: component rows are full.`);
       continue;
     }
+    const mine = reactionRoleManager.buildMySelectionsRow(panel);
+    const mergedWithMine = reactionRoleManager.upsertMenuRow(mergedMenu.rows, mine.customId, mine.row);
+    if (!mergedWithMine.ok) {
+      skipped += 1;
+      issues.push(`#${panel.id}: component rows are full.`);
+      continue;
+    }
 
     const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, panel);
     const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { roleCounts });
     const mergedSummary = reactionRoleManager.mergeSummaryEmbed(message.embeds, summary.embed, panel);
 
-    const payload = { components: mergedMenu.rows };
+    const payload = { components: mergedWithMine.rows };
     if (mergedSummary.ok) payload.embeds = mergedSummary.embeds;
 
     try {

@@ -481,6 +481,127 @@ module.exports = {
                 }
                 return;
             }
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('rr:mine:select:')) {
+                if (!interaction.inGuild()) return;
+                const parts = interaction.customId.split(':');
+                const panelId = parts[3];
+                if (!panelId) return;
+
+                const panel = reactionRoleStore.getPanel(interaction.guildId, panelId);
+                if (!panel) {
+                    try { await interaction.reply({ content: 'This reaction role panel is no longer available.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                const me = interaction.guild.members.me;
+                if (!me?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
+                    try { await interaction.reply({ content: 'I am missing Manage Roles to update your roles.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                let member = null;
+                try { member = await interaction.guild.members.fetch(interaction.user.id); } catch (_) {}
+                if (!member) {
+                    try { await interaction.reply({ content: 'Could not load your member data.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                try { await interaction.deferUpdate(); } catch (_) {}
+
+                const panelRoleIds = Array.isArray(panel.roleIds) ? panel.roleIds : [];
+                const selectedRaw = Array.isArray(interaction.values) ? interaction.values : [];
+                const selectedSet = new Set(selectedRaw.filter(id => id !== 'none' && panelRoleIds.includes(id)));
+                const ownedSet = new Set(panelRoleIds.filter(id => member.roles.cache.has(id)));
+
+                let toAdd = panelRoleIds.filter(id => selectedSet.has(id) && !ownedSet.has(id));
+                let toRemove = panelRoleIds.filter(id => ownedSet.has(id) && !selectedSet.has(id));
+
+                const blockedAdd = [];
+                const blockedRemove = [];
+                const canManage = (roleId) => {
+                    const role = interaction.guild.roles.cache.get(roleId);
+                    if (!role || role.managed) return false;
+                    return me.roles.highest.comparePositionTo(role) > 0;
+                };
+
+                toAdd = toAdd.filter(id => {
+                    if (!canManage(id)) {
+                        blockedAdd.push(id);
+                        return false;
+                    }
+                    return true;
+                });
+                toRemove = toRemove.filter(id => {
+                    if (!canManage(id)) {
+                        blockedRemove.push(id);
+                        return false;
+                    }
+                    return true;
+                });
+
+                let updateError = null;
+                try {
+                    if (toRemove.length) await member.roles.remove(toRemove, 'Reaction role selection');
+                    if (toAdd.length) await member.roles.add(toAdd, 'Reaction role selection');
+                } catch (err) {
+                    console.error('Failed to update reaction roles:', err);
+                    updateError = 'Failed to update your roles. Please try again.';
+                }
+
+                let finalRoleSet = new Set(member.roles.cache.keys());
+                if (updateError) {
+                    try {
+                        const fresh = await interaction.guild.members.fetch(interaction.user.id);
+                        finalRoleSet = new Set(fresh.roles.cache.keys());
+                    } catch (_) {}
+                } else {
+                    for (const id of toAdd) finalRoleSet.add(id);
+                    for (const id of toRemove) finalRoleSet.delete(id);
+                }
+                const personalRoles = panelRoleIds.filter(id => finalRoleSet.has(id));
+
+                try {
+                    const panelChannel = await interaction.guild.channels.fetch(panel.channelId);
+                    if (panelChannel?.isTextBased?.()) {
+                        const panelMessage = await panelChannel.messages.fetch(panel.messageId);
+                        if (panelMessage?.editable) {
+                            const view = reactionRoleManager.buildMenuRow(panel, interaction.guild);
+                            const mergedMenu = reactionRoleManager.upsertMenuRow(panelMessage.components, view.customId, view.row);
+                            const mine = reactionRoleManager.buildMySelectionsRow(panel);
+                            const merged = mergedMenu.ok
+                                ? reactionRoleManager.upsertMenuRow(mergedMenu.rows, mine.customId, mine.row)
+                                : mergedMenu;
+                            const editPayload = {};
+                            if (merged.ok) editPayload.components = merged.rows;
+
+                            const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, panel);
+                            const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { roleCounts });
+                            const summaryResult = reactionRoleManager.mergeSummaryEmbed(panelMessage.embeds, summary.embed, panel);
+                            if (summaryResult.ok) editPayload.embeds = summaryResult.embeds;
+
+                            if (Object.keys(editPayload).length) {
+                                try { await panelMessage.edit(editPayload); } catch (_) {}
+                            }
+                        }
+                    }
+                } catch (_) {}
+
+                const notes = [];
+                if (updateError) notes.push(updateError);
+                if (blockedAdd.length) notes.push('Some selected roles could not be added due to role hierarchy.');
+                if (blockedRemove.length) notes.push('Some selected roles could not be removed due to role hierarchy.');
+
+                const selectionLine = personalRoles.length
+                    ? `You have selected: ${personalRoles.map(id => `<@&${id}>`).join(', ')}.`
+                    : 'You have selected: none.';
+                try {
+                    await interaction.followUp({
+                        content: notes.length ? `${selectionLine} ${notes.join(' ')}` : selectionLine,
+                        ephemeral: true,
+                    });
+                } catch (_) {}
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('rr:select:')) {
                 if (!interaction.inGuild()) return;
                 const parts = interaction.customId.split(':');
@@ -565,7 +686,11 @@ module.exports = {
                 }
 
                 const view = reactionRoleManager.buildMenuRow(panel, interaction.guild);
-                const merged = reactionRoleManager.upsertMenuRow(interaction.message.components, view.customId, view.row);
+                const mergedMenu = reactionRoleManager.upsertMenuRow(interaction.message.components, view.customId, view.row);
+                const mine = reactionRoleManager.buildMySelectionsRow(panel);
+                const merged = mergedMenu.ok
+                    ? reactionRoleManager.upsertMenuRow(mergedMenu.rows, mine.customId, mine.row)
+                    : mergedMenu;
 
                 const editPayload = {};
                 if (merged.ok) editPayload.components = merged.rows;
@@ -587,10 +712,7 @@ module.exports = {
                 }
                 const personalRoles = panelRoleIds.filter(id => finalRoleSet.has(id));
                 const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, panel);
-                const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, {
-                    highlightRoleIds: personalRoles,
-                    roleCounts,
-                });
+                const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { roleCounts });
                 const summaryResult = reactionRoleManager.mergeSummaryEmbed(interaction.message.embeds, summary.embed, panel);
                 if (summaryResult.ok) {
                     editPayload.embeds = summaryResult.embeds;
@@ -642,6 +764,41 @@ module.exports = {
 
         // Handle Verify button
         if (interaction.isButton()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('rr:mine:')) {
+                if (!interaction.inGuild()) return;
+                const parts = interaction.customId.split(':');
+                const panelId = parts[2];
+                if (!panelId) return;
+
+                const panel = reactionRoleStore.getPanel(interaction.guildId, panelId);
+                if (!panel) {
+                    try { await interaction.reply({ content: 'This reaction role panel is no longer available.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                let member = null;
+                try { member = await interaction.guild.members.fetch(interaction.user.id); } catch (_) {}
+                if (!member) {
+                    try { await interaction.reply({ content: 'Could not load your member data.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                const panelRoleIds = Array.isArray(panel.roleIds) ? panel.roleIds : [];
+                const personalRoles = panelRoleIds.filter(id => member.roles.cache.has(id));
+                const personalMenu = reactionRoleManager.buildPersonalMenuRow(panel, interaction.guild, personalRoles);
+                const selectionLine = personalRoles.length
+                    ? `Current selections: ${personalRoles.map(id => `<@&${id}>`).join(', ')}.`
+                    : 'Current selections: none.';
+
+                try {
+                    await interaction.reply({
+                        content: `${selectionLine}\nUse the menu below to update your roles.`,
+                        components: [personalMenu.row],
+                        ephemeral: true,
+                    });
+                } catch (_) {}
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('botconfig:')) {
                 if (!interaction.inGuild()) return;
                 if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
