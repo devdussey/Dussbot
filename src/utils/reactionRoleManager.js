@@ -3,6 +3,7 @@ const { applyDefaultColour } = require('./guildColourStore');
 
 const MAX_OPTIONS = 25;
 const SUMMARY_FOOTER_PREFIX = 'Reaction Roles - Panel #';
+const MEMBER_FETCH_TIMEOUT_MS = 6000;
 
 function normaliseRows(rows) {
   return (rows || []).map(row => (typeof row.toJSON === 'function' ? row.toJSON() : row));
@@ -57,7 +58,10 @@ async function fetchPanelRoleCounts(guild, panel) {
   const counts = {};
 
   try {
-    await guild?.members?.fetch();
+    await Promise.race([
+      guild?.members?.fetch(),
+      new Promise((resolve) => setTimeout(resolve, MEMBER_FETCH_TIMEOUT_MS)),
+    ]);
   } catch (_) {}
 
   for (const id of ids.slice(0, MAX_OPTIONS)) {
@@ -155,8 +159,6 @@ function buildSummaryEmbed(panel, guild, opts = {}) {
 
   const embed = new EmbedBuilder().setDescription(lines.join('\n'));
   if (opts.title) embed.setTitle(opts.title);
-  const footerText = `${SUMMARY_FOOTER_PREFIX}${panel?.id || 'unknown'}`;
-  embed.setFooter({ text: footerText });
 
   try { applyDefaultColour(embed, guild?.id); } catch (_) {}
 
@@ -174,6 +176,8 @@ function mergeSummaryIntoEmbed(existingEmbed, summaryJson) {
   }
   if (summaryJson.footer) {
     next.footer = { ...summaryJson.footer };
+  } else if (next.footer) {
+    delete next.footer;
   }
   return next;
 }
@@ -241,9 +245,17 @@ function mergeSummaryIntoIndex(embeds, summaryJson, panelId, roleIds, targetInde
 
 function removeSummaryEmbed(existingEmbeds, panelId) {
   const embeds = normaliseEmbeds(existingEmbeds);
-  const footerText = `${SUMMARY_FOOTER_PREFIX}${panelId}`;
-  const filtered = embeds.filter(e => (e?.footer?.text || '') !== footerText);
+  const targetPanelId = panelId?.id || panelId;
+  const roleIds = Array.isArray(panelId?.roleIds) ? panelId.roleIds : [];
+  const filtered = embeds.filter(e => !isSummaryEmbed(e, targetPanelId, roleIds));
   return { embeds: filtered, removed: filtered.length !== embeds.length };
+}
+
+function hasSummaryEmbed(existingEmbeds, panel) {
+  const embeds = normaliseEmbeds(existingEmbeds);
+  const panelId = panel?.id || panel;
+  const roleIds = Array.isArray(panel?.roleIds) ? panel.roleIds : [];
+  return embeds.some(e => isSummaryEmbed(e, panelId, roleIds));
 }
 
 function upsertMenuRow(existingRows, customId, menuRow) {
@@ -282,5 +294,6 @@ module.exports = {
   buildSummaryEmbed,
   mergeSummaryEmbed,
   removeSummaryEmbed,
+  hasSummaryEmbed,
   SUMMARY_FOOTER_PREFIX,
 };

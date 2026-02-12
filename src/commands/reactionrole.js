@@ -228,9 +228,7 @@ async function handleCreate(interaction) {
 
   const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, panel);
   const summary = reactionRoleManager.buildSummaryEmbed(panel, interaction.guild, { roleCounts });
-  const mergeOpts = {};
-  if (useEmbed && newEmbed) mergeOpts.preferredIndex = 0;
-  const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, panel, mergeOpts);
+  const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, panel);
   const finalEmbeds = summaryResult.ok ? summaryResult.embeds : embedsToUse;
 
   const editPayload = { components: merged.rows, embeds: finalEmbeds };
@@ -281,12 +279,9 @@ async function handleDelete(interaction) {
     if (channel?.isTextBased?.()) {
       const message = await channel.messages.fetch(panel.messageId);
       if (message?.editable) {
-        const summaryKey = `Reaction Roles - Panel #${panel.id}`;
-        const hadSummary = Array.isArray(message.embeds)
-          ? message.embeds.some(e => (e?.footer?.text || '') === summaryKey)
-          : false;
+        const hadSummary = reactionRoleManager.hasSummaryEmbed(message.embeds, panel);
         const res = reactionRoleManager.removeMenuRow(message.components, `rr:select:${panel.id}`);
-        const summaryRes = reactionRoleManager.removeSummaryEmbed(message.embeds, panel.id);
+        const summaryRes = reactionRoleManager.removeSummaryEmbed(message.embeds, panel);
         const payload = {};
         if (res.removed) payload.components = res.rows;
         if (summaryRes.removed) payload.embeds = summaryRes.embeds;
@@ -463,11 +458,7 @@ async function handleEdit(interaction) {
 
   const roleCounts = await reactionRoleManager.fetchPanelRoleCounts(interaction.guild, updatedPanel);
   const summary = reactionRoleManager.buildSummaryEmbed(updatedPanel, interaction.guild, { roleCounts });
-  const mergeOpts = {};
-  const summaryFooter = `${reactionRoleManager.SUMMARY_FOOTER_PREFIX}${updatedPanel.id}`;
-  const firstEmbed = embedsToUse[0];
-  if (firstEmbed?.footer?.text === summaryFooter) mergeOpts.preferredIndex = 0;
-  const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, updatedPanel, mergeOpts);
+  const summaryResult = reactionRoleManager.mergeSummaryEmbed(embedsToUse, summary.embed, updatedPanel);
   if (summaryResult.ok) {
     embedsToUse = summaryResult.embeds;
   }
