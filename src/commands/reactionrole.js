@@ -504,9 +504,11 @@ async function handleEdit(interaction) {
 }
 
 async function handleList(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const panels = reactionRoleStore.listPanels(interaction.guildId);
   if (!panels.length) {
-    return interaction.reply({ content: 'No reaction role panels configured yet.', ephemeral: true });
+    return interaction.editReply({ content: 'No reaction role panels configured yet.' });
   }
 
   const panelViews = await Promise.all(panels.map(async (panel) => {
@@ -543,14 +545,11 @@ async function handleList(interaction) {
 
   const chunks = chunkLines(lines, 1850);
   if (!chunks.length) {
-    return interaction.reply({ content: 'No reaction role panels configured yet.', ephemeral: true });
+    return interaction.editReply({ content: 'No reaction role panels configured yet.' });
   }
 
   const total = chunks.length;
-  await interaction.reply({
-    content: `Reaction role panels (1/${total})\n${chunks[0]}`,
-    ephemeral: true,
-  });
+  await interaction.editReply({ content: `Reaction role panels (1/${total})\n${chunks[0]}` });
 
   for (let i = 1; i < total; i += 1) {
     await interaction.followUp({
