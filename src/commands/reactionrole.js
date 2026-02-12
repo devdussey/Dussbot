@@ -35,6 +35,40 @@ function parseEmojiToken(token) {
   return trimmed;
 }
 
+function chunkLines(lines, maxLength = 1900) {
+  const chunks = [];
+  let current = '';
+
+  for (const line of lines) {
+    const text = String(line || '');
+    if (!text) continue;
+    const withBreak = current ? `\n${text}` : text;
+
+    if ((current + withBreak).length <= maxLength) {
+      current += withBreak;
+      continue;
+    }
+
+    if (current) chunks.push(current);
+
+    if (text.length <= maxLength) {
+      current = text;
+      continue;
+    }
+
+    // Fallback for unexpectedly long single lines.
+    let remaining = text;
+    while (remaining.length > maxLength) {
+      chunks.push(remaining.slice(0, maxLength));
+      remaining = remaining.slice(maxLength);
+    }
+    current = remaining;
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 async function handleCreate(interaction) {
   const me = interaction.guild.members.me;
   if (!me?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
@@ -482,8 +516,25 @@ async function handleList(interaction) {
     return `#${panel.id} | ${mode} | <#${panel.channelId}> | ${link}\n    Roles: ${roles}`;
   });
 
-  const content = lines.join('\n').slice(0, 1900);
-  return interaction.reply({ content, ephemeral: true });
+  const chunks = chunkLines(lines, 1850);
+  if (!chunks.length) {
+    return interaction.reply({ content: 'No reaction role panels configured yet.', ephemeral: true });
+  }
+
+  const total = chunks.length;
+  await interaction.reply({
+    content: `Reaction role panels (1/${total})\n${chunks[0]}`,
+    ephemeral: true,
+  });
+
+  for (let i = 1; i < total; i += 1) {
+    await interaction.followUp({
+      content: `Reaction role panels (${i + 1}/${total})\n${chunks[i]}`,
+      ephemeral: true,
+    });
+  }
+
+  return null;
 }
 
 module.exports = {
