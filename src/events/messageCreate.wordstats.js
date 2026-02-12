@@ -13,6 +13,7 @@ module.exports = {
                 message.author.id,
                 authorTag,
                 message.content || '',
+                { messageId: message.id },
             );
         } catch (err) {
             console.error('Failed to update word stats', err);

@@ -6,6 +6,7 @@ const {
     getGuildSummary,
     recordMessage,
     flushStore,
+    clearGuildStats,
     MAX_WORD_LEADERBOARD,
     MAX_USER_LEADERBOARD,
 } = require('../utils/wordStatsStore');
@@ -143,6 +144,11 @@ module.exports = {
                         .setMinValue(1)
                         .setMaxValue(MAX_SYNC_CONCURRENCY),
                 ),
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('clean')
+                .setDescription('Clear existing word stats for this server so sync can rebuild from scratch (Manage Server required).'),
         ),
     async execute(interaction) {
         const subcommand = interaction.options.getSubcommand();
@@ -157,6 +163,9 @@ module.exports = {
         }
         if (subcommand === 'sync') {
             return handleSync(interaction);
+        }
+        if (subcommand === 'clean') {
+            return handleClean(interaction);
         }
         return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
     },
@@ -237,6 +246,19 @@ async function handleLeaderboard(interaction) {
     return interaction.reply({ content: `${header}\n${buildCodeBlock(lines)}` });
 }
 
+async function handleClean(interaction) {
+    const hasPermission = interaction.member?.permissions?.has(PermissionsBitField.Flags.ManageGuild);
+    if (!hasPermission) {
+        return interaction.reply({ content: 'Manage Server permission is required to run this cleanup.', ephemeral: true });
+    }
+    await clearGuildStats(interaction.guildId);
+    return interaction.reply({
+        content:
+            'Word stats for this server were cleared. Run `/wordstats sync` to rebuild history and continue with dedupe protection.',
+        ephemeral: true,
+    });
+}
+
 async function handleSync(interaction) {
     const hasPermission = interaction.member?.permissions?.has(PermissionsBitField.Flags.ManageGuild);
     if (!hasPermission) {
@@ -279,6 +301,7 @@ async function handleSync(interaction) {
     }
     let processedMessages = 0;
     let processedWords = 0;
+    let duplicateMessages = 0;
     let completedChannels = 0;
     const errors = [];
     let nextChannelIndex = 0;
@@ -307,6 +330,7 @@ async function handleSync(interaction) {
         let before = null;
         let channelMessages = 0;
         let channelWords = 0;
+        let channelDuplicates = 0;
         let channelOldestTimestamp = null;
         try {
             while (!Number.isFinite(perChannelLimit) || fetched < perChannelLimit) {
@@ -328,8 +352,12 @@ async function handleSync(interaction) {
                         message.author.id,
                         message.author?.tag || message.author?.username || message.author?.globalName || message.author.id,
                         message.content || '',
-                        { persist: false },
+                        { persist: false, messageId: message.id },
                     );
+                    if (result?.isDuplicate) {
+                        channelDuplicates += 1;
+                        continue;
+                    }
                     if (result?.processedWords) {
                         channelWords += result.processedWords;
                     }
@@ -345,11 +373,12 @@ async function handleSync(interaction) {
                 channelLabel,
                 channelMessages,
                 channelWords,
+                channelDuplicates,
                 channelOldestTimestamp,
                 error: err?.message || 'Unknown error',
             };
         }
-        return { channelLabel, channelMessages, channelWords, channelOldestTimestamp, error: null };
+        return { channelLabel, channelMessages, channelWords, channelDuplicates, channelOldestTimestamp, error: null };
     };
 
     const worker = async () => {
@@ -360,6 +389,7 @@ async function handleSync(interaction) {
             const result = await scanChannel(channelsToScan[index]);
             processedMessages += result.channelMessages;
             processedWords += result.channelWords;
+            duplicateMessages += result.channelDuplicates;
             completedChannels += 1;
             if (result.error) {
                 errors.push(`${result.channelLabel}: ${result.error}`);
@@ -395,6 +425,7 @@ async function handleSync(interaction) {
     }
     const summaryLines = [
         `Backfill complete (${formatNumber(processedMessages)} messages, ${formatNumber(processedWords)} words added).`,
+        `Duplicates skipped: ${formatNumber(duplicateMessages)} already-recorded messages.`,
         `Channels scanned: ${formatNumber(channelsToScan.length)} (up to ${describeLimit(perChannelLimit)} messages per channel, concurrency ${formatNumber(workerCount)}).`,
         `Oldest fetched message: ${oldestTimestamp ? `${formatSyncDate(oldestTimestamp)} (${oldestChannelLabel || 'unknown channel'})` : 'none found in fetched history.'}`,
         'Rescanning the same messages will add duplicates, so limit this command to new history or a fresh store.',

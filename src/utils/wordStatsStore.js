@@ -51,6 +51,7 @@ function ensureGuildData(guildId) {
             summary: { totalWords: 0, totalMessages: 0, uniqueWords: 0 },
             users: {},
             words: {},
+            processedMessageIds: {},
         };
     }
     const guild = store.guilds[guildId];
@@ -62,6 +63,9 @@ function ensureGuildData(guildId) {
     }
     if (!guild.words || typeof guild.words !== 'object') {
         guild.words = {};
+    }
+    if (!guild.processedMessageIds || typeof guild.processedMessageIds !== 'object') {
+        guild.processedMessageIds = {};
     }
     if (!Number.isFinite(guild.summary.totalWords)) guild.summary.totalWords = 0;
     if (!Number.isFinite(guild.summary.totalMessages)) guild.summary.totalMessages = 0;
@@ -114,6 +118,10 @@ async function recordMessage(guildId, userId, userTag, content, options = {}) {
     if (!guildId || !userId) return null;
     const guild = ensureGuildData(guildId);
     if (!guild) return null;
+    const messageId = options.messageId ? String(options.messageId).trim() : null;
+    if (messageId && guild.processedMessageIds[messageId]) {
+        return { isDuplicate: true, processedWords: 0 };
+    }
     const words = Array.isArray(options.words) ? options.words : extractWords(content, options);
     const userEntry = ensureUserRecord(guild, userId);
     const normalizedTag = normalizeTag(userTag);
@@ -137,11 +145,15 @@ async function recordMessage(guildId, userId, userTag, content, options = {}) {
         }
     }
     guild.summary.totalMessages += 1;
+    if (messageId) {
+        guild.processedMessageIds[messageId] = 1;
+    }
     isDirty = true;
     if (options.persist !== false) {
         await saveStore();
     }
     return {
+        isDuplicate: false,
         processedWords,
         messageCount: userEntry.messageCount,
         wordCount: userEntry.wordCount,
@@ -151,6 +163,21 @@ async function recordMessage(guildId, userId, userTag, content, options = {}) {
 async function flushStore() {
     if (!isDirty) return;
     await saveStore();
+}
+
+async function clearGuildStats(guildId) {
+    if (!guildId) return false;
+    const store = loadStore();
+    if (!store.guilds || typeof store.guilds !== 'object') {
+        store.guilds = {};
+    }
+    if (!store.guilds[guildId]) {
+        return false;
+    }
+    delete store.guilds[guildId];
+    isDirty = true;
+    await saveStore();
+    return true;
 }
 
 function getGuildSummary(guildId) {
@@ -253,4 +280,5 @@ module.exports = {
     MAX_WORD_LEADERBOARD,
     MAX_USER_LEADERBOARD,
     flushStore,
+    clearGuildStats,
 };
