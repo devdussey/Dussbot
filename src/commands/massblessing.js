@@ -5,7 +5,13 @@ const { resolveEmbedColour } = require('../utils/guildColourStore');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('massblessing')
-    .setDescription('Admins: grant every user 1 rupee')
+    .setDescription('Admins: grant every user a chosen number of rupees')
+    .addIntegerOption(opt =>
+      opt
+        .setName('amount')
+        .setDescription('How many rupees each user should receive (default 1)')
+        .setMinValue(1)
+    )
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .setDMPermission(false),
 
@@ -20,13 +26,15 @@ module.exports = {
     }
 
     await interaction.deferReply({ ephemeral: true });
+    const amountInput = interaction.options.getInteger('amount');
+    const amount = Number.isFinite(amountInput) ? amountInput : 1;
 
     let awarded = 0;
     try {
       const members = await interaction.guild.members.fetch();
       const userMembers = members.filter(m => !m.user.bot);
       for (const member of userMembers.values()) {
-        await rupeeStore.addTokens(interaction.guildId, member.id, 1);
+        await rupeeStore.addTokens(interaction.guildId, member.id, amount);
         awarded += 1;
       }
     } catch (err) {
@@ -37,7 +45,10 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(resolveEmbedColour(interaction.guildId, 0x00f0ff))
       .setTitle('✨ Mass Blessing')
-      .setDescription(`Every non-bot user has received 1 rupee.\nTotal users blessed: ${awarded}.`)
+      .setDescription(
+        `Every non-bot user has received ${amount} rupee${amount === 1 ? '' : 's'}.\n` +
+        `Total users blessed: ${awarded}.`
+      )
       .setFooter({ text: 'Cooldowns are not affected by mass blessings.' });
 
     await interaction.editReply({ embeds: [embed], ephemeral: true });

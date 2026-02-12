@@ -136,7 +136,7 @@ const categories = {
 
     { cmd: '/blessing', desc: 'Claim a daily blessing worth 1 rupee', perm: 'Administrator' },
 
-    { cmd: '/massblessing', desc: 'Give every user in the server 1 rupee', perm: 'Administrator' },
+    { cmd: '/massblessing', desc: 'Give every user in the server a custom rupee amount', perm: 'Administrator' },
 
     { cmd: '/horserace', desc: 'Host a chaotic horse race mini-game with your server', perm: null },
 
