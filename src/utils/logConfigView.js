@@ -13,11 +13,15 @@ const { applyDefaultColour } = require('./guildColourStore');
 const { getLogKeyLabel, getFallbackKey } = require('./logEvents');
 
 const DEFAULT_COLOR = 0x5865f2;
+const ROUTE_LABEL_OVERRIDES = Object.freeze({
+  member_timeout: 'User Muted',
+  member_untimeout: 'User Unmuted',
+});
 const LOG_GROUPS = Object.freeze([
   {
     id: 'message',
     label: 'Message Events',
-    keys: ['message_create', 'message_edit', 'message_delete'],
+    keys: ['message_create', 'message_edit', 'message_delete', 'messages_purged'],
   },
   {
     id: 'user',
@@ -38,8 +42,6 @@ const LOG_GROUPS = Object.freeze([
       'member_kick',
       'member_timeout',
       'member_untimeout',
-      'messages_purged',
-      'restraining_order_violation',
     ],
   },
   {
@@ -54,8 +56,8 @@ const LOG_GROUPS = Object.freeze([
   },
   {
     id: 'antinuke',
-    label: 'Antinuke Events',
-    keys: ['security'],
+    label: 'Security Events',
+    keys: ['security', 'restraining_order_violation'],
   },
 ]);
 
@@ -114,7 +116,8 @@ function formatRouteEntry(entries, key) {
   const channelDisplay = resolved.channelId
     ? `<#${resolved.channelId}>${resolved.fallback ? ' (fallback)' : ''}${entry?.enabled === false ? ' (Disabled)' : ''}`
     : 'Not configured';
-  return `${getLogKeyLabel(key)} (${routeState}) - ${channelDisplay}`;
+  const displayLabel = ROUTE_LABEL_OVERRIDES[key] || getLogKeyLabel(key);
+  return `${displayLabel} (${routeState}) - ${channelDisplay}`;
 }
 
 function formatGroupSummary(entries, group) {

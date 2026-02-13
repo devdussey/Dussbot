@@ -1,9 +1,13 @@
-const { Events } = require('discord.js');
+const { Events, EmbedBuilder, AuditLogEvent, PermissionsBitField } = require('discord.js');
 const logSender = require('../utils/logSender');
 const inviteTracker = require('../utils/inviteTracker');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
 
 const INVITE_LOG_COLOR = 0x00f0ff;
+const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
+});
 
 function formatUserTag(user, fallback = 'Unknown') {
   if (!user) return fallback;
@@ -20,6 +24,87 @@ async function safeLog(guild, type, embed) {
   } catch (err) {
     console.error(`Failed to send ${type} log for ${guild.id}:`, err);
   }
+}
+
+function formatAuditActor(user) {
+  if (!user) return 'Unknown';
+  return user.tag || user.username || user.globalName || user.id || 'Unknown';
+}
+
+function formatEventTime(date) {
+  const d = date instanceof Date ? date : new Date();
+  try {
+    return EVENT_TIME_FORMATTER.format(d);
+  } catch (_) {
+    return d.toISOString();
+  }
+}
+
+function resolveEmojiStickerThumbnail(item) {
+  if (!item) return null;
+  if (typeof item.imageURL === 'function') {
+    return item.imageURL({
+      extension: item.animated ? 'gif' : 'png',
+      size: 256,
+    });
+  }
+  if (typeof item.url === 'string' && item.url) return item.url;
+  return null;
+}
+
+async function findRecentAuditEntry(guild, type, targetId) {
+  if (!guild || !type) return null;
+  let me = guild.members.me;
+  if (!me) {
+    try { me = await guild.members.fetchMe(); } catch (_) { me = null; }
+  }
+  if (!me?.permissions?.has(PermissionsBitField.Flags.ViewAuditLog)) return null;
+  try {
+    const logs = await guild.fetchAuditLogs({ type, limit: 6 });
+    const now = Date.now();
+    return logs.entries.find(entry => {
+      if (targetId && entry?.target?.id && String(entry.target.id) !== String(targetId)) return false;
+      if (!entry?.createdTimestamp) return false;
+      return (now - entry.createdTimestamp) <= 20_000;
+    }) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function buildEmojiStickerAuditEmbed({ guild, eventLabel, itemType, item, auditType, color, details }) {
+  const auditEntry = await findRecentAuditEntry(guild, auditType, item?.id);
+  const actor = auditEntry?.executor || null;
+  const eventDate = auditEntry?.createdAt instanceof Date ? auditEntry.createdAt : new Date();
+
+  const embed = new EmbedBuilder()
+    .setTitle(eventLabel)
+    .setColor(color)
+    .addFields(
+      {
+        name: `${itemType} Name`,
+        value: `${item?.name || 'Unknown'} (${item?.id || 'unknown'})`,
+        inline: false,
+      },
+      {
+        name: 'Event done by',
+        value: formatAuditActor(actor),
+        inline: false,
+      },
+    )
+    .setFooter({ text: `Event time: ${formatEventTime(eventDate)}` })
+    .setTimestamp(eventDate);
+
+  const thumbnail = resolveEmojiStickerThumbnail(item);
+  if (thumbnail) embed.setThumbnail(thumbnail);
+  if (details) {
+    embed.addFields({
+      name: 'Details',
+      value: String(details).slice(0, 1024),
+      inline: false,
+    });
+  }
+  return embed;
 }
 
 function niceColor(color) {
@@ -236,13 +321,14 @@ async function handleVoiceState(oldState, newState) {
 async function handleEmojiAction(action, emoji) {
   if (!emoji.guild) return;
   const isCreate = action === 'created';
-  const embed = buildLogEmbed({
-    action: `Emoji ${isCreate ? 'Added' : 'Deleted'}`,
-    target: `Emoji: ${emoji.name} (${emoji.id})`,
-    actor: 'System',
-    reason: `Animated: ${emoji.animated ? 'Yes' : 'No'}`,
+  const embed = await buildEmojiStickerAuditEmbed({
+    guild: emoji.guild,
+    eventLabel: `Emoji ${isCreate ? 'Added' : 'Removed'}`,
+    itemType: 'Emoji',
+    item: emoji,
+    auditType: isCreate ? AuditLogEvent.EmojiCreate : AuditLogEvent.EmojiDelete,
     color: isCreate ? 0x57f287 : 0xed4245,
-    thumbnailTarget: emoji,
+    details: `Animated: ${emoji.animated ? 'Yes' : 'No'}`,
   });
   await safeLog(emoji.guild, isCreate ? 'emoji_sticker_add' : 'emoji_sticker_delete', embed);
 }
@@ -253,13 +339,14 @@ async function handleEmojiUpdate(oldEmoji, newEmoji) {
   if (oldEmoji.name !== newEmoji.name) changes.push(`Name → ${newEmoji.name}`);
   if (oldEmoji.animated !== newEmoji.animated) changes.push(newEmoji.animated ? 'Animated enabled' : 'Animated disabled');
   if (!changes.length) return;
-  const embed = buildLogEmbed({
-    action: 'Emoji Edited',
-    target: `Emoji: ${newEmoji.name} (${newEmoji.id})`,
-    actor: 'System',
-    reason: changes.join('; '),
+  const embed = await buildEmojiStickerAuditEmbed({
+    guild: newEmoji.guild,
+    eventLabel: 'Emoji Edited',
+    itemType: 'Emoji',
+    item: newEmoji,
+    auditType: AuditLogEvent.EmojiUpdate,
     color: 0xf1c40f,
-    thumbnailTarget: newEmoji,
+    details: changes.join('; '),
   });
   await safeLog(newEmoji.guild, 'emoji_sticker_edit', embed);
 }
@@ -267,13 +354,14 @@ async function handleEmojiUpdate(oldEmoji, newEmoji) {
 async function handleStickerAction(action, sticker) {
   if (!sticker.guild) return;
   const isCreate = action === 'created';
-  const embed = buildLogEmbed({
-    action: `Sticker ${isCreate ? 'Added' : 'Deleted'}`,
-    target: `Sticker: ${sticker.name} (${sticker.id})`,
-    actor: 'System',
-    reason: `Available: ${sticker.available ? 'Yes' : 'No'}`,
+  const embed = await buildEmojiStickerAuditEmbed({
+    guild: sticker.guild,
+    eventLabel: `Sticker ${isCreate ? 'Added' : 'Removed'}`,
+    itemType: 'Sticker',
+    item: sticker,
+    auditType: isCreate ? AuditLogEvent.StickerCreate : AuditLogEvent.StickerDelete,
     color: isCreate ? 0x57f287 : 0xed4245,
-    thumbnailTarget: sticker,
+    details: `Available: ${sticker.available ? 'Yes' : 'No'}`,
   });
   await safeLog(sticker.guild, isCreate ? 'emoji_sticker_add' : 'emoji_sticker_delete', embed);
 }
@@ -284,13 +372,14 @@ async function handleStickerUpdate(oldSticker, newSticker) {
   if (oldSticker.name !== newSticker.name) changes.push(`Name → ${newSticker.name}`);
   if (oldSticker.description !== newSticker.description) changes.push('Description updated');
   if (!changes.length) return;
-  const embed = buildLogEmbed({
-    action: 'Sticker Edited',
-    target: `Sticker: ${newSticker.name} (${newSticker.id})`,
-    actor: 'System',
-    reason: changes.join('; '),
+  const embed = await buildEmojiStickerAuditEmbed({
+    guild: newSticker.guild,
+    eventLabel: 'Sticker Edited',
+    itemType: 'Sticker',
+    item: newSticker,
+    auditType: AuditLogEvent.StickerUpdate,
     color: 0xf1c40f,
-    thumbnailTarget: newSticker,
+    details: changes.join('; '),
   });
   await safeLog(newSticker.guild, 'emoji_sticker_edit', embed);
 }

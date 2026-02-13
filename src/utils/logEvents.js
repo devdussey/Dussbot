@@ -103,24 +103,24 @@ const LOG_KEYS = {
     fallbackKey: 'moderation',
   },
   member_timeout: {
-    label: 'User Timed Out',
+    label: 'User Muted',
     category: 'Moderation',
     fallbackKey: 'moderation',
   },
   member_untimeout: {
-    label: 'User Timeout Removed',
+    label: 'User Unmuted',
     category: 'Moderation',
     fallbackKey: 'moderation',
   },
   messages_purged: {
     label: 'Messages Purged',
-    category: 'Moderation',
-    fallbackKey: 'moderation',
+    category: 'Message',
+    fallbackKey: 'message',
   },
   restraining_order_violation: {
     label: 'Restraining Order Violation',
-    category: 'Moderation',
-    fallbackKey: 'moderation',
+    category: 'Security',
+    fallbackKey: 'security',
   },
 
   channel: {
