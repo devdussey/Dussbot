@@ -923,7 +923,7 @@ module.exports = {
                     return;
                 }
                 const logEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'logging', true);
-                const [, action, logType] = interaction.customId.split(':');
+                const [, action, logType, actionValue] = interaction.customId.split(':');
                 if (!logType) return;
                 let followUpContent = null;
                 let handledError = false;
@@ -940,6 +940,9 @@ module.exports = {
                         if (entry) {
                             await logChannelTypeStore.setEnabled(interaction.guildId, logType, !entry.enabled);
                         }
+                    } else if (action === 'setenabled') {
+                        const desiredEnabled = actionValue === '1' || String(actionValue).toLowerCase() === 'true';
+                        await logChannelTypeStore.setEnabled(interaction.guildId, logType, desiredEnabled);
                     } else if (action === 'default') {
                         followUpContent = 'Automatic channel creation is disabled. Please pick an existing channel from the selector.';
                     } else {
