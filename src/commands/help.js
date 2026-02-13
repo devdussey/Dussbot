@@ -81,6 +81,7 @@ const categories = {
 
     { cmd: '/confessconfig', desc: 'Post the anonymous confession button to a channel', perm: 'Manage Server' },
     { cmd: '/suggestconfig', desc: 'Post the anonymous suggestion button to a channel', perm: 'Manage Server' },
+    { cmd: '/sacrificeconfig', desc: 'Post an anonymous user-nomination menu for communal sacrifice', perm: 'Administrator' },
 
     { cmd: '/autobump add/remove/enable/disable/list', desc: 'Schedule automatic bumps for server listing sites', perm: 'Manage Server' },
 

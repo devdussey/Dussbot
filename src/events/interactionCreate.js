@@ -1,4 +1,4 @@
-const { Events, PermissionsBitField, EmbedBuilder, ModalBuilder, ActionRowBuilder, TextInputBuilder, TextInputStyle, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Events, PermissionsBitField, EmbedBuilder, ModalBuilder, ActionRowBuilder, TextInputBuilder, TextInputStyle, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } = require('discord.js');
 const verifyStore = require('../utils/verificationStore');
 const securityLogger = require('../utils/securityLogger');
 const verifySession = require('../utils/verificationSession');
@@ -113,6 +113,15 @@ function isActiveBooster(member, premiumRoleId) {
     return hasBoost || hasPremiumRole;
 }
 
+function buildSacrificeNominationRow(channelId) {
+    const menu = new UserSelectMenuBuilder()
+        .setCustomId(`sacrifice:nominate:${channelId}`)
+        .setPlaceholder('Nominate a user for sacrifice')
+        .setMinValues(1)
+        .setMaxValues(1);
+    return new ActionRowBuilder().addComponents(menu);
+}
+
 const COMMAND_CATEGORY_MAP = {
     // Logging
     dmdiag: 'logging',
@@ -151,6 +160,7 @@ const COMMAND_CATEGORY_MAP = {
     backupview: 'admin',
     clone: 'admin',
     embed: 'admin',
+    sacrificeconfig: 'admin',
     say: 'admin',
     showbans: 'admin',
     vanityrole: 'admin',
@@ -234,6 +244,7 @@ const ADMIN_COMMANDS = new Set([
   'role',
   'roleclean',
   'rupeeconfig',
+  'sacrificeconfig',
   'setdefaultcolour',
   'say',
   'sentancerush',
@@ -757,6 +768,73 @@ module.exports = {
                     console.error('Failed to update log configuration via channel select:', err);
                     try { await interaction.followUp({ content: 'Failed to assign the selected channel. Please try again.', ephemeral: logEphemeral }); } catch (_) {}
                 }
+                return;
+            }
+        }
+
+        if (interaction.isUserSelectMenu()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('sacrifice:nominate:')) {
+                if (!interaction.inGuild()) return;
+
+                const channelId = interaction.customId.slice('sacrifice:nominate:'.length);
+                const targetId = interaction.values?.[0];
+
+                if (!targetId) {
+                    try { await interaction.reply({ content: 'Please select a valid user.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                let channel = null;
+                try { channel = await interaction.guild.channels.fetch(channelId); } catch (_) {}
+                if (!channel || !channel.isTextBased?.()) {
+                    try { await interaction.reply({ content: 'That sacrifice panel is no longer available.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                let targetMember = null;
+                try { targetMember = await interaction.guild.members.fetch(targetId); } catch (_) {}
+                if (!targetMember) {
+                    try { await interaction.reply({ content: 'That user is no longer in this server.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                let acknowledged = false;
+                try {
+                    await interaction.deferUpdate();
+                    acknowledged = true;
+                } catch (_) {}
+
+                const embed = new EmbedBuilder()
+                    .setTitle('Communal Sacrifice')
+                    .setDescription(`${targetMember} has been voted to be tribute for the communal sacrifice.`)
+                    .setThumbnail(targetMember.displayAvatarURL({ extension: 'png', size: 256 }))
+                    .setTimestamp();
+
+                try {
+                    const { applyDefaultColour } = require('../utils/guildColourStore');
+                    applyDefaultColour(embed, interaction.guildId);
+                } catch (_) {}
+
+                try {
+                    await channel.send({
+                        embeds: [embed],
+                        components: [buildSacrificeNominationRow(channel.id)],
+                        allowedMentions: { parse: [] },
+                    });
+                } catch (_) {
+                    const failPayload = { content: 'Failed to post the sacrifice nomination. Please try again.', ephemeral: true };
+                    try {
+                        if (acknowledged) await interaction.followUp(failPayload);
+                        else await interaction.reply(failPayload);
+                    } catch (_) {}
+                    return;
+                }
+
+                const successPayload = { content: 'Nomination submitted anonymously.', ephemeral: true };
+                try {
+                    if (acknowledged) await interaction.followUp(successPayload);
+                    else await interaction.reply(successPayload);
+                } catch (_) {}
                 return;
             }
         }
