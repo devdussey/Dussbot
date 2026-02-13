@@ -2,6 +2,8 @@ const { Events, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const coinStore = require('../utils/coinStore');
 const rupeeStore = require('../utils/rupeeStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
+const logSender = require('../utils/logSender');
+const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
 const {
   getVoiceCoinRewardPerMinute,
   MS_PER_MINUTE,
@@ -68,6 +70,26 @@ async function awardRupees(newState, guildId, userId, session, deltaMs) {
 
   session.rupeeRemainderMs -= awarded * RUPEE_VOICE_INTERVAL_MS;
   const newBalance = await rupeeStore.addTokens(guildId, userId, awarded);
+  try {
+    const actor = newState?.member?.user || null;
+    const embed = buildRupeeEventEmbed({
+      guildId,
+      eventType: 'earned',
+      actor,
+      target: actor,
+      amount: awarded,
+      balance: newBalance,
+      method: 'Voice Activity',
+    });
+    await logSender.sendLog({
+      guildId,
+      logType: 'rupee_earned',
+      embed,
+      client: newState?.client,
+    });
+  } catch (err) {
+    console.error('Failed to send voice rupee earn log:', err);
+  }
 
   try {
     await sendRupeeAnnouncement(newState, userId, awarded, newBalance);

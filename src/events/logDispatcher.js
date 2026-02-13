@@ -1,4 +1,11 @@
-const { Events, EmbedBuilder, AuditLogEvent, PermissionsBitField } = require('discord.js');
+const {
+  Events,
+  EmbedBuilder,
+  AuditLogEvent,
+  PermissionsBitField,
+  ChannelType,
+  OverwriteType,
+} = require('discord.js');
 const logSender = require('../utils/logSender');
 const inviteTracker = require('../utils/inviteTracker');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
@@ -8,6 +15,7 @@ const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
   timeStyle: 'medium',
 });
+const WEBHOOK_AUDIT_CACHE = new Map();
 
 function formatUserTag(user, fallback = 'Unknown') {
   if (!user) return fallback;
@@ -118,42 +126,144 @@ function describeChannel(channel) {
   return `${channel.isThread ? 'Thread' : channel.type} ${channel.name} (${channel.id}) - ${parent}`;
 }
 
-function buildRoleEmbed(action, role, color) {
+function isCategory(channel) {
+  return channel?.type === ChannelType.GuildCategory;
+}
+
+function formatChannelType(channel) {
+  if (isCategory(channel)) return 'Category';
+  if (channel?.isThread?.()) return 'Thread';
+  return String(channel?.type ?? 'Unknown');
+}
+
+function formatViewableRoles(channel, max = 12) {
+  if (!channel?.permissionOverwrites?.cache) return 'Default (@everyone)';
+  const roles = [];
+  for (const overwrite of channel.permissionOverwrites.cache.values()) {
+    if (!overwrite) continue;
+    if (overwrite.type !== OverwriteType.Role && overwrite.type !== 0) continue;
+    if (!overwrite.allow?.has(PermissionsBitField.Flags.ViewChannel)) continue;
+    roles.push(`<@&${overwrite.id}>`);
+  }
+  if (!roles.length) return 'Default (@everyone)';
+  const shown = roles.slice(0, max);
+  if (roles.length > max) shown.push(`+${roles.length - max} more`);
+  return shown.join(', ');
+}
+
+function diffRolePermissions(oldRole, newRole) {
+  const oldPerms = new Set(oldRole?.permissions?.toArray?.() || []);
+  const newPerms = new Set(newRole?.permissions?.toArray?.() || []);
+  const added = [...newPerms].filter(value => !oldPerms.has(value));
+  const removed = [...oldPerms].filter(value => !newPerms.has(value));
+  const lines = [];
+  if (added.length) lines.push(`Permissions added: ${added.join(', ')}`);
+  if (removed.length) lines.push(`Permissions removed: ${removed.join(', ')}`);
+  return lines;
+}
+
+function collectOverwriteMap(channel) {
+  const map = new Map();
+  const overwrites = channel?.permissionOverwrites?.cache;
+  if (!overwrites) return map;
+  for (const overwrite of overwrites.values()) {
+    if (!overwrite) continue;
+    map.set(`${overwrite.type}:${overwrite.id}`, {
+      type: overwrite.type,
+      id: overwrite.id,
+      allow: String(overwrite.allow?.bitfield ?? '0'),
+      deny: String(overwrite.deny?.bitfield ?? '0'),
+    });
+  }
+  return map;
+}
+
+function formatOverwritePrincipal(overwrite) {
+  if (!overwrite) return 'Unknown';
+  if (overwrite.type === OverwriteType.Role || overwrite.type === 0) return `<@&${overwrite.id}>`;
+  return `<@${overwrite.id}>`;
+}
+
+function diffChannelOverwrites(oldChannel, newChannel, maxLines = 8) {
+  const oldMap = collectOverwriteMap(oldChannel);
+  const newMap = collectOverwriteMap(newChannel);
+  const keys = new Set([...oldMap.keys(), ...newMap.keys()]);
+  const changes = [];
+  for (const key of keys) {
+    const before = oldMap.get(key);
+    const after = newMap.get(key);
+    if (!before && after) {
+      changes.push(`Permission added for ${formatOverwritePrincipal(after)}`);
+      continue;
+    }
+    if (before && !after) {
+      changes.push(`Permission removed for ${formatOverwritePrincipal(before)}`);
+      continue;
+    }
+    if (!before || !after) continue;
+    if (before.allow !== after.allow || before.deny !== after.deny) {
+      changes.push(`Permission changed for ${formatOverwritePrincipal(after)}`);
+    }
+  }
+  if (changes.length > maxLines) {
+    const hidden = changes.length - maxLines;
+    return [...changes.slice(0, maxLines), `+${hidden} more permission change(s)`];
+  }
+  return changes;
+}
+
+function markWebhookAudit(entry) {
+  if (!entry?.id) return false;
+  const id = String(entry.id);
+  if (WEBHOOK_AUDIT_CACHE.has(id)) return false;
+  WEBHOOK_AUDIT_CACHE.set(id, Date.now());
+  if (WEBHOOK_AUDIT_CACHE.size > 1000) {
+    const cutoff = Date.now() - (5 * 60 * 1000);
+    for (const [cacheId, seenAt] of WEBHOOK_AUDIT_CACHE.entries()) {
+      if (seenAt < cutoff) WEBHOOK_AUDIT_CACHE.delete(cacheId);
+    }
+  }
+  return true;
+}
+
+function buildRoleEmbed(action, role, color, actor = 'System', reason = null, extraFields = []) {
   return buildLogEmbed({
     action,
     target: `Role: ${role.name} (${role.id})`,
-    actor: 'System',
-    reason: `Color: ${niceColor(role.color)}, Position: ${role.position}`,
+    actor,
+    reason: reason || `Color: ${niceColor(role.color)}, Position: ${role.position}`,
     color,
     extraFields: [
       { name: 'Mentionable', value: role.mentionable ? 'Yes' : 'No', inline: true },
       { name: 'Hoisted', value: role.hoist ? 'Yes' : 'No', inline: true },
       { name: 'Permissions', value: role.permissions.toArray().join(', ') || 'None', inline: false },
+      ...extraFields,
     ],
     thumbnailTarget: role,
   });
 }
 
-function buildChannelEmbed(action, channel, color, reasonSuffix) {
+function buildChannelEmbed(action, channel, color, reasonSuffix, actor = 'System', extraFields = []) {
   return buildLogEmbed({
     action,
-    target: `Channel: ${channel.name} (${channel.id})`,
-    actor: 'System',
+    target: `${isCategory(channel) ? 'Category' : 'Channel'}: ${channel.name} (${channel.id})`,
+    actor,
     reason: reasonSuffix || describeChannel(channel),
     color,
     extraFields: [
-      { name: 'Type', value: channel.isThread ? 'Thread' : channel.type, inline: true },
+      { name: 'Type', value: formatChannelType(channel), inline: true },
       { name: 'Category', value: channel.parent ? `<#${channel.parentId}>` : 'None', inline: true },
+      ...extraFields,
     ],
     thumbnailTarget: channel.guild?.iconURL ? channel.guild : null,
   });
 }
 
-function buildGuildEmbed(action, guild, reason, color) {
+function buildGuildEmbed(action, guild, reason, color, actor = 'System') {
   return buildLogEmbed({
     action,
     target: `Server: ${guild.name} (${guild.id})`,
-    actor: 'System',
+    actor,
     reason: reason || 'Server metadata updated',
     color,
     extraFields: [
@@ -184,30 +294,38 @@ function buildInviteEmbed(action, guild, details, color) {
 }
 
 async function handleRoleCreate(role) {
-  const embed = buildRoleEmbed('Role Created', role, 0x57f287);
+  const audit = await findRecentAuditEntry(role.guild, AuditLogEvent.RoleCreate, role.id);
+  const actor = audit?.executor || 'System';
+  const embed = buildRoleEmbed('Role Created', role, 0x57f287, actor);
   await safeLog(role.guild, 'role_create', embed);
 }
 
 async function handleRoleDelete(role) {
-  const embed = buildRoleEmbed('Role Deleted', role, 0xed4245);
+  const audit = await findRecentAuditEntry(role.guild, AuditLogEvent.RoleDelete, role.id);
+  const actor = audit?.executor || 'System';
+  const embed = buildRoleEmbed('Role Deleted', role, 0xed4245, actor);
   await safeLog(role.guild, 'role_delete', embed);
 }
 
 async function handleRoleUpdate(oldRole, newRole) {
+  const audit = await findRecentAuditEntry(newRole.guild, AuditLogEvent.RoleUpdate, newRole.id);
+  const actor = audit?.executor || 'System';
   const changes = [];
   if (oldRole.name !== newRole.name) changes.push(`Name changed to ${newRole.name}`);
   if (oldRole.color !== newRole.color) changes.push(`Color changed to ${niceColor(newRole.color)}`);
   if (oldRole.position !== newRole.position) changes.push(`Position changed to ${newRole.position}`);
+  changes.push(...diffRolePermissions(oldRole, newRole));
   if (!changes.length) return;
   const embed = buildLogEmbed({
     action: 'Role Updated',
     target: `Role: ${newRole.name} (${newRole.id})`,
-    actor: 'System',
-    reason: changes.join('; '),
+    actor,
+    reason: changes.join('\n'),
     color: 0xf1c40f,
     extraFields: [
       { name: 'Hoisted', value: newRole.hoist ? 'Yes' : 'No', inline: true },
       { name: 'Mentionable', value: newRole.mentionable ? 'Yes' : 'No', inline: true },
+      { name: 'Permissions', value: newRole.permissions.toArray().join(', ') || 'None', inline: false },
     ],
     thumbnailTarget: newRole,
   });
@@ -215,24 +333,50 @@ async function handleRoleUpdate(oldRole, newRole) {
 }
 
 async function handleChannelCreate(channel) {
-  const embed = buildChannelEmbed('Channel Created', channel, 0x57f287);
-  await safeLog(channel.guild, 'channel_create', embed);
+  const audit = await findRecentAuditEntry(channel.guild, AuditLogEvent.ChannelCreate, channel.id);
+  const actor = audit?.executor || 'System';
+  const viewRoles = formatViewableRoles(channel);
+  const action = isCategory(channel) ? 'Category Created' : 'Channel Created';
+  const logType = isCategory(channel) ? 'category_create' : 'channel_create';
+  const embed = buildChannelEmbed(action, channel, 0x57f287, null, actor, [
+    { name: 'Roles That Can View', value: viewRoles, inline: false },
+  ]);
+  await safeLog(channel.guild, logType, embed);
 }
 
 async function handleChannelDelete(channel) {
-  const embed = buildChannelEmbed('Channel Deleted', channel, 0xed4245);
-  await safeLog(channel.guild, 'channel_delete', embed);
+  const audit = await findRecentAuditEntry(channel.guild, AuditLogEvent.ChannelDelete, channel.id);
+  const actor = audit?.executor || 'System';
+  const action = isCategory(channel) ? 'Category Deleted' : 'Channel Deleted';
+  const logType = isCategory(channel) ? 'category_delete' : 'channel_delete';
+  const embed = buildChannelEmbed(action, channel, 0xed4245, null, actor);
+  await safeLog(channel.guild, logType, embed);
 }
 
 async function handleChannelUpdate(oldChannel, newChannel) {
   if (!newChannel.guild) return;
   const changes = [];
+  const audit = await findRecentAuditEntry(newChannel.guild, AuditLogEvent.ChannelUpdate, newChannel.id);
+  const actor = audit?.executor || 'System';
   if (oldChannel.name !== newChannel.name) changes.push(`Name set to ${newChannel.name}`);
   if ((oldChannel.topic || '') !== (newChannel.topic || '')) changes.push('Topic updated');
   if (oldChannel.nsfw !== newChannel.nsfw) changes.push(newChannel.nsfw ? 'NSFW enabled' : 'NSFW disabled');
+  const oldPos = Number.isFinite(oldChannel.rawPosition) ? oldChannel.rawPosition : null;
+  const newPos = Number.isFinite(newChannel.rawPosition) ? newChannel.rawPosition : null;
+  if (oldPos !== null && newPos !== null && oldPos !== newPos) {
+    changes.push(`Placement changed: ${oldPos} -> ${newPos}`);
+  }
+  if (String(oldChannel.parentId || '') !== String(newChannel.parentId || '')) {
+    changes.push(`Category changed: ${oldChannel.parentId ? `<#${oldChannel.parentId}>` : 'None'} -> ${newChannel.parentId ? `<#${newChannel.parentId}>` : 'None'}`);
+  }
+  changes.push(...diffChannelOverwrites(oldChannel, newChannel));
   if (!changes.length) return;
-  const embed = buildChannelEmbed('Channel Updated', newChannel, 0xf39c12, changes.join('\n'));
-  await safeLog(newChannel.guild, 'channel_update', embed);
+  const action = isCategory(newChannel) ? 'Category Updated' : 'Channel Updated';
+  const logType = isCategory(newChannel) ? 'category_update' : 'channel_update';
+  const embed = buildChannelEmbed(action, newChannel, 0xf39c12, changes.join('\n'), actor, [
+    { name: 'Roles That Can View', value: formatViewableRoles(newChannel), inline: false },
+  ]);
+  await safeLog(newChannel.guild, logType, embed);
 }
 
 async function handleThreadCreate(thread) {
@@ -385,13 +529,15 @@ async function handleStickerUpdate(oldSticker, newSticker) {
 }
 
 async function handleGuildUpdate(oldGuild, newGuild) {
+  const audit = await findRecentAuditEntry(newGuild, AuditLogEvent.GuildUpdate, null);
+  const actor = audit?.executor || 'System';
   const changes = [];
   if (oldGuild?.name !== newGuild?.name) changes.push(`Name: ${newGuild.name}`);
   if (oldGuild?.icon !== newGuild?.icon) changes.push('Icon changed');
   if (oldGuild?.banner !== newGuild?.banner) changes.push('Banner changed');
   if (oldGuild?.description !== newGuild?.description) changes.push('Description updated');
   if (!changes.length) return;
-  const embed = buildGuildEmbed('Server Updated', newGuild, changes.join('; '), 0xf39c12);
+  const embed = buildGuildEmbed('Server Settings Changed', newGuild, changes.join('\n'), 0xf39c12, actor);
   await safeLog(newGuild, 'server', embed);
 }
 
@@ -438,6 +584,82 @@ async function handleIntegrationsUpdate(guild, integrations) {
   } catch (err) {
     console.error('Failed to log integration updates:', err);
   }
+}
+
+function matchWebhookChannel(entry, channelId) {
+  const auditChannelId = entry?.extra?.channel?.id || entry?.extra?.channelId || null;
+  if (!auditChannelId || !channelId) return true;
+  return String(auditChannelId) === String(channelId);
+}
+
+async function findRecentWebhookAudit(guild, channelId) {
+  if (!guild) return null;
+  const me = guild.members?.me;
+  if (!me?.permissions?.has(PermissionsBitField.Flags.ViewAuditLog)) return null;
+  const now = Date.now();
+  try {
+    const [createLogs, deleteLogs] = await Promise.all([
+      guild.fetchAuditLogs({ type: AuditLogEvent.WebhookCreate, limit: 6 }),
+      guild.fetchAuditLogs({ type: AuditLogEvent.WebhookDelete, limit: 6 }),
+    ]);
+
+    const createEntry = createLogs.entries.find(entry =>
+      entry?.createdTimestamp
+      && (now - entry.createdTimestamp) <= 20_000
+      && matchWebhookChannel(entry, channelId),
+    ) || null;
+    const deleteEntry = deleteLogs.entries.find(entry =>
+      entry?.createdTimestamp
+      && (now - entry.createdTimestamp) <= 20_000
+      && matchWebhookChannel(entry, channelId),
+    ) || null;
+
+    let selected = null;
+    let logType = null;
+    if (createEntry && deleteEntry) {
+      const createTs = Number(createEntry.createdTimestamp) || 0;
+      const deleteTs = Number(deleteEntry.createdTimestamp) || 0;
+      if (createTs >= deleteTs) {
+        selected = createEntry;
+        logType = 'webhook_create';
+      } else {
+        selected = deleteEntry;
+        logType = 'webhook_delete';
+      }
+    } else if (createEntry) {
+      selected = createEntry;
+      logType = 'webhook_create';
+    } else if (deleteEntry) {
+      selected = deleteEntry;
+      logType = 'webhook_delete';
+    }
+
+    if (!selected || !markWebhookAudit(selected)) return null;
+    return { entry: selected, logType };
+  } catch (err) {
+    console.error('Failed to read webhook audit logs:', err);
+    return null;
+  }
+}
+
+async function handleWebhooksUpdate(channel) {
+  const guild = channel?.guild;
+  if (!guild) return;
+  const audited = await findRecentWebhookAudit(guild, channel?.id);
+  if (!audited) return;
+  const { entry, logType } = audited;
+  const action = logType === 'webhook_create' ? 'Webhook Created' : 'Webhook Deleted';
+  const targetName = entry?.target?.name || 'Unknown';
+  const targetId = entry?.target?.id || 'unknown';
+  const actor = entry?.executor || 'System';
+  const embed = buildLogEmbed({
+    action,
+    target: `Webhook: ${targetName} (${targetId})`,
+    actor,
+    reason: `Channel: ${channel?.id ? `<#${channel.id}>` : 'Unknown'}`,
+    color: logType === 'webhook_create' ? 0x57f287 : 0xed4245,
+  });
+  await safeLog(guild, logType, embed);
 }
 
 async function handleInviteCreate(invite) {
@@ -531,6 +753,9 @@ function registerHandlers(client) {
   client.on(Events.GuildDelete, guild => handleGuildDelete(guild));
   client.on(Events.GuildIntegrationsUpdate, (guild, integrations) => {
     void handleIntegrationsUpdate(guild, integrations);
+  });
+  client.on(Events.WebhooksUpdate, channel => {
+    void handleWebhooksUpdate(channel);
   });
   client.on(Events.InviteCreate, invite => handleInviteCreate(invite));
   client.on(Events.InviteDelete, invite => handleInviteDelete(invite));

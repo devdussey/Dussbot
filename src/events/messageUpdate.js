@@ -30,9 +30,15 @@ function buildEditedEmbed(oldMessage, newMessage) {
   const postedAt = newMessage.createdAt || oldMessage?.createdAt || new Date(newMessage.createdTimestamp || Date.now());
   const originalContent = truncate(oldMessage?.content);
   const editedContent = truncate(newMessage?.content);
+  const authorMention = newMessage.author?.id ? `<@${newMessage.author.id}>` : formatUser(newMessage.author);
 
   const embed = new EmbedBuilder()
     .setTitle('Message Edited')
+    .setDescription(
+      `${authorMention} has edited a message.\n` +
+      `Original: ${truncate(oldMessage?.content, 900)}\n` +
+      `Edited: ${truncate(newMessage?.content, 900)}`
+    )
     .setColor(YELLOW)
     .setTimestamp(editedAt)
     .addFields(

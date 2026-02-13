@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const coinStore = require('../utils/coinStore');
 const rupeeStore = require('../utils/rupeeStore');
+const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
+const logSender = require('../utils/logSender');
 
 const DAILY_RUPEE = 1;
 
@@ -46,6 +48,26 @@ module.exports = {
 
     await coinStore.recordPrayer(guildId, userId, 0);
     const newBalance = await rupeeStore.addTokens(guildId, userId, DAILY_RUPEE);
+
+    try {
+      const embed = buildRupeeEventEmbed({
+        guildId,
+        eventType: 'earned',
+        actor: interaction.user,
+        target: interaction.user,
+        amount: DAILY_RUPEE,
+        balance: newBalance,
+        method: '/blessing',
+      });
+      await logSender.sendLog({
+        guildId,
+        logType: 'rupee_earned',
+        embed,
+        client: interaction.client,
+      });
+    } catch (err) {
+      console.error('Failed to send blessing rupee log:', err);
+    }
 
     return interaction.editReply({ content: `✨ You receive a blessing and gain 1 rupee! New balance: ${newBalance}.` });
   },

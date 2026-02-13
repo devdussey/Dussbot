@@ -3,6 +3,8 @@ const { isOwner } = require('../utils/ownerIds');
 const rupeeStore = require('../utils/rupeeStore');
 const premiumManager = require('../utils/premiumManager');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
+const logSender = require('../utils/logSender');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -76,6 +78,27 @@ module.exports = {
 
     if (reasonLine) {
       embed.addFields({ name: 'Reason', value: reasonLine.replace('Reason: ', '') });
+    }
+
+    try {
+      const logEmbed = buildRupeeEventEmbed({
+        guildId: interaction.guildId,
+        eventType: 'given',
+        actor: interaction.user,
+        target,
+        amount,
+        balance: total,
+        method: '/giverupee',
+        extraFields: reason ? [{ name: 'Reason', value: reason, inline: false }] : [],
+      });
+      await logSender.sendLog({
+        guildId: interaction.guildId,
+        logType: 'rupee_given',
+        embed: logEmbed,
+        client: interaction.client,
+      });
+    } catch (err) {
+      console.error('Failed to send giverupee log:', err);
     }
 
     return interaction.reply({ embeds: [embed] });

@@ -4,6 +4,8 @@ const rupeeStore = require('../utils/rupeeStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const messageCountStore = require('../utils/messageCountStore');
+const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
+const logSender = require('../utils/logSender');
 
 module.exports = {
   name: Events.MessageCreate,
@@ -38,6 +40,25 @@ module.exports = {
       const amountText = result.awarded === 1 ? 'a rupee' : `${result.awarded} rupees`;
       const earnedText = `${message.author} has earned ${amountText}! They now have ${newBalance}!`;
       const announcement = `${earnedText}\n\nTo spend your rupees, type /rupeestore.`;
+      try {
+        const logEmbed = buildRupeeEventEmbed({
+          guildId: message.guild.id,
+          eventType: 'earned',
+          actor: message.author,
+          target: message.author,
+          amount: result.awarded,
+          balance: newBalance,
+          method: `Message Activity (${rupeeStore.AWARD_THRESHOLD} messages)`,
+        });
+        await logSender.sendLog({
+          guildId: message.guild.id,
+          logType: 'rupee_earned',
+          embed: logEmbed,
+          client: message.client,
+        });
+      } catch (logErr) {
+        console.error('Failed to send message rupee earn log', logErr);
+      }
       const embed = new EmbedBuilder()
         .setColor(resolveEmbedColour(message.guild.id, 0x00f0ff))
         .setDescription(announcement)

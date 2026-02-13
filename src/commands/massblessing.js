@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
+const logSender = require('../utils/logSender');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -52,6 +54,31 @@ module.exports = {
       .setFooter({ text: 'Cooldowns are not affected by mass blessings.' });
 
     await interaction.editReply({ embeds: [embed], ephemeral: true });
+
+    try {
+      const logEmbed = buildRupeeEventEmbed({
+        guildId: interaction.guildId,
+        eventType: 'given',
+        actor: interaction.user,
+        target: null,
+        amount,
+        balance: null,
+        method: '/massblessing',
+        description: `<@${interaction.user.id}> has given ${amount} rupee${amount === 1 ? '' : 's'} to ${awarded} users via /massblessing.`,
+        extraFields: [
+          { name: 'Users Blessed', value: String(awarded), inline: true },
+          { name: 'Total Rupees Granted', value: String(awarded * amount), inline: true },
+        ],
+      });
+      await logSender.sendLog({
+        guildId: interaction.guildId,
+        logType: 'rupee_given',
+        embed: logEmbed,
+        client: interaction.client,
+      });
+    } catch (err) {
+      console.error('Failed to send massblessing log:', err);
+    }
 
     try {
       await interaction.channel?.send({

@@ -10,9 +10,15 @@ function formatPerson(person, fallback = 'System') {
   return fallback;
 }
 
+function formatMention(person, fallback = 'Unknown User') {
+  if (!person) return fallback;
+  if (typeof person === 'string') return person;
+  if (person.id) return `<@${person.id}>`;
+  return formatPerson(person, fallback);
+}
+
 function resolveAvatar(target) {
-  if (!target) return null;
-  if (typeof target === 'string') return null;
+  if (!target || typeof target === 'string') return null;
   if (typeof target.displayAvatarURL === 'function') {
     return target.displayAvatarURL({ extension: 'png', size: 128 });
   }
@@ -22,35 +28,50 @@ function resolveAvatar(target) {
   return null;
 }
 
-function buildLogEmbed({ action, target, actor, reason, color = DEFAULT_COLOR, timestamp = new Date(), extraFields = [], thumbnailTarget }) {
+function buildLogDescription({ action, target, actor, reason }) {
+  const subject = formatMention(target, 'Unknown User');
+  const actionLabel = String(action || 'Action').trim();
+  const parts = [`${subject} has **${actionLabel}**.`];
+  if (reason) parts.push(String(reason).slice(0, 1024));
+  if (actor && actor !== target) {
+    parts.push(`Triggered by: ${formatPerson(actor, 'System')}`);
+  }
+  return parts.join('\n');
+}
+
+function buildLogEmbed({
+  action,
+  target,
+  actor,
+  reason,
+  color = DEFAULT_COLOR,
+  timestamp = new Date(),
+  extraFields = [],
+  thumbnailTarget,
+}) {
   const embed = new EmbedBuilder()
     .setTitle(action || 'Action')
+    .setDescription(buildLogDescription({ action, target, actor, reason }))
     .setColor(color)
-    .setTimestamp(timestamp);
-  const userValue = formatPerson(target, 'Unknown User');
-  const actorValue = formatPerson(actor, 'System');
-  const reasonValue = reason ? String(reason).slice(0, 1024) : 'N/A';
+    .setTimestamp(timestamp)
+    .setFooter({ text: `Date & Time: ${new Date(timestamp).toLocaleString()}` });
+
   embed.addFields(
-    { name: 'ACTION', value: action || 'Unknown', inline: false },
-    { name: 'User', value: userValue, inline: true },
-    { name: 'Reason/Specify', value: reasonValue, inline: true },
-    { name: 'Action performed by', value: actorValue, inline: true },
-    { name: 'Time', value: `<t:${Math.floor(timestamp.getTime() / 1000)}:f>`, inline: true },
+    { name: 'User', value: formatPerson(target, 'Unknown User'), inline: true },
+    { name: 'Action Performed By', value: formatPerson(actor, 'System'), inline: true },
   );
-  for (const field of extraFields) {
-    embed.addFields(field);
-  }
-  const avatarUrl = resolveAvatar(thumbnailTarget ?? target ?? actor);
-  if (avatarUrl) {
-    embed.setThumbnail(avatarUrl);
-  }
-  const footerIcon = resolveAvatar(actor);
-  if (actor) {
-    embed.setFooter({
-      text: `Performed by ${formatPerson(actor, 'System')}`,
-      iconURL: footerIcon || undefined,
+
+  for (const field of (extraFields || [])) {
+    if (!field?.name || !field?.value) continue;
+    embed.addFields({
+      name: String(field.name).slice(0, 256),
+      value: String(field.value).slice(0, 1024),
+      inline: Boolean(field.inline),
     });
   }
+
+  const avatarUrl = resolveAvatar(thumbnailTarget ?? target ?? actor);
+  if (avatarUrl) embed.setThumbnail(avatarUrl);
   return embed;
 }
 

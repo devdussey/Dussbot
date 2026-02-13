@@ -7,6 +7,7 @@ const logSender = require('../utils/logSender');
 const logChannelTypeStore = require('../utils/logChannelTypeStore');
 const logConfigManager = require('../utils/logConfigManager');
 const logConfigView = require('../utils/logConfigView');
+const { buildLogEmbed } = require('../utils/logEmbedFactory');
 const botConfigStore = require('../utils/botConfigStore');
 const botConfigView = require('../utils/botConfigView');
 const modLogStore = require('../utils/modLogStore');
@@ -34,6 +35,90 @@ function formatErrorStack(error) {
     if (!raw) return null;
     const str = String(raw);
     return str.length > MAX_ERROR_STACK ? `${str.slice(0, MAX_ERROR_STACK - 3)}...` : str;
+}
+
+function collectAntiNukeChangeLines(before, after) {
+    const changes = [];
+    if (!before || !after) return changes;
+
+    const compareBool = (path, label) => {
+        const beforeValue = Boolean(path(before));
+        const afterValue = Boolean(path(after));
+        if (beforeValue !== afterValue) {
+            changes.push(`${label}: ${beforeValue ? 'Enabled' : 'Disabled'} -> ${afterValue ? 'Enabled' : 'Disabled'}`);
+        }
+    };
+
+    const compareThreshold = (typeLabel, beforeDet, afterDet) => {
+        if (!beforeDet || !afterDet) return;
+        if (Number(beforeDet.threshold) !== Number(afterDet.threshold) || Number(beforeDet.windowSec) !== Number(afterDet.windowSec)) {
+            changes.push(
+                `${typeLabel}: ${beforeDet.threshold}/${beforeDet.windowSec}s -> ${afterDet.threshold}/${afterDet.windowSec}s`,
+            );
+        }
+    };
+
+    compareBool(cfg => cfg.enabled, 'Anti-nuke');
+    compareBool(cfg => cfg.autoJail, 'Auto jail');
+    compareBool(cfg => cfg.notifyOwners, 'Owner DM alerts');
+    compareBool(cfg => cfg.streamAlerts, 'Stream alerts');
+    compareBool(cfg => cfg.ignoreBots, 'Ignore bots');
+    compareBool(cfg => cfg.detections?.channelDelete?.enabled, 'Channel delete detection');
+    compareBool(cfg => cfg.detections?.roleDelete?.enabled, 'Role delete detection');
+
+    compareThreshold('Channel delete threshold', before.detections?.channelDelete, after.detections?.channelDelete);
+    compareThreshold('Role delete threshold', before.detections?.roleDelete, after.detections?.roleDelete);
+    return changes;
+}
+
+async function logAntiNukeConfigChange(interaction, beforeConfig, afterConfig) {
+    if (!interaction?.guildId || !interaction?.guild || !interaction?.client || !beforeConfig || !afterConfig) return;
+    const changeLines = collectAntiNukeChangeLines(beforeConfig, afterConfig);
+    if (!changeLines.length) return;
+
+    const enabledChanged = Boolean(beforeConfig.enabled) !== Boolean(afterConfig.enabled);
+    const action = enabledChanged
+        ? (afterConfig.enabled ? 'Anti-Nuke Enabled' : 'Anti-Nuke Disabled')
+        : 'Anti-Nuke Edited';
+    const logType = enabledChanged
+        ? (afterConfig.enabled ? 'antinuke_enabled' : 'antinuke_disabled')
+        : 'antinuke_edited';
+
+    const embed = buildLogEmbed({
+        action,
+        target: interaction.user,
+        actor: interaction.user,
+        reason: changeLines.join('\n').slice(0, 1024),
+        color: enabledChanged ? (afterConfig.enabled ? 0x57f287 : 0xed4245) : 0xf1c40f,
+        extraFields: [
+            { name: 'Command', value: '/antinuke config', inline: true },
+            { name: 'Channel', value: interaction.channel ? `<#${interaction.channel.id}>` : 'Unknown', inline: true },
+        ],
+    });
+
+    await logSender.sendLog({
+        guildId: interaction.guildId,
+        logType,
+        embed,
+        client: interaction.client,
+    });
+
+    if (enabledChanged && changeLines.length > 1) {
+        const editedEmbed = buildLogEmbed({
+            action: 'Anti-Nuke Edited',
+            target: interaction.user,
+            actor: interaction.user,
+            reason: changeLines.join('\n').slice(0, 1024),
+            color: 0xf1c40f,
+            extraFields: [{ name: 'Command', value: '/antinuke config', inline: true }],
+        });
+        await logSender.sendLog({
+            guildId: interaction.guildId,
+            logType: 'antinuke_edited',
+            embed: editedEmbed,
+            client: interaction.client,
+        });
+    }
 }
 
 async function logCommandUsage(interaction, status, details, color = 0x5865f2) {
@@ -127,7 +212,6 @@ const COMMAND_CATEGORY_MAP = {
     // Logging
     dmdiag: 'logging',
     logconfig: 'logging',
-    logtree: 'logging',
 
     // Moderation
     automodconfig: 'moderation',
@@ -231,7 +315,6 @@ const ADMIN_COMMANDS = new Set([
   'horseracestandings',
   'isolate',
   'logconfig',
-  'logtree',
   'massblessing',
   'purge',
   'reactionrole',
@@ -459,6 +542,7 @@ module.exports = {
                     return;
                 }
                 try {
+                    const previousConfig = await antiNukeManager.getConfig(interaction.guildId);
                     let updatedConfig = null;
                     if (interaction.customId === 'antinuke:flags') {
                         updatedConfig = await antiNukeManager.updateFlags(interaction.guildId, interaction.values);
@@ -473,6 +557,7 @@ module.exports = {
                     }
                     const view = await antiNukeManager.buildConfigView(interaction.guild, updatedConfig);
                     await interaction.update({ embeds: [view.embed], components: view.components });
+                    await logAntiNukeConfigChange(interaction, previousConfig, updatedConfig);
                 } catch (err) {
                     console.error('Failed to update anti-nuke configuration via select menu:', err);
                     const content = 'Failed to update anti-nuke settings. Please try again.';
@@ -742,6 +827,29 @@ module.exports = {
         }
 
         if (interaction.isChannelSelectMenu()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('logconfig:setgroupchannel:')) {
+                if (!interaction.inGuild()) return;
+                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+                    try { await interaction.reply({ content: 'Administrator permission is required to configure logs.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                const logEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'logging', true);
+                const groupId = interaction.customId.slice('logconfig:setgroupchannel:'.length);
+                const channelId = interaction.values?.[0];
+                if (!groupId || !channelId) return;
+                try {
+                    const group = logConfigView.getLogGroupById(groupId);
+                    if (!group?.keys?.length) return;
+                    await Promise.all(group.keys.map(key => logChannelTypeStore.setChannel(interaction.guildId, key, channelId)));
+                    const view = await logConfigView.buildLogConfigView(interaction.guild, null, { category: groupId });
+                    await interaction.update({ embeds: [view.embed], components: view.components });
+                    try { await interaction.followUp({ content: `Set all ${group.label} events to <#${channelId}>.`, ephemeral: logEphemeral }); } catch (_) {}
+                } catch (err) {
+                    console.error('Failed to apply group log channel:', err);
+                    try { await interaction.followUp({ content: 'Failed to set the group log channel. Please try again.', ephemeral: logEphemeral }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('logconfig:setchannel:')) {
                 if (!interaction.inGuild()) return;
                 if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {

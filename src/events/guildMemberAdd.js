@@ -14,6 +14,14 @@ const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/
 
 const INVITE_LOG_COLOR = 0x00f0ff;
 
+function formatPermissionList(member, max = 16) {
+    const names = member?.permissions?.toArray?.() || [];
+    if (!names.length) return 'Unknown';
+    const shown = names.slice(0, max);
+    const suffix = names.length > max ? `, +${names.length - max} more` : '';
+    return shown.join(', ') + suffix;
+}
+
 module.exports = {
     name: Events.GuildMemberAdd,
     async execute(member) {
@@ -154,6 +162,7 @@ module.exports = {
                     extraFields: [
                         { name: 'Invite Code', value: usedInvite?.code || 'Unknown', inline: true },
                         { name: 'Invite Channel', value: usedInvite?.channelId ? `<#${usedInvite.channelId}>` : 'Unknown', inline: true },
+                        { name: 'Bot Permissions', value: formatPermissionList(member), inline: false },
                         { name: 'Guild', value: `${member.guild.name} (${member.guild.id})`, inline: false },
                     ],
                 });

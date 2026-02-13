@@ -10,6 +10,7 @@ const store = require('./antiNukeStore');
 const streamLogger = require('./streamLogger');
 const streamLogStore = require('./streamLogStore');
 const securityLogger = require('./securityLogger');
+const logSender = require('./logSender');
 const securityEventsStore = require('./securityEventsStore');
 const jailStore = require('./jailStore');
 
@@ -445,6 +446,14 @@ async function handleDestructiveAction(guild, type, target) {
     embed.addFields({ name: 'Mitigation', value: mitigationNotes.join('\n'), inline: false });
 
     await recordEvent(guild.id, user, type, detection);
+    try {
+      await logSender.sendLog({
+        guildId: guild.id,
+        logType: 'antinuke_triggered',
+        embed,
+        client: guild.client,
+      });
+    } catch (_) {}
     await sendAlerts(guild, embed, { notifyOwners: config.notifyOwners, streamAlerts: config.streamAlerts });
   } catch (err) {
     console.error('Anti-nuke handler error:', err);
@@ -458,7 +467,12 @@ async function buildConfigView(guild, config) {
   return { config: cfg, embed, components };
 }
 
+async function getConfig(guildId) {
+  return store.getConfig(guildId);
+}
+
 module.exports = {
+  getConfig,
   buildConfigView,
   updateFlags,
   updateThreshold,

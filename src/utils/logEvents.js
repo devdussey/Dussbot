@@ -52,6 +52,11 @@ const LOG_KEYS = {
     label: 'All Bot Events',
     category: 'Bots',
   },
+  bot_action: {
+    label: 'Bot Action',
+    category: 'Bots',
+    fallbackKey: 'bot',
+  },
   bot_join: {
     label: 'Bot Joined',
     category: 'Bots',
@@ -65,22 +70,22 @@ const LOG_KEYS = {
   bot_message_create: {
     label: 'Bot Message Created',
     category: 'Bots',
-    fallbackKey: 'bot',
+    fallbackKey: 'bot_action',
   },
   bot_message_delete: {
     label: 'Bot Message Deleted',
     category: 'Bots',
-    fallbackKey: 'bot',
+    fallbackKey: 'bot_action',
   },
   bot_message_edit: {
     label: 'Bot Message Edited',
     category: 'Bots',
-    fallbackKey: 'bot',
+    fallbackKey: 'bot_action',
   },
   bot_moderation: {
     label: 'Bot Moderation',
     category: 'Bots',
-    fallbackKey: 'bot',
+    fallbackKey: 'bot_action',
   },
 
   moderation: {
@@ -142,6 +147,21 @@ const LOG_KEYS = {
     category: 'Server',
     fallbackKey: 'channel',
   },
+  category_create: {
+    label: 'Category Created',
+    category: 'Server',
+    fallbackKey: 'channel',
+  },
+  category_delete: {
+    label: 'Category Deleted',
+    category: 'Server',
+    fallbackKey: 'channel',
+  },
+  category_update: {
+    label: 'Category Updated',
+    category: 'Server',
+    fallbackKey: 'channel',
+  },
 
   role: {
     label: 'All Role Events',
@@ -187,6 +207,26 @@ const LOG_KEYS = {
     label: 'Security Events',
     category: 'Security',
   },
+  antinuke_enabled: {
+    label: 'Anti-Nuke Enabled',
+    category: 'Security',
+    fallbackKey: 'security',
+  },
+  antinuke_disabled: {
+    label: 'Anti-Nuke Disabled',
+    category: 'Security',
+    fallbackKey: 'security',
+  },
+  antinuke_edited: {
+    label: 'Anti-Nuke Edited',
+    category: 'Security',
+    fallbackKey: 'security',
+  },
+  antinuke_triggered: {
+    label: 'Anti-Nuke Triggered',
+    category: 'Security',
+    fallbackKey: 'security',
+  },
   command_error: {
     label: 'Command Errors',
     category: 'Commands',
@@ -197,7 +237,7 @@ const LOG_KEYS = {
     category: 'Commands',
   },
   server: {
-    label: 'Server Events',
+    label: 'Server Settings Changed',
     category: 'Server',
   },
   verification: {
@@ -231,6 +271,16 @@ const LOG_KEYS = {
     label: 'Integration & Webhook Events',
     category: 'Integrations',
   },
+  webhook_create: {
+    label: 'Webhook Created',
+    category: 'Integrations',
+    fallbackKey: 'integration',
+  },
+  webhook_delete: {
+    label: 'Webhook Deleted',
+    category: 'Integrations',
+    fallbackKey: 'integration',
+  },
   automod: {
     label: 'AutoMod Events',
     category: 'AutoMod',
@@ -243,8 +293,18 @@ const LOG_KEYS = {
     label: 'All Economy Events',
     category: 'Economy',
   },
+  rupee_earned: {
+    label: 'Rupees Earned',
+    category: 'Economy',
+    fallbackKey: 'economy',
+  },
+  rupee_given: {
+    label: 'Rupees Given',
+    category: 'Economy',
+    fallbackKey: 'economy',
+  },
   rupee_spend: {
-    label: 'Rupee Store Spending',
+    label: 'Rupees Spent',
     category: 'Economy',
     fallbackKey: 'economy',
   },

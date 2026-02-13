@@ -51,8 +51,12 @@ function buildBotLogEmbed({
   timestamp = new Date(),
   extraFields = [],
 }) {
+  const actionLabel = action || 'Action';
+  const actorVerb = String(actionLabel).toLowerCase();
+  const baseDescription = `${formatUser(botUser)} has ${actorVerb}.`;
   const embed = new EmbedBuilder()
-    .setTitle('Bot Activity')
+    .setTitle(`Bot ${actionLabel}`)
+    .setDescription(baseDescription)
     .setColor(color || BOT_ACTION_COLORS.fallback)
     .setTimestamp(timestamp)
     .addFields(
