@@ -23,64 +23,74 @@ async function withTempStore(fn) {
   }
 }
 
-test('allows two nominations then blocks until reset', async () => {
+test('allows one nomination then blocks the same user for 24 hours', async () => {
   await withTempStore(async (store, tmpDir) => {
     const guildId = 'guild-1';
     const userId = 'user-1';
+    const targetId = 'target-1';
     const start = Date.now();
 
-    const first = await store.consumeNomination(guildId, userId, start);
+    const first = await store.consumeNomination(guildId, userId, targetId, start);
     assert.equal(first.allowed, true);
-    assert.equal(first.remaining, 1);
+    assert.equal(first.targetNominationCount, 1);
 
-    const second = await store.consumeNomination(guildId, userId, start + 1_000);
-    assert.equal(second.allowed, true);
-    assert.equal(second.remaining, 0);
-    assert.ok(second.resetAt);
-
-    const third = await store.consumeNomination(guildId, userId, start + 2_000);
-    assert.equal(third.allowed, false);
-    assert.equal(third.remaining, 0);
-    assert.ok(third.retryAfterMs > 0);
+    const second = await store.consumeNomination(guildId, userId, targetId, start + 1_000);
+    assert.equal(second.allowed, false);
+    assert.ok(second.retryAfterMs > 0);
 
     const file = path.join(tmpDir, 'sacrifice_nominations.json');
     assert.ok(fs.existsSync(file));
   });
 });
 
-test('resets usage after 24 hours from second nomination', async () => {
+test('same user can nominate again after 24 hours', async () => {
   await withTempStore(async (store) => {
     const guildId = 'guild-2';
     const userId = 'user-2';
+    const targetId = 'target-2';
     const start = Date.now();
     const dayMs = 24 * 60 * 60 * 1000;
 
-    await store.consumeNomination(guildId, userId, start);
-    await store.consumeNomination(guildId, userId, start + 2_000);
-
-    const beforeReset = await store.consumeNomination(guildId, userId, start + dayMs - 1);
+    await store.consumeNomination(guildId, userId, targetId, start);
+    const beforeReset = await store.consumeNomination(guildId, userId, targetId, start + dayMs - 1);
     assert.equal(beforeReset.allowed, false);
 
-    const afterReset = await store.consumeNomination(guildId, userId, start + 2_000 + dayMs + 1);
+    const afterReset = await store.consumeNomination(guildId, userId, targetId, start + dayMs + 1);
     assert.equal(afterReset.allowed, true);
-    assert.equal(afterReset.remaining, 1);
   });
 });
 
-test('rollback removes consumed usage slot', async () => {
+test('target nomination counts increase across different nominators', async () => {
   await withTempStore(async (store) => {
     const guildId = 'guild-3';
-    const userId = 'user-3';
+    const targetId = 'target-3';
     const start = Date.now();
 
-    const second = await store.consumeNomination(guildId, userId, start);
+    const first = await store.consumeNomination(guildId, 'user-a', targetId, start);
+    assert.equal(first.allowed, true);
+    assert.equal(first.targetNominationCount, 1);
+
+    const second = await store.consumeNomination(guildId, 'user-b', targetId, start + 1_000);
     assert.equal(second.allowed, true);
-    assert.equal(second.remaining, 1);
+    assert.equal(second.targetNominationCount, 2);
+  });
+});
 
-    await store.rollbackLastNomination(guildId, userId);
+test('rollback reverts cooldown and target count on failure', async () => {
+  await withTempStore(async (store) => {
+    const guildId = 'guild-4';
+    const userId = 'user-rollback';
+    const targetId = 'target-rollback';
+    const start = Date.now();
 
-    const firstAgain = await store.consumeNomination(guildId, userId, start + 1_000);
-    assert.equal(firstAgain.allowed, true);
-    assert.equal(firstAgain.remaining, 1);
+    const result = await store.consumeNomination(guildId, userId, targetId, start);
+    assert.equal(result.allowed, true);
+    assert.equal(result.targetNominationCount, 1);
+
+    await store.rollbackLastNomination(guildId, result.rollbackToken);
+
+    const retry = await store.consumeNomination(guildId, userId, targetId, start + 1_000);
+    assert.equal(retry.allowed, true);
+    assert.equal(retry.targetNominationCount, 1);
   });
 });

@@ -801,7 +801,7 @@ module.exports = {
 
                 let usage = null;
                 try {
-                    usage = await sacrificeNominationStore.consumeNomination(interaction.guildId, interaction.user.id);
+                    usage = await sacrificeNominationStore.consumeNomination(interaction.guildId, interaction.user.id, targetMember.id);
                 } catch (err) {
                     console.error('Failed to check sacrifice nomination usage:', err);
                     try { await interaction.reply({ content: 'Could not process your nomination right now. Please try again.', ephemeral: true }); } catch (_) {}
@@ -809,7 +809,7 @@ module.exports = {
                 }
 
                 if (!usage?.allowed) {
-                    try { await interaction.reply({ content: 'You have used both nominations. They will regenerate in 24 hours.', ephemeral: true }); } catch (_) {}
+                    try { await interaction.reply({ content: 'You can only nominate once every 24 hours.', ephemeral: true }); } catch (_) {}
                     return;
                 }
 
@@ -821,7 +821,10 @@ module.exports = {
 
                 const embed = new EmbedBuilder()
                     .setTitle('Communal Sacrifice')
-                    .setDescription(`${targetMember} has been voted to be tribute for the communal sacrifice.`)
+                    .setDescription(
+                        `${targetMember} (${targetMember.user.username}) has been voted to be tribute for the communal sacrifice.` +
+                        (usage.targetNominationCount > 1 ? `\nThey now have (${usage.targetNominationCount}) nominations.` : '')
+                    )
                     .setThumbnail(targetMember.displayAvatarURL({ extension: 'png', size: 256 }))
                     .setTimestamp();
 
@@ -837,7 +840,7 @@ module.exports = {
                         allowedMentions: { parse: [] },
                     });
                 } catch (_) {
-                    try { await sacrificeNominationStore.rollbackLastNomination(interaction.guildId, interaction.user.id); } catch (_) {}
+                    try { await sacrificeNominationStore.rollbackLastNomination(interaction.guildId, usage.rollbackToken); } catch (_) {}
                     const failPayload = { content: 'Failed to post the sacrifice nomination. Please try again.', ephemeral: true };
                     try {
                         if (acknowledged) await interaction.followUp(failPayload);
@@ -846,10 +849,7 @@ module.exports = {
                     return;
                 }
 
-                const successText = usage.remaining === 1
-                    ? 'You have 1 more nomination today.'
-                    : 'You have used your last nomination. They will regenerate in 24 hours.';
-                const successPayload = { content: successText, ephemeral: true };
+                const successPayload = { content: 'Nomination submitted anonymously. You can nominate again in 24 hours.', ephemeral: true };
                 try {
                     if (acknowledged) await interaction.followUp(successPayload);
                     else await interaction.reply(successPayload);

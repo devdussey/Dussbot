@@ -3,7 +3,6 @@ const { ensureFileSync, resolveDataPath, writeJson } = require('./dataDir');
 
 const STORE_FILE = 'sacrifice_nominations.json';
 const DEFAULT_STORE = { guilds: {} };
-const MAX_USES = 2;
 const REGEN_MS = 24 * 60 * 60 * 1000;
 
 let cache = null;
@@ -44,117 +43,91 @@ async function saveStore() {
 function ensureGuild(guildId) {
   const store = loadStore();
   if (!store.guilds[guildId] || typeof store.guilds[guildId] !== 'object') {
-    store.guilds[guildId] = { users: {} };
-  } else if (!store.guilds[guildId].users || typeof store.guilds[guildId].users !== 'object') {
-    store.guilds[guildId].users = {};
+    store.guilds[guildId] = { users: {}, targets: {} };
   }
-  return store.guilds[guildId];
+  const guild = store.guilds[guildId];
+  if (!guild.users || typeof guild.users !== 'object') guild.users = {};
+  if (!guild.targets || typeof guild.targets !== 'object') guild.targets = {};
+  return guild;
 }
 
-function parseResetAtMs(value) {
-  if (!value) return null;
+function parseIsoMs(value) {
+  if (!value || typeof value !== 'string') return null;
   const ts = Date.parse(value);
   return Number.isFinite(ts) ? ts : null;
 }
 
-function normalizeRecord(rec, now = Date.now()) {
-  if (!rec || typeof rec !== 'object') {
-    return { uses: 0, resetAt: null, changed: true };
-  }
+function normalizeUserRecord(rec) {
+  if (!rec || typeof rec !== 'object') return { lastNominationAt: null };
 
-  let changed = false;
-  let uses = Number.isFinite(rec.uses) ? Math.floor(rec.uses) : 0;
-  if (uses < 0) {
-    uses = 0;
-    changed = true;
-  }
-  if (uses > MAX_USES) {
-    uses = MAX_USES;
-    changed = true;
-  }
-
-  let resetAtMs = parseResetAtMs(rec.resetAt);
-  if (uses < MAX_USES) {
-    if (rec.resetAt !== null) changed = true;
-    resetAtMs = null;
-  } else {
-    if (!Number.isFinite(resetAtMs)) {
-      resetAtMs = now + REGEN_MS;
-      changed = true;
-    } else if (now >= resetAtMs) {
-      uses = 0;
-      resetAtMs = null;
-      changed = true;
+  // Backward compatibility with older format ({ uses, resetAt }).
+  if (Object.prototype.hasOwnProperty.call(rec, 'uses') || Object.prototype.hasOwnProperty.call(rec, 'resetAt')) {
+    const resetAtMs = parseIsoMs(rec.resetAt);
+    const uses = Number.isFinite(rec.uses) ? Math.floor(rec.uses) : 0;
+    if (uses >= 1 && Number.isFinite(resetAtMs)) {
+      return { lastNominationAt: new Date(Math.max(0, resetAtMs - REGEN_MS)).toISOString() };
     }
+    return { lastNominationAt: null };
   }
 
-  return {
-    uses,
-    resetAt: resetAtMs ? new Date(resetAtMs).toISOString() : null,
-    changed,
-  };
+  const lastNominationAtMs = parseIsoMs(rec.lastNominationAt);
+  return { lastNominationAt: lastNominationAtMs ? new Date(lastNominationAtMs).toISOString() : null };
 }
 
-function getRecord(guildId, userId, now = Date.now()) {
+function normalizeTargetCount(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.floor(value));
+}
+
+async function consumeNomination(guildId, userId, targetId, now = Date.now()) {
+  if (!guildId || !userId || !targetId) {
+    return { allowed: false, retryAfterMs: REGEN_MS };
+  }
+
   const guild = ensureGuild(guildId);
-  const existing = guild.users[userId];
-  const normalized = normalizeRecord(existing, now);
-  if (
-    !existing ||
-    normalized.changed ||
-    existing.uses !== normalized.uses ||
-    existing.resetAt !== normalized.resetAt
-  ) {
-    guild.users[userId] = { uses: normalized.uses, resetAt: normalized.resetAt };
-    normalized.changed = true;
-  } else {
-    normalized.changed = false;
-  }
-  return normalized;
-}
 
-async function consumeNomination(guildId, userId, now = Date.now()) {
-  if (!guildId || !userId) return { allowed: false, remaining: 0, usesToday: MAX_USES, retryAfterMs: REGEN_MS };
-  const rec = getRecord(guildId, userId, now);
-
-  if (rec.uses >= MAX_USES) {
-    if (rec.changed) await saveStore();
-    const resetAtMs = parseResetAtMs(rec.resetAt);
-    const retryAfterMs = resetAtMs ? Math.max(0, resetAtMs - now) : REGEN_MS;
+  const userRec = normalizeUserRecord(guild.users[userId]);
+  const lastNominationAtMs = parseIsoMs(userRec.lastNominationAt);
+  const nextAvailableAtMs = Number.isFinite(lastNominationAtMs) ? lastNominationAtMs + REGEN_MS : 0;
+  if (Number.isFinite(nextAvailableAtMs) && nextAvailableAtMs > now) {
     return {
       allowed: false,
-      remaining: 0,
-      usesToday: MAX_USES,
-      resetAt: rec.resetAt,
-      retryAfterMs,
+      retryAfterMs: nextAvailableAtMs - now,
+      nextAvailableAt: new Date(nextAvailableAtMs).toISOString(),
     };
   }
 
-  const nextUses = rec.uses + 1;
-  const nextResetAt = nextUses >= MAX_USES ? new Date(now + REGEN_MS).toISOString() : null;
+  const previousLastNominationAt = userRec.lastNominationAt;
+  const previousTargetCount = normalizeTargetCount(guild.targets[targetId]);
 
-  const guild = ensureGuild(guildId);
-  guild.users[userId] = { uses: nextUses, resetAt: nextResetAt };
+  const nextLastNominationAt = new Date(now).toISOString();
+  const nextTargetCount = previousTargetCount + 1;
+  guild.users[userId] = { lastNominationAt: nextLastNominationAt };
+  guild.targets[targetId] = nextTargetCount;
   await saveStore();
 
   return {
     allowed: true,
-    usesToday: nextUses,
-    remaining: Math.max(0, MAX_USES - nextUses),
-    resetAt: nextResetAt,
-    retryAfterMs: nextResetAt ? Math.max(0, Date.parse(nextResetAt) - now) : 0,
+    nextAvailableAt: new Date(now + REGEN_MS).toISOString(),
+    retryAfterMs: REGEN_MS,
+    targetNominationCount: nextTargetCount,
+    rollbackToken: {
+      userId,
+      targetId,
+      previousLastNominationAt,
+      previousTargetCount,
+    },
   };
 }
 
-async function rollbackLastNomination(guildId, userId) {
-  if (!guildId || !userId) return;
-  const guild = ensureGuild(guildId);
-  const rec = getRecord(guildId, userId);
-  if (rec.uses <= 0) return;
+async function rollbackLastNomination(guildId, rollbackToken) {
+  if (!guildId || !rollbackToken || typeof rollbackToken !== 'object') return;
+  const { userId, targetId, previousLastNominationAt, previousTargetCount } = rollbackToken;
+  if (!userId || !targetId) return;
 
-  const nextUses = Math.max(0, rec.uses - 1);
-  const nextResetAt = nextUses >= MAX_USES ? rec.resetAt : null;
-  guild.users[userId] = { uses: nextUses, resetAt: nextResetAt };
+  const guild = ensureGuild(guildId);
+  guild.users[userId] = { lastNominationAt: previousLastNominationAt || null };
+  guild.targets[targetId] = normalizeTargetCount(previousTargetCount);
   await saveStore();
 }
 
