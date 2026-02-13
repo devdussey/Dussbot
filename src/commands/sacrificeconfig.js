@@ -6,6 +6,7 @@ const {
   ActionRowBuilder,
   UserSelectMenuBuilder,
 } = require('discord.js');
+const sacrificeConfigStore = require('../utils/sacrificeConfigStore');
 
 function buildNominationRow(channelId) {
   const menu = new UserSelectMenuBuilder()
@@ -15,6 +16,19 @@ function buildNominationRow(channelId) {
     .setMaxValues(1);
 
   return new ActionRowBuilder().addComponents(menu);
+}
+
+function sanitizeGifUrl(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    return url.toString();
+  } catch (_) {
+    return null;
+  }
 }
 
 module.exports = {
@@ -28,6 +42,12 @@ module.exports = {
         .setDescription('Channel to post the sacrifice nomination menu in')
         .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
         .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName('gif')
+        .setDescription('Optional GIF URL to show on sacrifice embeds')
+        .setRequired(false)
     ),
 
   async execute(interaction) {
@@ -40,6 +60,12 @@ module.exports = {
     }
 
     const channel = interaction.options.getChannel('channel', true);
+    const gifRaw = interaction.options.getString('gif');
+    const gifUrl = sanitizeGifUrl(gifRaw);
+    if (gifRaw && !gifUrl) {
+      return interaction.reply({ content: 'Please provide a valid http(s) GIF URL.', ephemeral: true });
+    }
+
     if (!channel?.isTextBased?.()) {
       return interaction.reply({ content: 'Please choose a text-based channel.', ephemeral: true });
     }
@@ -54,6 +80,7 @@ module.exports = {
       .setTitle('Communal Sacrifice')
       .setDescription('Click the selection menu and type a user to nominate for the communal sacrifice.')
       .setTimestamp();
+    if (gifUrl) embed.setImage(gifUrl);
 
     try {
       const { applyDefaultColour } = require('../utils/guildColourStore');
@@ -65,10 +92,16 @@ module.exports = {
         embeds: [embed],
         components: [buildNominationRow(channel.id)],
       });
+      await sacrificeConfigStore.setPanelGif(interaction.guildId, channel.id, gifUrl || null);
     } catch (error) {
       return interaction.reply({ content: `Failed to send the sacrifice menu: ${error.message}`, ephemeral: true });
     }
 
-    return interaction.reply({ content: `Sent sacrifice nomination menu to ${channel}.`, ephemeral: true });
+    return interaction.reply({
+      content: gifUrl
+        ? `Sent sacrifice nomination menu to ${channel} with the configured GIF.`
+        : `Sent sacrifice nomination menu to ${channel}.`,
+      ephemeral: true,
+    });
   },
 };
