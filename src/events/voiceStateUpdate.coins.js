@@ -31,6 +31,49 @@ async function awardCoins(guildId, userId, session, deltaMs) {
   await coinStore.addCoins(guildId, userId, coins);
 }
 
+async function sendRupeeAnnouncement(newState, userId, awarded, newBalance) {
+  const guild = newState?.guild;
+  if (!guild) return;
+  const systemChannel = guild.systemChannel;
+  if (!systemChannel || !systemChannel.isTextBased?.()) return;
+
+  const me = guild.members?.me;
+  const perms = systemChannel.permissionsFor?.(me);
+  if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.SendMessages)) return;
+
+  const amountText = awarded === 1 ? 'a rupee' : `${awarded} rupees`;
+  const announcement = `<@${userId}> earned ${amountText} from voice activity and now has ${newBalance} rupee${newBalance === 1 ? '' : 's'}!`;
+
+  if (perms.has(PermissionFlagsBits.EmbedLinks)) {
+    const embed = new EmbedBuilder()
+      .setColor(resolveEmbedColour(guild.id, VOICE_RUPEE_EMBED_COLOR))
+      .setDescription(`${announcement}\n\nTo spend your rupees, type /rupeestore.`);
+    await systemChannel.send({ embeds: [embed] });
+    return;
+  }
+
+  await systemChannel.send({ content: announcement });
+}
+
+async function awardRupees(newState, guildId, userId, session, deltaMs) {
+  if (!guildId || !userId || !session) return;
+  if (!smiteConfigStore.isEnabled(guildId)) {
+    session.rupeeRemainderMs = 0;
+    return;
+  }
+
+  session.rupeeRemainderMs = (session.rupeeRemainderMs || 0) + deltaMs;
+  const awarded = Math.floor(session.rupeeRemainderMs / RUPEE_VOICE_INTERVAL_MS);
+  if (awarded <= 0) return;
+
+  session.rupeeRemainderMs -= awarded * RUPEE_VOICE_INTERVAL_MS;
+  const newBalance = await rupeeStore.addTokens(guildId, userId, awarded);
+
+  try {
+    await sendRupeeAnnouncement(newState, userId, awarded, newBalance);
+  } catch (_) {}
+}
+
 module.exports = {
   name: Events.VoiceStateUpdate,
   async execute(oldState, newState) {
@@ -42,7 +85,7 @@ module.exports = {
       const key = getKey(guildId, userId);
       let session = sessions.get(key);
       if (!session) {
-        session = { inVoice: false, lastTimestamp: 0, remainderMs: 0 };
+        session = { inVoice: false, lastTimestamp: 0, coinRemainderMs: 0, rupeeRemainderMs: 0 };
         sessions.set(key, session);
       }
 
@@ -54,6 +97,7 @@ module.exports = {
         const delta = now - (session.lastTimestamp || now);
         if (delta > 0) {
           await awardCoins(guildId, userId, session, delta);
+          await awardRupees(newState, guildId, userId, session, delta);
         }
         session.lastTimestamp = now;
       }
@@ -62,6 +106,7 @@ module.exports = {
         session.inVoice = true;
         session.lastTimestamp = now;
         session.coinRemainderMs = session.coinRemainderMs || 0;
+        session.rupeeRemainderMs = session.rupeeRemainderMs || 0;
         return;
       }
 
@@ -69,10 +114,12 @@ module.exports = {
         const delta = now - (session.lastTimestamp || now);
         if (delta > 0) {
           await awardCoins(guildId, userId, session, delta);
+          await awardRupees(newState, guildId, userId, session, delta);
         }
         session.inVoice = false;
         session.lastTimestamp = now;
         session.coinRemainderMs = 0;
+        session.rupeeRemainderMs = 0;
         sessions.delete(key);
       }
     } catch (err) {
