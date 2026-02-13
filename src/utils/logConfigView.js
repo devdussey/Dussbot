@@ -11,22 +11,8 @@ const {
 const logChannelTypeStore = require('./logChannelTypeStore');
 const { applyDefaultColour } = require('./guildColourStore');
 const { getLogKeyLabel, getFallbackKey } = require('./logEvents');
-const { isMysqlConfigured } = require('./mysqlPool');
 
 const DEFAULT_COLOR = 0x5865f2;
-const ROUTE_LABEL_OVERRIDES = Object.freeze({
-  message_create: 'Creations',
-  message_edit: 'Edits',
-  message_delete: 'Deletes',
-  member_join: 'Joins',
-  member_leave: 'Leaves',
-  member_boost: 'Boosts',
-  invite_create: 'Invite Creations',
-  invite_delete: 'Invite Deletions',
-  invite_used: 'Invite Uses',
-  rupee_spend: 'Rupee Spending',
-  security: 'Antinuke Alerts',
-});
 const LOG_GROUPS = Object.freeze([
   {
     id: 'message',
@@ -44,6 +30,24 @@ const LOG_GROUPS = Object.freeze([
     keys: ['invite_create', 'invite_delete', 'invite_used'],
   },
   {
+    id: 'mod_actions',
+    label: 'Mod Actions',
+    keys: [
+      'member_ban',
+      'member_unban',
+      'member_kick',
+      'member_timeout',
+      'member_untimeout',
+      'messages_purged',
+      'restraining_order_violation',
+    ],
+  },
+  {
+    id: 'emoji_stickers',
+    label: 'Emoji and Stickers',
+    keys: ['emoji_sticker_add', 'emoji_sticker_delete', 'emoji_sticker_edit'],
+  },
+  {
     id: 'rupee',
     label: 'Rupee Events',
     keys: ['rupee_spend'],
@@ -55,12 +59,15 @@ const LOG_GROUPS = Object.freeze([
   },
 ]);
 
+const OVERVIEW_DESCRIPTION = [
+  'Below is the current status of the logging events.',
+  'To configure or edit the current setup, select the event in the selection menu underneath this embed.',
+].join('\n');
+
+const DETAIL_DESCRIPTION = 'To configure the logging events, use the select menu under the embed.';
+
 function getEntry(entries, key) {
   return entries?.[key] || { channelId: null, enabled: true };
-}
-
-function getRouteLabel(key) {
-  return ROUTE_LABEL_OVERRIDES[key] || getLogKeyLabel(key);
 }
 
 function getGroupById(groupId) {
@@ -93,21 +100,28 @@ function isRouteOn(entries, key, entry) {
   return Boolean(resolveRouteChannel(entries, key, entry).channelId);
 }
 
-function getGroupStatus(entries, group) {
-  const hasActiveRoute = group.keys.some(key => {
+function getGroupConfiguredCount(entries, group) {
+  return group.keys.reduce((count, key) => {
     const entry = getEntry(entries, key);
-    return isRouteOn(entries, key, entry);
-  });
-  return hasActiveRoute ? '✅ On' : '❌ Off';
+    return count + (isRouteOn(entries, key, entry) ? 1 : 0);
+  }, 0);
 }
 
-function formatRouteEntry(entries, key, entry) {
-  const routeState = isRouteOn(entries, key, entry) ? '✅ On' : '❌ Off';
+function formatRouteEntry(entries, key) {
+  const entry = getEntry(entries, key);
+  const routeState = isRouteOn(entries, key, entry) ? '✅' : '❌';
   const resolved = resolveRouteChannel(entries, key, entry);
   const channelDisplay = resolved.channelId
-    ? `<#${resolved.channelId}>${resolved.fallback ? ' (fallback)' : ''}`
+    ? `<#${resolved.channelId}>${resolved.fallback ? ' (fallback)' : ''}${entry?.enabled === false ? ' (Disabled)' : ''}`
     : 'Not configured';
-  return `${routeState}\nChannel: ${channelDisplay}`;
+  return `${getLogKeyLabel(key)} (${routeState}) - ${channelDisplay}`;
+}
+
+function formatGroupSummary(entries, group) {
+  const configured = getGroupConfiguredCount(entries, group);
+  const total = group.keys.length;
+  const groupOn = configured === total && total > 0;
+  return `• **${group.label} (${configured}/${total})** ${groupOn ? '✅ ON' : '❌ OFF'}`;
 }
 
 async function buildLogConfigView(guild, selectedKey, options = {}) {
@@ -117,43 +131,28 @@ async function buildLogConfigView(guild, selectedKey, options = {}) {
   const selectedGroupFromOption = options.category ? getGroupById(options.category) : null;
   const selectedGroupFromKey = getGroupForKey(selectedKey);
   const activeGroup = selectedGroupFromOption || selectedGroupFromKey || LOG_GROUPS[0];
+  const showOverviewOnly = !selectedGroupFromOption && !selectedGroupFromKey && !selectedKey;
   const selected = (selectedKey && activeGroup.keys.includes(selectedKey))
     ? selectedKey
-    : activeGroup.keys[0];
+    : (showOverviewOnly ? null : activeGroup.keys[0]);
   const selectedEntry = selected ? getEntry(entries, selected) : null;
 
-  const descriptionParts = [
-    'Select a logging group, then pick an event route and assign the channel where logs should be sent.',
-    'Use the toggle button to enable or disable the selected route.',
-    `Storage: **${isMysqlConfigured() ? 'MySQL' : 'Local JSON'}**`,
-  ];
-  if (options.note) descriptionParts.push(options.note);
-
   const embed = new EmbedBuilder()
-    .setTitle('Log configuration')
-    .setDescription(descriptionParts.join('\n'))
+    .setTitle('Log Configuration')
+    .setDescription(showOverviewOnly ? OVERVIEW_DESCRIPTION : DETAIL_DESCRIPTION)
     .setColor(DEFAULT_COLOR)
     .setTimestamp(new Date());
 
-  embed.addFields({
-    name: 'Logging Groups',
-    value: LOG_GROUPS.map(group => `• **${group.label}:** ${getGroupStatus(entries, group)}`).join('\n'),
-    inline: false,
-  });
-
-  embed.addFields({
-    name: `${activeGroup.label} Routes`,
-    value: activeGroup.keys.map(key => {
-      const entry = getEntry(entries, key);
-      return `• **${getRouteLabel(key)}:** ${formatRouteEntry(entries, key, entry)}`;
-    }).join('\n'),
-    inline: false,
-  });
-
-  if (selected && selectedEntry) {
+  if (showOverviewOnly) {
     embed.addFields({
-      name: `Selected: ${getRouteLabel(selected)}`,
-      value: formatRouteEntry(entries, selected, selectedEntry),
+      name: 'Log Event Groups:',
+      value: LOG_GROUPS.map(group => formatGroupSummary(entries, group)).join('\n'),
+      inline: false,
+    });
+  } else {
+    embed.addFields({
+      name: `${activeGroup.label}:`,
+      value: activeGroup.keys.map(key => formatRouteEntry(entries, key)).join('\n'),
       inline: false,
     });
   }
@@ -165,45 +164,48 @@ async function buildLogConfigView(guild, selectedKey, options = {}) {
   const groupSelectRow = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId('logconfig:category')
-      .setPlaceholder('Select an event to configure logging')
+      .setPlaceholder('Select a logging event group')
       .addOptions(LOG_GROUPS.map(group => ({
         label: group.label,
         value: group.id,
-        default: group.id === activeGroup.id,
+        default: !showOverviewOnly && group.id === activeGroup.id,
       })))
   );
 
-  const eventSelectRow = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`logconfig:event:${activeGroup.id}:0`)
-      .setPlaceholder('Select a route in this logging event')
-      .addOptions(activeGroup.keys.map(key => ({
-        label: getRouteLabel(key).slice(0, 100),
-        value: key,
-        default: key === selected,
-      })))
-      .setDisabled(!activeGroup.keys.length)
-  );
+  const components = [groupSelectRow];
 
-  const toggleButton = new ButtonBuilder()
-    .setCustomId(`logconfig:toggle:${selected ?? 'none'}`)
-    .setLabel(selected ? (selectedEntry?.enabled ? 'Disable' : 'Enable') : 'Select an event')
-    .setStyle(selectedEntry?.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
-    .setDisabled(!selected);
+  if (!showOverviewOnly) {
+    const eventSelectRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`logconfig:event:${activeGroup.id}`)
+        .setPlaceholder(`Select an event in ${activeGroup.label}`)
+        .addOptions(activeGroup.keys.map(key => ({
+          label: getLogKeyLabel(key).slice(0, 100),
+          value: key,
+          default: key === selected,
+        })))
+        .setDisabled(!activeGroup.keys.length)
+    );
 
-  const buttonRow = new ActionRowBuilder().addComponents(toggleButton);
+    const toggleButton = new ButtonBuilder()
+      .setCustomId(`logconfig:toggle:${selected ?? 'none'}`)
+      .setLabel(selected ? (selectedEntry?.enabled ? 'Disable Event' : 'Enable Event') : 'Select an event')
+      .setStyle(selectedEntry?.enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+      .setDisabled(!selected);
 
-  const channelSelect = new ChannelSelectMenuBuilder()
-    .setCustomId(`logconfig:setchannel:${selected ?? 'none'}`)
-    .setPlaceholder(selected ? `Choose channel for ${getRouteLabel(selected)}` : 'Select an event first')
-    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum)
-    .setMinValues(1)
-    .setMaxValues(1)
-    .setDisabled(!selected);
+    const buttonRow = new ActionRowBuilder().addComponents(toggleButton);
 
-  const channelRow = new ActionRowBuilder().addComponents(channelSelect);
+    const channelSelect = new ChannelSelectMenuBuilder()
+      .setCustomId(`logconfig:setchannel:${selected ?? 'none'}`)
+      .setPlaceholder(selected ? `Choose channel for ${getLogKeyLabel(selected)}` : 'Select an event first')
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum)
+      .setMinValues(1)
+      .setMaxValues(1)
+      .setDisabled(!selected);
 
-  const components = [groupSelectRow, eventSelectRow, buttonRow, channelRow];
+    const channelRow = new ActionRowBuilder().addComponents(channelSelect);
+    components.push(eventSelectRow, buttonRow, channelRow);
+  }
 
   return {
     embed,

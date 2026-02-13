@@ -6,7 +6,6 @@ const {
   ActionRowBuilder,
   UserSelectMenuBuilder,
 } = require('discord.js');
-const sacrificeConfigStore = require('../utils/sacrificeConfigStore');
 
 function buildNominationRow(channelId) {
   const menu = new UserSelectMenuBuilder()
@@ -18,7 +17,7 @@ function buildNominationRow(channelId) {
   return new ActionRowBuilder().addComponents(menu);
 }
 
-function sanitizeGifUrl(value) {
+function sanitizeMediaUrl(value) {
   if (!value) return null;
   const raw = String(value).trim();
   if (!raw) return null;
@@ -45,8 +44,26 @@ module.exports = {
     )
     .addStringOption((option) =>
       option
-        .setName('gif')
-        .setDescription('Optional GIF URL to show on sacrifice embeds')
+        .setName('embed_title')
+        .setDescription('Optional title for the initial config embed')
+        .setRequired(false)
+    )
+    .addStringOption((option) =>
+      option
+        .setName('embed_description')
+        .setDescription('Optional description for the initial config embed')
+        .setRequired(false)
+    )
+    .addStringOption((option) =>
+      option
+        .setName('embed_media')
+        .setDescription('Optional image/GIF URL for the initial config embed')
+        .setRequired(false)
+    )
+    .addStringOption((option) =>
+      option
+        .setName('footer_message')
+        .setDescription('Optional footer text for the initial config embed')
         .setRequired(false)
     ),
 
@@ -60,10 +77,14 @@ module.exports = {
     }
 
     const channel = interaction.options.getChannel('channel', true);
-    const gifRaw = interaction.options.getString('gif');
-    const gifUrl = sanitizeGifUrl(gifRaw);
-    if (gifRaw && !gifUrl) {
-      return interaction.reply({ content: 'Please provide a valid http(s) GIF URL.', ephemeral: true });
+    const titleInput = interaction.options.getString('embed_title');
+    const descriptionInput = interaction.options.getString('embed_description');
+    const mediaRaw = interaction.options.getString('embed_media');
+    const footerInput = interaction.options.getString('footer_message');
+
+    const mediaUrl = sanitizeMediaUrl(mediaRaw);
+    if (mediaRaw && !mediaUrl) {
+      return interaction.reply({ content: 'Please provide a valid http(s) media URL for `embed_media`.', ephemeral: true });
     }
 
     if (!channel?.isTextBased?.()) {
@@ -77,10 +98,11 @@ module.exports = {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle('Communal Sacrifice')
-      .setDescription('Click the selection menu and type a user to nominate for the communal sacrifice.')
+      .setTitle((titleInput || 'Communal Sacrifice').slice(0, 256))
+      .setDescription((descriptionInput || 'Click the selection menu and type a user to nominate for the communal sacrifice.').slice(0, 4096))
       .setTimestamp();
-    if (gifUrl) embed.setImage(gifUrl);
+    if (mediaUrl) embed.setImage(mediaUrl);
+    if (footerInput) embed.setFooter({ text: footerInput.slice(0, 2048) });
 
     try {
       const { applyDefaultColour } = require('../utils/guildColourStore');
@@ -92,15 +114,12 @@ module.exports = {
         embeds: [embed],
         components: [buildNominationRow(channel.id)],
       });
-      await sacrificeConfigStore.setPanelGif(interaction.guildId, channel.id, gifUrl || null);
     } catch (error) {
       return interaction.reply({ content: `Failed to send the sacrifice menu: ${error.message}`, ephemeral: true });
     }
 
     return interaction.reply({
-      content: gifUrl
-        ? `Sent sacrifice nomination menu to ${channel} with the configured GIF.`
-        : `Sent sacrifice nomination menu to ${channel}.`,
+      content: `Sent sacrifice nomination menu to ${channel}.`,
       ephemeral: true,
     });
   },

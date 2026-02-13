@@ -235,15 +235,16 @@ async function handleVoiceState(oldState, newState) {
 
 async function handleEmojiAction(action, emoji) {
   if (!emoji.guild) return;
+  const isCreate = action === 'created';
   const embed = buildLogEmbed({
-    action: `Emoji ${action === 'created' ? 'Added' : 'Removed'}`,
+    action: `Emoji ${isCreate ? 'Added' : 'Deleted'}`,
     target: `Emoji: ${emoji.name} (${emoji.id})`,
     actor: 'System',
     reason: `Animated: ${emoji.animated ? 'Yes' : 'No'}`,
-    color: action === 'created' ? 0x57f287 : 0xed4245,
+    color: isCreate ? 0x57f287 : 0xed4245,
     thumbnailTarget: emoji,
   });
-  await safeLog(emoji.guild, 'emoji', embed);
+  await safeLog(emoji.guild, isCreate ? 'emoji_sticker_add' : 'emoji_sticker_delete', embed);
 }
 
 async function handleEmojiUpdate(oldEmoji, newEmoji) {
@@ -253,27 +254,28 @@ async function handleEmojiUpdate(oldEmoji, newEmoji) {
   if (oldEmoji.animated !== newEmoji.animated) changes.push(newEmoji.animated ? 'Animated enabled' : 'Animated disabled');
   if (!changes.length) return;
   const embed = buildLogEmbed({
-    action: 'Emoji Updated',
+    action: 'Emoji Edited',
     target: `Emoji: ${newEmoji.name} (${newEmoji.id})`,
     actor: 'System',
     reason: changes.join('; '),
     color: 0xf1c40f,
     thumbnailTarget: newEmoji,
   });
-  await safeLog(newEmoji.guild, 'emoji', embed);
+  await safeLog(newEmoji.guild, 'emoji_sticker_edit', embed);
 }
 
 async function handleStickerAction(action, sticker) {
   if (!sticker.guild) return;
+  const isCreate = action === 'created';
   const embed = buildLogEmbed({
-    action: `Sticker ${action === 'created' ? 'Added' : 'Removed'}`,
+    action: `Sticker ${isCreate ? 'Added' : 'Deleted'}`,
     target: `Sticker: ${sticker.name} (${sticker.id})`,
     actor: 'System',
     reason: `Available: ${sticker.available ? 'Yes' : 'No'}`,
-    color: action === 'created' ? 0x57f287 : 0xed4245,
+    color: isCreate ? 0x57f287 : 0xed4245,
     thumbnailTarget: sticker,
   });
-  await safeLog(sticker.guild, 'emoji', embed);
+  await safeLog(sticker.guild, isCreate ? 'emoji_sticker_add' : 'emoji_sticker_delete', embed);
 }
 
 async function handleStickerUpdate(oldSticker, newSticker) {
@@ -283,14 +285,14 @@ async function handleStickerUpdate(oldSticker, newSticker) {
   if (oldSticker.description !== newSticker.description) changes.push('Description updated');
   if (!changes.length) return;
   const embed = buildLogEmbed({
-    action: 'Sticker Updated',
+    action: 'Sticker Edited',
     target: `Sticker: ${newSticker.name} (${newSticker.id})`,
     actor: 'System',
     reason: changes.join('; '),
     color: 0xf1c40f,
     thumbnailTarget: newSticker,
   });
-  await safeLog(newSticker.guild, 'emoji', embed);
+  await safeLog(newSticker.guild, 'emoji_sticker_edit', embed);
 }
 
 async function handleGuildUpdate(oldGuild, newGuild) {

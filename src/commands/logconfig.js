@@ -5,7 +5,7 @@ const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('.
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('logconfig')
-    .setDescription('Configure logging channels for message, user, invite, rupee, and antinuke events')
+    .setDescription('Configure log channels for message, user, mod action, emoji/sticker, invite, rupee, antinuke')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 

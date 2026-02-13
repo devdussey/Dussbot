@@ -212,6 +212,21 @@ const LOG_KEYS = {
     label: 'Emoji & Sticker Events',
     category: 'Emoji',
   },
+  emoji_sticker_add: {
+    label: 'Emoji/Sticker Added',
+    category: 'Emoji',
+    fallbackKey: 'emoji',
+  },
+  emoji_sticker_delete: {
+    label: 'Emoji/Sticker Deleted',
+    category: 'Emoji',
+    fallbackKey: 'emoji',
+  },
+  emoji_sticker_edit: {
+    label: 'Emoji/Sticker Edited',
+    category: 'Emoji',
+    fallbackKey: 'emoji',
+  },
   integration: {
     label: 'Integration & Webhook Events',
     category: 'Integrations',

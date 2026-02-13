@@ -18,7 +18,6 @@ const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const vanityRoleCommand = require('../commands/vanityrole');
 const roleCleanCommand = require('../commands/roleclean');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
-const sacrificeConfigStore = require('../utils/sacrificeConfigStore');
 const { isOwner } = require('../utils/ownerIds');
 
 const MAX_ERROR_STACK = 3500;
@@ -822,10 +821,6 @@ module.exports = {
                     )
                     .setThumbnail(targetMember.displayAvatarURL({ extension: 'png', size: 256 }))
                     .setTimestamp();
-                const panelGif = sacrificeConfigStore.getPanelGif(interaction.guildId, channel.id);
-                if (panelGif) {
-                    embed.setImage(panelGif);
-                }
 
                 try {
                     const { applyDefaultColour } = require('../utils/guildColourStore');
