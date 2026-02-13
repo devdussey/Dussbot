@@ -126,11 +126,8 @@ function buildSacrificeNominationRow(channelId) {
 const COMMAND_CATEGORY_MAP = {
     // Logging
     dmdiag: 'logging',
-    invitelogconfig: 'logging',
     logconfig: 'logging',
     logtree: 'logging',
-    memberlogconfig: 'logging',
-    messagelogconfig: 'logging',
 
     // Moderation
     automodconfig: 'moderation',
@@ -232,12 +229,9 @@ const ADMIN_COMMANDS = new Set([
   'fetchmessage',
   'giverupee',
   'horseracestandings',
-  'invitelogconfig',
   'isolate',
   'logconfig',
   'logtree',
-  'memberlogconfig',
-  'messagelogconfig',
   'massblessing',
   'purge',
   'reactionrole',
@@ -430,8 +424,8 @@ module.exports = {
             }
             if (typeof interaction.customId === 'string' && interaction.customId === 'logconfig:category') {
                 if (!interaction.inGuild()) return;
-                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-                    try { await interaction.reply({ content: 'Manage Server permission is required to configure logs.', ephemeral: true }); } catch (_) {}
+                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+                    try { await interaction.reply({ content: 'Administrator permission is required to configure logs.', ephemeral: true }); } catch (_) {}
                     return;
                 }
                 try {
@@ -445,8 +439,8 @@ module.exports = {
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('logconfig:event:')) {
                 if (!interaction.inGuild()) return;
-                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-                    try { await interaction.reply({ content: 'Manage Server permission is required to configure logs.', ephemeral: true }); } catch (_) {}
+                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+                    try { await interaction.reply({ content: 'Administrator permission is required to configure logs.', ephemeral: true }); } catch (_) {}
                     return;
                 }
                 try {
@@ -750,8 +744,8 @@ module.exports = {
         if (interaction.isChannelSelectMenu()) {
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('logconfig:setchannel:')) {
                 if (!interaction.inGuild()) return;
-                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-                    try { await interaction.reply({ content: 'Manage Server permission is required to configure logs.', ephemeral: true }); } catch (_) {}
+                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+                    try { await interaction.reply({ content: 'Administrator permission is required to configure logs.', ephemeral: true }); } catch (_) {}
                     return;
                 }
                 const logEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'logging', true);
@@ -924,8 +918,8 @@ module.exports = {
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('logconfig:')) {
                 if (!interaction.inGuild()) return;
-                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-                    try { await interaction.reply({ content: 'Manage Server permission is required to configure logs.', ephemeral: true }); } catch (_) {}
+                if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+                    try { await interaction.reply({ content: 'Administrator permission is required to configure logs.', ephemeral: true }); } catch (_) {}
                     return;
                 }
                 const logEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'logging', true);

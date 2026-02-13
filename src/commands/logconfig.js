@@ -5,7 +5,9 @@ const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('.
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('logconfig')
-    .setDescription('Configure where each log event is sent'),
+    .setDescription('Configure logging channels for message, user, invite, rupee, and antinuke events')
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -13,8 +15,8 @@ module.exports = {
     }
 
     const member = interaction.member;
-    if (!member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-      return interaction.reply({ content: 'Manage Server permission is required to configure logging.', ephemeral: true });
+    if (!member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: 'Administrator permission is required to configure logging.', ephemeral: true });
     }
 
     if (!isCategoryEnabled(interaction.guildId, 'logging', true)) {
@@ -33,10 +35,7 @@ module.exports = {
     }
 
     try {
-      const view = await buildLogConfigView(guild, null, {
-        category: 'Message',
-        note: 'Tip: set broad “All … Events” routes first, then override specific events.',
-      });
+      const view = await buildLogConfigView(guild, null);
       await interaction.editReply({ embeds: [view.embed], components: view.components });
     } catch (err) {
       console.error('Failed to build logging configuration view:', err);

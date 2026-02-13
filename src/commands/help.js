@@ -65,9 +65,7 @@ const categories = {
 
     { cmd: '/logmessageset & /logmessagemode (plus category variants)', desc: 'Ensure the tracked events are routed through dedicated channels', perm: 'Manage Server' },
 
-    { cmd: '/logconfig', desc: 'Assign existing channels for every tracked log event', perm: 'Manage Server' },
-
-    { cmd: '/memberlogconfig', desc: 'Configure member join/leave/boost logs and send test embeds', perm: 'Manage Server' },
+    { cmd: '/logconfig', desc: 'Configure Message, User, Invite, Rupee, and Antinuke log routes in one panel', perm: 'Administrator' },
 
     { cmd: '/tamperproof add/remove/list', desc: 'Watch channels for admin deletions and DM bot owners', perm: 'Manage Channels · Premium' },
 
