@@ -20,6 +20,19 @@ function parseColor(input) {
   return Math.max(0, Math.min(0xFFFFFF, num));
 }
 
+function parseImageUrl(input) {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return undefined;
+    return parsed.toString();
+  } catch (_) {
+    return undefined;
+  }
+}
+
 function formatHours(ms) {
   const hrs = ms / 3_600_000;
   return `${Number.isInteger(hrs) ? hrs : hrs.toFixed(1)}h`;
@@ -71,6 +84,10 @@ module.exports = {
           opt.setName('embed_color')
             .setDescription('Hex colour for the embed (e.g. #5865F2)')
         )
+        .addStringOption(opt =>
+          opt.setName('embed_image')
+            .setDescription('Image or GIF URL for the embed')
+        )
     )
     .addSubcommand(sub =>
       sub
@@ -108,10 +125,15 @@ module.exports = {
       const embedDescription = interaction.options.getString('embed_description')?.trim();
       const embedFooter = interaction.options.getString('embed_footer')?.trim();
       const colorInput = interaction.options.getString('embed_color');
+      const imageInput = interaction.options.getString('embed_image');
       const color = parseColor(colorInput);
+      const imageUrl = parseImageUrl(imageInput);
 
       if (colorInput && color === undefined) {
         return interaction.editReply({ content: 'Embed color must be a valid hex value like `#5865F2`.' });
+      }
+      if (imageInput && imageUrl === undefined) {
+        return interaction.editReply({ content: 'Embed image must be a valid http(s) URL.' });
       }
 
       const embed = {};
@@ -119,6 +141,7 @@ module.exports = {
       if (embedDescription) embed.description = embedDescription;
       if (embedFooter) embed.footer = { text: embedFooter };
       if (color !== null && color !== undefined) embed.color = color;
+      if (imageUrl) embed.image = { url: imageUrl };
       const hasEmbed = Object.keys(embed).length > 0;
 
       if (!message && !hasEmbed) {

@@ -67,6 +67,15 @@ function sanitizeEmbed(embed) {
   if (embed.title) clean.title = String(embed.title).slice(0, 256);
   if (embed.description) clean.description = String(embed.description).slice(0, 4000);
   if (embed.footer) clean.footer = { text: String(embed.footer.text || embed.footer).slice(0, 2048) };
+  if (embed.image?.url || embed.image) {
+    const rawUrl = String(embed.image?.url || embed.image).trim();
+    try {
+      const parsed = new URL(rawUrl);
+      if (['http:', 'https:'].includes(parsed.protocol)) {
+        clean.image = { url: parsed.toString() };
+      }
+    } catch (_) {}
+  }
   if (typeof embed.color === 'number' && Number.isFinite(embed.color)) {
     const clamped = Math.max(0, Math.min(0xFFFFFF, embed.color));
     clean.color = clamped;
