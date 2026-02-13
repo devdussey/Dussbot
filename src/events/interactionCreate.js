@@ -17,6 +17,7 @@ const boosterStore = require('../utils/boosterRoleStore');
 const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const vanityRoleCommand = require('../commands/vanityrole');
 const roleCleanCommand = require('../commands/roleclean');
+const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
 const { isOwner } = require('../utils/ownerIds');
 
 const MAX_ERROR_STACK = 3500;
@@ -798,6 +799,20 @@ module.exports = {
                     return;
                 }
 
+                let usage = null;
+                try {
+                    usage = await sacrificeNominationStore.consumeNomination(interaction.guildId, interaction.user.id);
+                } catch (err) {
+                    console.error('Failed to check sacrifice nomination usage:', err);
+                    try { await interaction.reply({ content: 'Could not process your nomination right now. Please try again.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
+                if (!usage?.allowed) {
+                    try { await interaction.reply({ content: 'You have used both nominations. They will regenerate in 24 hours.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+
                 let acknowledged = false;
                 try {
                     await interaction.deferUpdate();
@@ -822,6 +837,7 @@ module.exports = {
                         allowedMentions: { parse: [] },
                     });
                 } catch (_) {
+                    try { await sacrificeNominationStore.rollbackLastNomination(interaction.guildId, interaction.user.id); } catch (_) {}
                     const failPayload = { content: 'Failed to post the sacrifice nomination. Please try again.', ephemeral: true };
                     try {
                         if (acknowledged) await interaction.followUp(failPayload);
@@ -830,7 +846,10 @@ module.exports = {
                     return;
                 }
 
-                const successPayload = { content: 'Nomination submitted anonymously.', ephemeral: true };
+                const successText = usage.remaining === 1
+                    ? 'You have 1 more nomination today.'
+                    : 'You have used your last nomination. They will regenerate in 24 hours.';
+                const successPayload = { content: successText, ephemeral: true };
                 try {
                     if (acknowledged) await interaction.followUp(successPayload);
                     else await interaction.reply(successPayload);
