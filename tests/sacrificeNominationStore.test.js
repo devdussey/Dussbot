@@ -60,6 +60,23 @@ test('same user can nominate again after 24 hours', async () => {
   });
 });
 
+test('cooldown can be bypassed for unlimited owner nominations', async () => {
+  await withTempStore(async (store) => {
+    const guildId = 'guild-owner';
+    const userId = 'owner-user';
+    const targetId = 'target-owner';
+    const start = Date.now();
+
+    const first = await store.consumeNomination(guildId, userId, targetId, start, { bypassCooldown: true });
+    assert.equal(first.allowed, true);
+    assert.equal(first.targetNominationCount, 1);
+
+    const second = await store.consumeNomination(guildId, userId, targetId, start + 1000, { bypassCooldown: true });
+    assert.equal(second.allowed, true);
+    assert.equal(second.targetNominationCount, 2);
+  });
+});
+
 test('target nomination counts increase across different nominators', async () => {
   await withTempStore(async (store) => {
     const guildId = 'guild-3';

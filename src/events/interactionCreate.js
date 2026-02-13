@@ -19,6 +19,7 @@ const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const vanityRoleCommand = require('../commands/vanityrole');
 const roleCleanCommand = require('../commands/roleclean');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
+const rupeeStore = require('../utils/rupeeStore');
 const { isOwner } = require('../utils/ownerIds');
 
 const MAX_ERROR_STACK = 3500;
@@ -206,6 +207,20 @@ function buildSacrificeNominationRow(channelId) {
         .setMinValues(1)
         .setMaxValues(1);
     return new ActionRowBuilder().addComponents(menu);
+}
+
+function formatSacrificeCooldown(ms) {
+    const safeMs = Math.max(0, Number(ms) || 0);
+    const totalSeconds = Math.max(1, Math.ceil(safeMs / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const parts = [];
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0) parts.push(`${seconds}s`);
+    return parts.length ? parts.join(' ') : '0s';
 }
 
 const COMMAND_CATEGORY_MAP = {
@@ -902,8 +917,15 @@ module.exports = {
                 }
 
                 let usage = null;
+                const isBotOwner = isOwner(interaction.user.id);
                 try {
-                    usage = await sacrificeNominationStore.consumeNomination(interaction.guildId, interaction.user.id, targetMember.id);
+                    usage = await sacrificeNominationStore.consumeNomination(
+                        interaction.guildId,
+                        interaction.user.id,
+                        targetMember.id,
+                        Date.now(),
+                        { bypassCooldown: isBotOwner },
+                    );
                 } catch (err) {
                     console.error('Failed to check sacrifice nomination usage:', err);
                     try { await interaction.reply({ content: 'Could not process your nomination right now. Please try again.', ephemeral: true }); } catch (_) {}
@@ -911,7 +933,8 @@ module.exports = {
                 }
 
                 if (!usage?.allowed) {
-                    try { await interaction.reply({ content: 'You can only nominate once every 24 hours.', ephemeral: true }); } catch (_) {}
+                    const retryAfter = formatSacrificeCooldown(usage?.retryAfterMs);
+                    try { await interaction.reply({ content: `You have no nominations left right now. You can vote again in ${retryAfter}.`, ephemeral: true }); } catch (_) {}
                     return;
                 }
 
@@ -951,7 +974,18 @@ module.exports = {
                     return;
                 }
 
-                const successPayload = { content: 'Nomination submitted anonymously. You can nominate again in 24 hours.', ephemeral: true };
+                try {
+                    await rupeeStore.addTokens(interaction.guildId, interaction.user.id, 1);
+                } catch (err) {
+                    console.error('Failed to grant sacrifice vote rupee:', err);
+                }
+
+                const successPayload = {
+                    content: isBotOwner
+                        ? 'Thank you for your vote. You have been given 1 Rupee. Bot owner votes are unlimited.'
+                        : 'Thank you for your vote. You have been given 1 Rupee. Come back in 24 hours to vote again.',
+                    ephemeral: true,
+                };
                 try {
                     if (acknowledged) await interaction.followUp(successPayload);
                     else await interaction.reply(successPayload);

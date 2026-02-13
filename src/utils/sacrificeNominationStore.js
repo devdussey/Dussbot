@@ -79,20 +79,23 @@ function normalizeTargetCount(value) {
   return Math.max(0, Math.floor(value));
 }
 
-async function consumeNomination(guildId, userId, targetId, now = Date.now()) {
+async function consumeNomination(guildId, userId, targetId, now = Date.now(), options = {}) {
   if (!guildId || !userId || !targetId) {
     return { allowed: false, retryAfterMs: REGEN_MS };
   }
+
+  const nowMs = Number.isFinite(now) ? now : Date.now();
+  const bypassCooldown = Boolean(options && options.bypassCooldown);
 
   const guild = ensureGuild(guildId);
 
   const userRec = normalizeUserRecord(guild.users[userId]);
   const lastNominationAtMs = parseIsoMs(userRec.lastNominationAt);
   const nextAvailableAtMs = Number.isFinite(lastNominationAtMs) ? lastNominationAtMs + REGEN_MS : 0;
-  if (Number.isFinite(nextAvailableAtMs) && nextAvailableAtMs > now) {
+  if (!bypassCooldown && Number.isFinite(nextAvailableAtMs) && nextAvailableAtMs > nowMs) {
     return {
       allowed: false,
-      retryAfterMs: nextAvailableAtMs - now,
+      retryAfterMs: nextAvailableAtMs - nowMs,
       nextAvailableAt: new Date(nextAvailableAtMs).toISOString(),
     };
   }
@@ -100,16 +103,16 @@ async function consumeNomination(guildId, userId, targetId, now = Date.now()) {
   const previousLastNominationAt = userRec.lastNominationAt;
   const previousTargetCount = normalizeTargetCount(guild.targets[targetId]);
 
-  const nextLastNominationAt = new Date(now).toISOString();
+  const nextLastNominationAt = bypassCooldown ? previousLastNominationAt : new Date(nowMs).toISOString();
   const nextTargetCount = previousTargetCount + 1;
-  guild.users[userId] = { lastNominationAt: nextLastNominationAt };
+  guild.users[userId] = { lastNominationAt: nextLastNominationAt || null };
   guild.targets[targetId] = nextTargetCount;
   await saveStore();
 
   return {
     allowed: true,
-    nextAvailableAt: new Date(now + REGEN_MS).toISOString(),
-    retryAfterMs: REGEN_MS,
+    nextAvailableAt: bypassCooldown ? new Date(nowMs).toISOString() : new Date(nowMs + REGEN_MS).toISOString(),
+    retryAfterMs: bypassCooldown ? 0 : REGEN_MS,
     targetNominationCount: nextTargetCount,
     rollbackToken: {
       userId,
