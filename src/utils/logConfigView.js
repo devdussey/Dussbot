@@ -190,14 +190,24 @@ async function buildLogConfigView(guild, selectedKey, options = {}) {
         .setDisabled(!activeGroup.keys.length)
     );
 
+    const selectedResolved = selected ? resolveRouteChannel(entries, selected, selectedEntry) : { channelId: null };
     const selectedRouteOn = selected ? isRouteOn(entries, selected, selectedEntry) : false;
+    const canToggleSelected = Boolean(selected && selectedResolved.channelId);
     const nextEnabled = selectedRouteOn ? '0' : '1';
 
     const toggleButton = new ButtonBuilder()
       .setCustomId(`logconfig:setenabled:${selected ?? 'none'}:${nextEnabled}`)
-      .setLabel(selected ? (selectedRouteOn ? 'Disable Event' : 'Enable Event') : 'Select an event')
-      .setStyle(selectedRouteOn ? ButtonStyle.Danger : ButtonStyle.Success)
-      .setDisabled(!selected);
+      .setLabel(
+        selected
+          ? (canToggleSelected ? (selectedRouteOn ? 'Disable Event' : 'Enable Event') : 'Set channel first')
+          : 'Select an event'
+      )
+      .setStyle(
+        !canToggleSelected
+          ? ButtonStyle.Secondary
+          : (selectedRouteOn ? ButtonStyle.Danger : ButtonStyle.Success)
+      )
+      .setDisabled(!canToggleSelected);
 
     const buttonRow = new ActionRowBuilder().addComponents(toggleButton);
 
