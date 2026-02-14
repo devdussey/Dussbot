@@ -1,7 +1,8 @@
 const fs = require('fs');
 const { ensureFileSync, resolveDataPath, writeJson } = require('./dataDir');
 
-const STORE_FILE_NAME = 'user_messages.json';
+// Intentionally versioned to start a fresh message corpus for new word stats/backfill flows.
+const STORE_FILE_NAME = 'user_messages_v2.json';
 const MAX_PER_USER = 1000;
 
 let cache = null;

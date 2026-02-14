@@ -9,7 +9,7 @@ module.exports = {
     console.log(`${client.user.tag} is online and ready!`);
     console.log(`Serving ${client.guilds.cache.size} guilds`);
 
-    const presenceName = "/help for easy start";
+    const presenceName = "/rupeestore";
     const status = "online";
 
     try {
