@@ -336,7 +336,7 @@ async function buildLogConfigView(guild, selectedKey, options = {}) {
     const buttonRow = new ActionRowBuilder().addComponents(toggleButton);
 
     const eventChannelSelect = new ChannelSelectMenuBuilder()
-      .setCustomId(`logconfig:setchannel:${selected ?? 'none'}`)
+      .setCustomId(`logconfig:setchannel:${activeGroup.id}:${selected ?? 'none'}`)
       .setPlaceholder(selected ? `Choose channel for ${getLogKeyLabel(selected)}` : 'Select an event first')
       .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum)
       .setMinValues(1)

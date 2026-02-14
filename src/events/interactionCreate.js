@@ -629,7 +629,12 @@ module.exports = {
                 }
                 try {
                     const selectedKey = interaction.values?.[0];
-                    const view = await logConfigView.buildLogConfigView(interaction.guild, selectedKey);
+                    const category = interaction.customId.slice('logconfig:event:'.length) || null;
+                    const view = await logConfigView.buildLogConfigView(
+                        interaction.guild,
+                        selectedKey,
+                        category ? { category } : {},
+                    );
                     await interaction.update({ embeds: [view.embed], components: view.components });
                 } catch (err) {
                     console.error('Failed to update log configuration view:', err);
@@ -958,13 +963,22 @@ module.exports = {
                     return;
                 }
                 const logEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, 'logging', true);
-                const [, , logType] = interaction.customId.split(':');
-                if (!logType) return;
+                const payload = interaction.customId.slice('logconfig:setchannel:'.length);
+                if (!payload) return;
+                const payloadParts = payload.split(':');
+                const hasCategory = payloadParts.length >= 2;
+                const category = hasCategory ? payloadParts[0] : null;
+                const logType = hasCategory ? payloadParts.slice(1).join(':') : payloadParts[0];
+                if (!logType || logType === 'none') return;
                 const channelId = interaction.values?.[0];
                 if (!channelId) return;
                 try {
                     await logChannelTypeStore.setChannel(interaction.guildId, logType, channelId);
-                    const view = await logConfigView.buildLogConfigView(interaction.guild, logType);
+                    const view = await logConfigView.buildLogConfigView(
+                        interaction.guild,
+                        logType,
+                        category ? { category } : {},
+                    );
                     await interaction.update({ embeds: [view.embed], components: view.components });
                     const friendly = logConfigManager.getFriendlyName(logType);
                     try { await interaction.followUp({ content: `Set ${friendly} logs to <#${channelId}>.`, ephemeral: logEphemeral }); } catch (_) {}
