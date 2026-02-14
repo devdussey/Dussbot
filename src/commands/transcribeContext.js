@@ -1,13 +1,13 @@
 const {
   ApplicationCommandType,
+  ApplicationIntegrationType,
   ContextMenuCommandBuilder,
+  InteractionContextType,
 } = require('discord.js');
 const { transcribeAttachment, MAX_BYTES } = require('../utils/whisper');
 const { createFieldEmbeds } = require('../utils/embedFields');
 const {
   isCategoryEnabled,
-  shouldReplyEphemeral,
-  areRepliesPublic,
 } = require('../utils/botConfigStore');
 
 const AUDIO_EXT_RE = /\.(mp3|wav|ogg|webm|m4a|mp4|aac|flac)(\?|$)/i;
@@ -32,18 +32,25 @@ function resolveAudioAttachment(message) {
 module.exports = {
   data: new ContextMenuCommandBuilder()
     .setName('Transcribe')
-    .setType(ApplicationCommandType.Message),
+    .setType(ApplicationCommandType.Message)
+    .setDMPermission(true)
+    .setIntegrationTypes(
+      ApplicationIntegrationType.GuildInstall,
+      ApplicationIntegrationType.UserInstall,
+    )
+    .setContexts(
+      InteractionContextType.Guild,
+      InteractionContextType.BotDM,
+      InteractionContextType.PrivateChannel,
+    ),
 
   async execute(interaction) {
     if (!isCategoryEnabled(interaction.guildId, 'ai', true)) {
-      const ephemeral = shouldReplyEphemeral(interaction.guildId, 'ai', true);
-      await interaction.reply({ content: 'AI commands are disabled by a server admin.', ephemeral });
+      await interaction.reply({ content: 'AI commands are disabled by a server admin.', ephemeral: true });
       return;
     }
 
-    const preferPublic = areRepliesPublic(interaction.guildId, 'ai', false);
-    const ephemeral = !preferPublic;
-    await interaction.deferReply({ ephemeral });
+    await interaction.deferReply();
 
     const attachment = resolveAudioAttachment(interaction.targetMessage);
     if (!attachment) {
@@ -75,7 +82,7 @@ module.exports = {
       const [first, ...rest] = embeds;
       await interaction.editReply({ embeds: [first] });
       for (const embed of rest) {
-        try { await interaction.followUp({ embeds: [embed], ephemeral }); } catch (_) {}
+        try { await interaction.followUp({ embeds: [embed] }); } catch (_) {}
       }
     } catch (err) {
       const msg = err?.message || String(err);

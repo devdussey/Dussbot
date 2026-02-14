@@ -1,7 +1,9 @@
 const {
   ApplicationCommandType,
+  ApplicationIntegrationType,
   ContextMenuCommandBuilder,
   EmbedBuilder,
+  InteractionContextType,
 } = require('discord.js');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
@@ -19,8 +21,18 @@ function buildAvatarLinks(user) {
 
 module.exports = {
   data: new ContextMenuCommandBuilder()
-    .setName('View Avatar')
-    .setType(ApplicationCommandType.User),
+    .setName('Avatar')
+    .setType(ApplicationCommandType.User)
+    .setDMPermission(true)
+    .setIntegrationTypes(
+      ApplicationIntegrationType.GuildInstall,
+      ApplicationIntegrationType.UserInstall,
+    )
+    .setContexts(
+      InteractionContextType.Guild,
+      InteractionContextType.BotDM,
+      InteractionContextType.PrivateChannel,
+    ),
 
   async execute(interaction) {
     const target = interaction.targetUser || interaction.user;
