@@ -52,7 +52,7 @@ const categories = {
     { cmd: '/enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
     { cmd: '/clone emoji/sticker', desc: 'Clone an emoji or sticker.', perm: 'Manage Emojis and Stickers' },
   ],
-  'Rupee System': [
+  'Rupee System and Games': [
     { cmd: '/inventory', desc: 'View your coins and rupees.', perm: null },
     { cmd: '/rupeeboard', desc: 'View the server rupee leaderboard.', perm: null },
     { cmd: '/rupeestore', desc: 'Spend rupees on store items and actions.', perm: null },
@@ -62,7 +62,7 @@ const categories = {
     { cmd: '/horseracestandings', desc: 'View race podium history and stats.', perm: null },
     { cmd: '/wordrush start', desc: 'Start a WordRush lobby.', perm: null },
   ],
-  'Utilities & Insights': [
+  'Utilities and Bot Info': [
     { cmd: '/avatar', desc: 'Display user avatar and download links.', perm: null },
     { cmd: '/serverbanner', desc: 'Display and download server banner.', perm: null },
     { cmd: '/serverlogo', desc: 'Display and download server icon.', perm: null },
@@ -72,11 +72,11 @@ const categories = {
 };
 
 const categoryMeta = {
-  'Moderation & Enforcement': { blurb: 'Moderation actions and enforcement controls.' },
+  'Moderation': { blurb: 'Basic Moderation Commands and Clear Logging' },
   Administration: { blurb: 'Commands to make administration tasks simple and easy. Also includes bot feature configurations.' },
-  'Media & Personalisation': { blurb: 'AI and media transformation tools.' },
-  'Rupee System': { blurb: 'Rupee systems and game commands.' },
-  'Utilities & Insights': { blurb: 'Everyday utility commands and diagnostics.' },
+  'AI': { blurb: 'Components of the bot that require AI such as transcription.' },
+  'Rupee System and Games': { blurb: 'Bot Currency that is earned from user activity to buy items such as muting other non staff.' },
+  'Utilities and Bot Info': { blurb: 'Quick Commands for bot information and utilities.' },
 };
 
 function buildEmbed(categoryName, guildId, botUser) {
