@@ -110,7 +110,7 @@ module.exports = {
       if (!entries.length) {
         return interaction.reply({
           content:
-            'Backfill file was valid JSON, but no usable counts were found. Supported layouts include `{ "users": { "userId": { "count": 12 }}}`, arrays of users, or `{ "guilds": { "<guildId>": { "users": ... }}}`.',
+            'Backfill file was valid JSON, but no usable counts were found. Supported layouts include `{ "users": { "userId": { "count": 12 }}}`, arrays of user objects, `{ "guilds": { "<guildId>": { "users": ... }}}`, and user maps where each value is a message array.',
         });
       }
       importSummary = await importBackfill(interaction.guildId, entries);
