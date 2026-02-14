@@ -3,11 +3,11 @@ const {
   EmbedBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  ComponentType,
 } = require('discord.js');
 const { getSupportServerUrl } = require('../utils/supportServer');
 
 const SUPPORT_SERVER_LINE = `For more detailed help and updates, join the support server ${getSupportServerUrl()}`;
+const HELP_CATEGORY_ID_PREFIX = 'help-category';
 
 const categories = {
   'Moderation & Enforcement': [
@@ -164,49 +164,36 @@ function buildEmbed(categoryName, guildId, botUser) {
   return embed;
 }
 
+function buildHelpComponents(selectedCategory, ownerUserId) {
+  const options = Object.keys(categories).map((name) => {
+    const meta = categoryMeta[name] || {};
+    const option = { label: name, value: name, default: name === selectedCategory };
+    if (meta.blurb) option.description = meta.blurb.slice(0, 100);
+    return option;
+  });
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(`${HELP_CATEGORY_ID_PREFIX}:${ownerUserId}`)
+    .setPlaceholder('Browse a command category')
+    .addOptions(options);
+  const row = new ActionRowBuilder().addComponents(menu);
+  return [row];
+}
+
 module.exports = {
+  HELP_CATEGORY_ID_PREFIX,
+  buildHelpEmbed: buildEmbed,
+  buildHelpComponents,
   data: new SlashCommandBuilder()
     .setName('help')
     .setDescription('Get help with the bot'),
 
   async execute(interaction) {
     const embed = buildEmbed(null, interaction.guildId, interaction.client.user);
-    const options = Object.keys(categories).map((name) => {
-      const meta = categoryMeta[name] || {};
-      const option = { label: name, value: name };
-      if (meta.blurb) option.description = meta.blurb.slice(0, 100);
-      return option;
-    });
-
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId('help-category')
-      .setPlaceholder('Browse a command category')
-      .addOptions(options);
-    const row = new ActionRowBuilder().addComponents(menu);
-
-    const message = await interaction.reply({
+    const components = buildHelpComponents(null, interaction.user.id);
+    await interaction.reply({
       embeds: [embed],
-      components: [row],
-      fetchReply: true,
-    });
-
-    const collector = message.createMessageComponentCollector({
-      componentType: ComponentType.StringSelect,
-      time: 60_000,
-    });
-
-    collector.on('collect', async (i) => {
-      if (i.user.id !== interaction.user.id) {
-        return i.reply({ content: 'This menu is not for you.', ephemeral: true });
-      }
-      const selected = i.values[0];
-      const catEmbed = buildEmbed(selected, interaction.guildId, interaction.client.user);
-      await i.update({ embeds: [catEmbed], components: [row] });
-    });
-
-    collector.on('end', () => {
-      row.components[0].setDisabled(true);
-      message.edit({ components: [row] }).catch(() => {});
+      components,
     });
   },
 };

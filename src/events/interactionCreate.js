@@ -17,6 +17,7 @@ const boosterStore = require('../utils/boosterRoleStore');
 const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const { setDefaultColour, toHex6 } = require('../utils/guildColourStore');
 const vanityRoleCommand = require('../commands/vanityrole');
+const helpCommand = require('../commands/help');
 const roleCleanManager = require('../utils/roleCleanManager');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
 const rupeeStore = require('../utils/rupeeStore');
@@ -498,6 +499,23 @@ module.exports = {
 
         // Handle select menus
         if (interaction.isStringSelectMenu()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith(`${helpCommand.HELP_CATEGORY_ID_PREFIX}:`)) {
+                const ownerId = interaction.customId.slice(`${helpCommand.HELP_CATEGORY_ID_PREFIX}:`.length).trim();
+                if (ownerId && interaction.user.id !== ownerId) {
+                    try { await interaction.reply({ content: 'This menu is not for you.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                try {
+                    const selectedCategory = interaction.values?.[0] || null;
+                    const embed = helpCommand.buildHelpEmbed(selectedCategory, interaction.guildId, interaction.client.user);
+                    const components = helpCommand.buildHelpComponents(selectedCategory, ownerId || interaction.user.id);
+                    await interaction.update({ embeds: [embed], components });
+                } catch (err) {
+                    console.error('Failed to update help view via select menu:', err);
+                    try { await interaction.reply({ content: 'Failed to update help. Please try again.', ephemeral: true }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId === botSettingsView.BOTSETTINGS_ACTION_SELECT_ID) {
                 if (!interaction.inGuild()) return;
                 if (!canManageBotSettings(interaction)) {
