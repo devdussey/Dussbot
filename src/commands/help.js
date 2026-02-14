@@ -10,7 +10,7 @@ const SUPPORT_SERVER_LINE = `For more detailed help and updates, join the suppor
 const HELP_CATEGORY_ID_PREFIX = 'help-category';
 
 const categories = {
-  'Moderation & Enforcement': [
+  'Moderation': [
     { cmd: '/banlist', desc: 'List current bans in the server.', perm: 'Ban Members' },
     { cmd: '/mute', desc: 'Timeout a member for a set duration (reason required).', perm: 'Moderate Members' },
     { cmd: '/kick', desc: 'Remove a member from the server (reason required).', perm: 'Kick Members' },
@@ -43,7 +43,7 @@ const categories = {
     { cmd: '/rupeeconfig', desc: 'Configure Rupee rewards, store prices, immunity role, and rupee channels.', perm: 'Manage Server' },
     { cmd: '/debug', desc: 'Run admin diagnostics for command and client health.', perm: 'Administrator' },
   ],
-  'Media & Personalisation': [
+  'AI': [
     { cmd: '/chat', desc: 'Chat with the AI assistant.', perm: null },
     { cmd: '/analysis', desc: 'Spend a Rupee to analyze your recent messages.', perm: null },
     { cmd: '/summarize', desc: 'Summarize recent channel discussion.', perm: null },
@@ -78,41 +78,6 @@ const categoryMeta = {
   'Rupee System': { blurb: 'Rupee systems and game commands.' },
   'Utilities & Insights': { blurb: 'Everyday utility commands and diagnostics.' },
 };
-
-const PERMISSION_KEYWORDS = [
-  'Administrator',
-  'Manage Server',
-  'Manage Channels',
-  'Manage Roles',
-  'Manage Messages',
-  'Manage Emojis and Stickers',
-  'Manage Webhooks',
-  'Moderate Members',
-  'Kick Members',
-  'Ban Members',
-];
-
-function extractPermissionTokens(rawPerm) {
-  if (!rawPerm) return [];
-  const lower = rawPerm.toLowerCase();
-  const hits = PERMISSION_KEYWORDS.filter(label => lower.includes(label.toLowerCase()));
-  if (hits.length) return hits;
-  return String(rawPerm)
-    .replace(/premium/gi, '')
-    .split(/[,/]|·|\+|&/g)
-    .map(token => token.trim())
-    .filter(Boolean);
-}
-
-function formatCategoryPermissions(categoryName) {
-  const commands = categories[categoryName] || [];
-  const unique = new Set();
-  for (const { perm } of commands) {
-    for (const token of extractPermissionTokens(perm)) unique.add(token);
-  }
-  if (!unique.size) return 'None (mostly public commands)';
-  return [...unique].join(' · ');
-}
 
 function buildEmbed(categoryName, guildId, botUser) {
   const embed = new EmbedBuilder()
@@ -151,12 +116,9 @@ function buildEmbed(categoryName, guildId, botUser) {
   embed.setDescription('Pick a category to view commands, expected usage, and permission requirements.');
   const overviewFields = Object.keys(categories).map((name) => {
     const meta = categoryMeta[name] || {};
-    const lines = [];
-    if (meta.blurb) lines.push(`_${meta.blurb}_`);
-    lines.push(`> Requires: ${formatCategoryPermissions(name)}`);
     return {
       name,
-      value: lines.join('\n'),
+      value: meta.blurb ? `_${meta.blurb}_` : '\u200b',
       inline: true,
     };
   });
