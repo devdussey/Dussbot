@@ -326,6 +326,7 @@ const COMMAND_CATEGORY_MAP = {
 
     // Images
     enlarge: 'images',
+    imagefilter: 'images',
     removebg: 'images',
     resize: 'images',
 

@@ -8,3 +8,4 @@ data/
 .npmrc
 .env
 .npmrc
+tests/

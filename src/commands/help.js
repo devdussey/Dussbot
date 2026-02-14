@@ -53,6 +53,7 @@ const categories = {
     { cmd: '/removebg image/gif', desc: 'Remove image background (non-premium servers: 1 use/day).', perm: 'Premium server for unlimited' },
     { cmd: '/enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
     { cmd: '/resize', desc: 'Resize an image by percentage or fixed pixel presets.', perm: null },
+    { cmd: '/imagefilter', desc: 'Apply a GIF filter edit (currently: Load) to an uploaded image or URL.', perm: null },
   ],
   'Rupee System and Games': [
     { cmd: '/inventory', desc: 'View your coins and rupees.', perm: null },
