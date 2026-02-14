@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { getSupportServerUrl } = require('../utils/supportServer');
+const { getLegalLinks } = require('../utils/legalLinks');
 
 function formatUptime(ms) {
   const sec = Math.floor(ms / 1000) % 60;
@@ -26,6 +27,7 @@ module.exports = {
     const mode = process.env.NODE_ENV || 'production';
     const appId = process.env.CLIENT_ID || 'unknown';
     const supportServerUrl = getSupportServerUrl();
+    const { termsOfServiceUrl, privacyPolicyUrl } = getLegalLinks();
     const guildDeploy = mode === 'development' && process.env.GUILD_ID ? `Guild-scoped to ${process.env.GUILD_ID}` : 'Global commands';
     const uptime = formatUptime(process.uptime() * 1000);
 
@@ -40,6 +42,8 @@ module.exports = {
         { name: 'Commands Loaded', value: String(client.commands?.size ?? 0), inline: true },
         { name: 'Uptime', value: uptime, inline: true },
         { name: 'Support Server', value: supportServerUrl, inline: false },
+        { name: 'Terms of Service', value: termsOfServiceUrl || 'Not configured (set TERMS_OF_SERVICE_URL)', inline: false },
+        { name: 'Privacy Policy', value: privacyPolicyUrl || 'Not configured (set PRIVACY_POLICY_URL)', inline: false },
       )
       .setThumbnail(user.displayAvatarURL());
 
