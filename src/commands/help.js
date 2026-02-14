@@ -52,6 +52,7 @@ const categories = {
     { cmd: '/transcribe', desc: 'Transcribe an attached audio file.', perm: null },
     { cmd: '/removebg image/gif', desc: 'Remove image background (non-premium servers: 1 use/day).', perm: 'Premium server for unlimited' },
     { cmd: '/enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
+    { cmd: '/resize', desc: 'Resize an image by percentage or fixed pixel presets.', perm: null },
   ],
   'Rupee System and Games': [
     { cmd: '/inventory', desc: 'View your coins and rupees.', perm: null },

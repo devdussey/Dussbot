@@ -327,6 +327,7 @@ const COMMAND_CATEGORY_MAP = {
     // Images
     enlarge: 'images',
     removebg: 'images',
+    resize: 'images',
 
     // Utility
     botinfo: 'utility',
