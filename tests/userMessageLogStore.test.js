@@ -40,7 +40,7 @@ test('records messages up to the maximum per user', async () => {
     assert.equal(logs[0].id, `msg-100`);
     assert.equal(logs.at(-1).id, `msg-${store.MAX_PER_USER + 99}`);
 
-    const file = path.join(process.env.DISPHORIABOT_DATA_DIR, 'user_messages.json');
+    const file = path.join(process.env.DISPHORIABOT_DATA_DIR, 'user_messages_v2.json');
     assert.ok(fs.existsSync(file));
   });
 });
