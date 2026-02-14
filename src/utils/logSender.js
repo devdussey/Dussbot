@@ -173,6 +173,7 @@ async function sendLog(options) {
     if (fallbackEntry?.channelId) resolvedLogKey = fallbackKey;
     channelId = fallbackEntry?.channelId || null;
   }
+  const hadConfiguredChannel = Boolean(channelId);
 
   // Try to send to the configured channel for this log type
   try {
@@ -239,7 +240,7 @@ async function sendLog(options) {
   }
 
   // Fallback to owner DMs if configured and channel send failed
-  if (!sentSuccessfully && ownerFallback && client) {
+  if (!sentSuccessfully && ownerFallback && hadConfiguredChannel && client) {
     try {
       const owners = parseOwnerIds();
       for (const ownerId of owners) {

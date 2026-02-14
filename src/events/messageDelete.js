@@ -5,6 +5,8 @@ const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.apng', '.heic', '.gif'];
 const RED = 0xed4245;
+const MESSAGE_DELETE_AUDIT_MAX_AGE_MS = 20_000;
+const MESSAGE_DELETE_AUDIT_RETRY_DELAY_MS = 1200;
 
 function truncate(str, max = 1024) {
   if (!str) return '';
@@ -67,14 +69,64 @@ function collectAttachmentInfo(message) {
   return { lines, files };
 }
 
-function buildDeletedEmbed({ message, content, executor, attachmentInfo, contentSource, deletedAt }) {
+function delay(ms) {
+  const timeoutMs = Number(ms) || 0;
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, timeoutMs)));
+}
+
+function matchesMessageDeleteAuditEntry(entry, message, nowMs) {
+  if (!entry?.createdTimestamp) return false;
+  if ((nowMs - entry.createdTimestamp) > MESSAGE_DELETE_AUDIT_MAX_AGE_MS) return false;
+
+  const authorId = message?.author?.id ? String(message.author.id) : null;
+  const targetId = entry?.target?.id ? String(entry.target.id) : null;
+  if (authorId && targetId && authorId !== targetId) return false;
+
+  const auditChannelId = entry?.extra?.channel?.id || entry?.extra?.channelId || null;
+  const messageChannelId = message?.channel?.id || message?.channelId || null;
+  if (auditChannelId && messageChannelId && String(auditChannelId) !== String(messageChannelId)) return false;
+
+  const count = Number(entry?.extra?.count ?? entry?.extra?.messageCount ?? 1);
+  if (Number.isFinite(count) && count < 1) return false;
+
+  return true;
+}
+
+async function fetchDeleteExecutor(guild, message) {
+  const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.MessageDelete, limit: 10 });
+  const nowMs = Date.now();
+  const candidates = [...logs.entries.values()].filter(entry => matchesMessageDeleteAuditEntry(entry, message, nowMs));
+  if (!candidates.length) return null;
+
+  const newest = candidates.reduce((best, entry) => {
+    if (!best) return entry;
+    const bestTs = Number(best.createdTimestamp) || 0;
+    const entryTs = Number(entry.createdTimestamp) || 0;
+    return entryTs >= bestTs ? entry : best;
+  }, null);
+
+  return newest?.executor || null;
+}
+
+async function resolveDeleteExecutor(guild, message) {
+  try {
+    const first = await fetchDeleteExecutor(guild, message);
+    if (first) return first;
+    await delay(MESSAGE_DELETE_AUDIT_RETRY_DELAY_MS);
+    return await fetchDeleteExecutor(guild, message);
+  } catch (_) {
+    return null;
+  }
+}
+
+function buildDeletedEmbed({ message, content, deleterText, attachmentInfo, contentSource, deletedAt }) {
   const embed = new EmbedBuilder()
     .setTitle('Message Deleted')
     .setColor(RED)
     .setTimestamp(deletedAt)
     .addFields(
       { name: 'User', value: formatUser(message.author || 'Unknown'), inline: false },
-      { name: 'Deleted By', value: formatUser(executor || 'Unknown'), inline: false },
+      { name: 'Deleted By', value: deleterText || 'Unknown', inline: false },
       { name: 'Channel', value: `<#${message.channel.id}> (${message.channel.id})`, inline: true },
       { name: 'Message ID', value: message.id || 'Unknown', inline: true },
       { name: 'Content', value: content, inline: false },
@@ -86,7 +138,7 @@ function buildDeletedEmbed({ message, content, executor, attachmentInfo, content
     embed.addFields({ name: 'Content Source', value: contentSource, inline: true });
   }
 
-  const thumbTarget = executor || message.author;
+  const thumbTarget = message.author;
   const avatarUrl = thumbTarget?.displayAvatarURL?.({ extension: 'png', size: 256 });
   if (avatarUrl) embed.setThumbnail(avatarUrl);
 
@@ -135,14 +187,8 @@ module.exports = {
 
       const me = guild.members.me;
       if (!me) return;
-      let executor = null;
-      if (me.permissions.has(PermissionsBitField.Flags.ViewAuditLog)) {
-        try {
-          const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.MessageDelete, limit: 5 });
-          const entry = logs.entries.find(e => e.target?.id === message.author?.id && (Date.now() - e.createdTimestamp) < 10_000);
-          if (entry) executor = entry.executor || null;
-        } catch (_) {}
-      }
+      const canViewAuditLog = me.permissions.has(PermissionsBitField.Flags.ViewAuditLog);
+      const executor = canViewAuditLog ? await resolveDeleteExecutor(guild, message) : null;
       let content = message.content ? truncate(message.content) : '';
       let contentSource = 'live';
       if (!content) {
@@ -156,11 +202,18 @@ module.exports = {
       }
       if (!content) content = '*No content available*';
 
+      let deleterText = 'Unknown';
+      if (executor) {
+        deleterText = formatUser(executor);
+      } else if (message.author) {
+        deleterText = `${formatUser(message.author)} (${canViewAuditLog ? 'self-delete likely' : 'no audit access'})`;
+      }
+
       const attachmentInfo = collectAttachmentInfo(message);
       const embed = buildDeletedEmbed({
         message,
         content,
-        executor,
+        deleterText,
         attachmentInfo,
         contentSource,
         deletedAt: new Date(),

@@ -24,6 +24,7 @@ const rupeeStore = require('../utils/rupeeStore');
 const { isOwner } = require('../utils/ownerIds');
 
 const MAX_ERROR_STACK = 3500;
+const COMMAND_FAILURE_ALERT_CHANNEL_ID = (process.env.COMMAND_FAILURE_ALERT_CHANNEL_ID || '').trim();
 
 function truncate(value, max = 1024, fallback = 'Unknown') {
     if (value === undefined || value === null) return fallback;
@@ -37,6 +38,50 @@ function formatErrorStack(error) {
     if (!raw) return null;
     const str = String(raw);
     return str.length > MAX_ERROR_STACK ? `${str.slice(0, MAX_ERROR_STACK - 3)}...` : str;
+}
+
+async function notifyCommandFailureAlert(interaction, error, context) {
+    if (!COMMAND_FAILURE_ALERT_CHANNEL_ID || !interaction?.client) return;
+
+    try {
+        const channel = interaction.client.channels.cache.get(COMMAND_FAILURE_ALERT_CHANNEL_ID)
+            || await interaction.client.channels.fetch(COMMAND_FAILURE_ALERT_CHANNEL_ID).catch(() => null);
+        if (!channel?.isTextBased?.()) return;
+
+        const guildName = interaction.guild?.name || 'Unknown';
+        const guildId = interaction.guildId || interaction.guild?.id || 'Unknown';
+        const channelLabel = interaction.channel ? `<#${interaction.channel.id}> (${interaction.channel.id})` : 'Unknown';
+        const reasonCode = error?.code || error?.status;
+        const reason = reasonCode
+            ? `${truncate(error?.message || 'Unknown error', 900)} (code: ${reasonCode})`
+            : truncate(error?.message || 'Unknown error', 900);
+
+        const embed = new EmbedBuilder()
+            .setTitle('Command Failed')
+            .setColor(0xed4245)
+            .setTimestamp()
+            .addFields(
+                { name: 'Server', value: `${truncate(guildName, 200)} (${guildId})`, inline: false },
+                { name: 'Command', value: `/${interaction.commandName || 'unknown'}`, inline: true },
+                { name: 'User', value: `${interaction.user?.tag || 'Unknown'} (${interaction.user?.id || 'unknown'})`, inline: true },
+                { name: 'Channel', value: channelLabel, inline: false },
+                { name: 'Reason', value: reason, inline: false },
+            );
+
+        if (context) {
+            embed.addFields({ name: 'Context', value: truncate(context, 1024), inline: false });
+        }
+
+        const stack = formatErrorStack(error);
+        if (stack) {
+            const shortStack = stack.length > 1500 ? `${stack.slice(0, 1497)}...` : stack;
+            embed.setDescription('```\n' + shortStack + '\n```');
+        }
+
+        await channel.send({ embeds: [embed] });
+    } catch (err) {
+        console.warn('Failed to notify command failure alert channel:', err?.message || err);
+    }
 }
 
 function collectAntiNukeChangeLines(before, after) {
@@ -365,9 +410,15 @@ module.exports = {
                     const logger = require('../utils/securityLogger');
                     await logger.logMissingCommand(interaction);
                 } catch (_) {}
+                const missingCommandError = new Error('Command handler missing');
                 await logCommandError(
                     interaction,
-                    new Error('Command handler missing'),
+                    missingCommandError,
+                    'Slash command was invoked but no matching handler is registered.'
+                );
+                await notifyCommandFailureAlert(
+                    interaction,
+                    missingCommandError,
                     'Slash command was invoked but no matching handler is registered.'
                 );
                 return;
@@ -494,6 +545,7 @@ module.exports = {
                 }
                 await logCommandUsage(interaction, 'Failed', error?.message || 'Unknown error', 0xed4245);
                 await logCommandError(interaction, error, 'Command execution threw an error.');
+                await notifyCommandFailureAlert(interaction, error, 'Command execution threw an error.');
             }
         }
 
