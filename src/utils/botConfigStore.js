@@ -16,19 +16,7 @@ const CATEGORY_DEFINITIONS = [
 
 const DEFAULT_CATEGORY_STATE = {
   enabled: true,
-  publicReplies: true,
-};
-
-const CATEGORY_DEFAULTS = {
-  logging: { publicReplies: false },
-  moderation: { publicReplies: false },
-  ai: { publicReplies: false },
-  games: { publicReplies: true },
-  admin: { publicReplies: false },
-  economy: { publicReplies: false },
-  automations: { publicReplies: false },
-  images: { publicReplies: false },
-  utility: { publicReplies: false },
+  publicReplies: false,
 };
 
 function ensureStore() {
@@ -63,35 +51,85 @@ function getCategoryDefinition(key) {
 }
 
 function getDefaultState(key) {
-  return { ...DEFAULT_CATEGORY_STATE, ...(CATEGORY_DEFAULTS[key] || {}) };
+  return { ...DEFAULT_CATEGORY_STATE };
+}
+
+function buildDefaultCategories() {
+  const categories = {};
+  for (const def of CATEGORY_DEFINITIONS) {
+    categories[def.key] = getDefaultState(def.key);
+  }
+  return categories;
+}
+
+function normalizeCategoryState(value, key) {
+  const fallback = getDefaultState(key);
+  return {
+    enabled: value?.enabled !== false,
+    publicReplies: value?.publicReplies === true ? true : fallback.publicReplies,
+  };
+}
+
+function ensureGuildConfig(guildId) {
+  if (!guildId) return { categories: buildDefaultCategories() };
+  const store = readStore();
+  if (!store.guilds || typeof store.guilds !== 'object') store.guilds = {};
+
+  const guildEntry = store.guilds[guildId] || {};
+  const existingCategories = guildEntry.categories && typeof guildEntry.categories === 'object'
+    ? guildEntry.categories
+    : {};
+  const normalizedCategories = {};
+  let changed = !store.guilds[guildId] || !guildEntry.categories;
+
+  for (const def of CATEGORY_DEFINITIONS) {
+    const current = existingCategories[def.key];
+    const normalized = normalizeCategoryState(current, def.key);
+    normalizedCategories[def.key] = normalized;
+    if (!current) {
+      changed = true;
+      continue;
+    }
+    if (current.enabled !== normalized.enabled || current.publicReplies !== normalized.publicReplies) {
+      changed = true;
+    }
+  }
+
+  for (const key of Object.keys(existingCategories)) {
+    if (!getCategoryDefinition(key)) {
+      changed = true;
+      break;
+    }
+  }
+
+  if (changed) {
+    store.guilds[guildId] = {
+      ...guildEntry,
+      categories: normalizedCategories,
+    };
+    writeStore(store);
+  }
+
+  return { categories: normalizedCategories };
 }
 
 function getGuildConfig(guildId) {
-  if (!guildId) return { categories: {} };
-  const store = readStore();
-  const existing = store.guilds?.[guildId] || {};
-  const categories = { ...(existing.categories || {}) };
-  for (const def of CATEGORY_DEFINITIONS) {
-    if (!categories[def.key]) {
-      categories[def.key] = getDefaultState(def.key);
-    } else {
-      categories[def.key] = {
-        enabled: categories[def.key].enabled !== false,
-        publicReplies: categories[def.key].publicReplies === true,
-      };
-    }
-  }
-  return { categories };
+  return ensureGuildConfig(guildId);
 }
 
 function updateGuildCategory(guildId, categoryKey, updater) {
   if (!guildId || !categoryKey) return null;
   const def = getCategoryDefinition(categoryKey);
   if (!def) return null;
+  const existingCfg = ensureGuildConfig(guildId);
   const store = readStore();
+  if (!store.guilds || typeof store.guilds !== 'object') store.guilds = {};
   if (!store.guilds[guildId]) store.guilds[guildId] = { categories: {} };
+  if (!store.guilds[guildId].categories || typeof store.guilds[guildId].categories !== 'object') {
+    store.guilds[guildId].categories = {};
+  }
   const guildCategories = store.guilds[guildId].categories;
-  const current = guildCategories[categoryKey] || getDefaultState(categoryKey);
+  const current = guildCategories[categoryKey] || existingCfg.categories?.[categoryKey] || getDefaultState(categoryKey);
   const next = { ...current, ...updater(current) };
   guildCategories[categoryKey] = {
     enabled: next.enabled !== false,
@@ -143,6 +181,7 @@ function shouldReplyEphemeral(guildId, categoryKey, fallbackEphemeral = true) {
 module.exports = {
   listCategories,
   getCategoryDefinition,
+  ensureGuildConfig,
   getGuildConfig,
   setCategoryEnabled,
   toggleCategoryEnabled,

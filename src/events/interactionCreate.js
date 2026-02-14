@@ -229,7 +229,6 @@ const COMMAND_CATEGORY_MAP = {
     logconfig: 'logging',
 
     // Moderation
-    automodconfig: 'moderation',
     ban: 'moderation',
     banlist: 'moderation',
     kick: 'moderation',
@@ -249,6 +248,7 @@ const COMMAND_CATEGORY_MAP = {
     antinuke: 'admin',
     boosterroleconfig: 'admin',
     clone: 'admin',
+    debug: 'admin',
     embed: 'admin',
     giverupee: 'admin',
     massblessing: 'admin',
@@ -280,6 +280,11 @@ const COMMAND_CATEGORY_MAP = {
     // Images
     enlarge: 'images',
     removebg: 'images',
+
+    // Utility
+    botinfo: 'utility',
+    help: 'utility',
+    premium: 'utility',
 };
 
 function getCategoryLabel(key) {
@@ -300,7 +305,6 @@ const ADMIN_COMMANDS = new Set([
   'analysis',
   'antinuke',
   'automessage',
-  'automodconfig',
   'autoroles',
   'autorespond',
   'blessing',
@@ -312,6 +316,7 @@ const ADMIN_COMMANDS = new Set([
   'clone',
   'colour',
   'confessconfig',
+  'debug',
   'dmdiag',
   'embed',
   'enlarge',

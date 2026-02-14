@@ -9,7 +9,11 @@ const {
 } = require('./botConfigStore');
 
 function statusEmoji(enabled) {
-  return enabled ? '✅' : '⛔';
+  return enabled ? '✅' : '❌';
+}
+
+function statusText(enabled) {
+  return enabled ? 'Enabled ✅' : 'Disabled ❌';
 }
 
 function replyEmoji(publicReplies) {
@@ -22,7 +26,7 @@ function buildSummaryField(cfg) {
     const state = cfg.categories?.[def.key];
     const enabled = state?.enabled !== false;
     const publicReplies = state?.publicReplies === true;
-    lines.push(`**${def.label}** — ${statusEmoji(enabled)} | ${replyEmoji(publicReplies)}`);
+    lines.push(`**${def.label}** — ${statusText(enabled)} | ${replyEmoji(publicReplies)}`);
   }
   return lines.join('\n') || 'No categories defined.';
 }
@@ -50,7 +54,7 @@ async function buildBotConfigView(guild, selectedCategory) {
       name: `Selected: ${selectedDef.label}`,
       value: [
         selectedDef.description,
-        `Status: ${enabled ? 'Enabled ✅' : 'Disabled ⛔'}`,
+        `Status: ${statusText(enabled)}`,
         `Replies: ${publicReplies ? 'Public 📢' : 'Private 🙈'}`,
       ].join('\n'),
       inline: false,
@@ -63,7 +67,7 @@ async function buildBotConfigView(guild, selectedCategory) {
     .setCustomId('botconfig:category')
     .setPlaceholder('Choose a category')
     .addOptions(categories.map(def => ({
-      label: `${def.label} (${statusEmoji(cfg.categories?.[def.key]?.enabled !== false)})`,
+      label: `${def.label} (${cfg.categories?.[def.key]?.enabled === false ? 'Disabled ❌' : 'Enabled ✅'})`,
       description: def.description.slice(0, 95),
       value: def.key,
       default: def.key === selected,

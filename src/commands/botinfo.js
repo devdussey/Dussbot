@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { getSupportServerUrl } = require('../utils/supportServer');
 
 function formatUptime(ms) {
   const sec = Math.floor(ms / 1000) % 60;
@@ -24,6 +25,7 @@ module.exports = {
     const user = client.user;
     const mode = process.env.NODE_ENV || 'production';
     const appId = process.env.CLIENT_ID || 'unknown';
+    const supportServerUrl = getSupportServerUrl();
     const guildDeploy = mode === 'development' && process.env.GUILD_ID ? `Guild-scoped to ${process.env.GUILD_ID}` : 'Global commands';
     const uptime = formatUptime(process.uptime() * 1000);
 
@@ -37,6 +39,7 @@ module.exports = {
         { name: 'Deploy', value: guildDeploy, inline: true },
         { name: 'Commands Loaded', value: String(client.commands?.size ?? 0), inline: true },
         { name: 'Uptime', value: uptime, inline: true },
+        { name: 'Support Server', value: supportServerUrl, inline: false },
       )
       .setThumbnail(user.displayAvatarURL());
 
@@ -50,4 +53,3 @@ module.exports = {
     }
   },
 };
-

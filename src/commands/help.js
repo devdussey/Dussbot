@@ -5,8 +5,9 @@ const {
   StringSelectMenuBuilder,
   ComponentType,
 } = require('discord.js');
+const { getSupportServerUrl } = require('../utils/supportServer');
 
-const SUPPORT_SERVER_LINE = 'For more detailed help and updates, join the support server https://discord.gg/d83rZnXETm';
+const SUPPORT_SERVER_LINE = `For more detailed help and updates, join the support server ${getSupportServerUrl()}`;
 
 const categories = {
   'Moderation & Enforcement': [
@@ -16,7 +17,6 @@ const categories = {
     { cmd: '/ban', desc: 'Ban a member with optional prune window (reason required).', perm: 'Ban Members' },
     { cmd: '/unban', desc: 'Lift a ban with a reason.', perm: 'Ban Members' },
     { cmd: '/unmute', desc: 'Remove a timeout with a reason.', perm: 'Moderate Members' },
-    { cmd: '/automodconfig', desc: 'Configure AI automod, review actions, and filters.', perm: 'Administrator' },
   ],
   Administration: [
     { cmd: '/modconfig', desc: 'Configure the moderator role and mod log channel.', perm: 'Manage Server' },
@@ -32,7 +32,7 @@ const categories = {
     { cmd: '/say', desc: 'Send a custom bot message to a selected channel.', perm: 'Administrator' },
     { cmd: '/logconfig', desc: 'Configure logging channels and toggle events.', perm: 'Administrator' },
     { cmd: '/antinuke config', desc: 'Configure anti-nuke detections and thresholds.', perm: 'Manage Server' },
-    { cmd: '/transcriptconfig enable/disable/status', desc: 'Manage voice transcription automation.', perm: 'Manage Server' },
+    { cmd: '/transriptconfig enable/disable/status', desc: 'Manage voice transcription automation.', perm: 'Manage Server' },
     { cmd: '/purge', desc: 'Bulk delete up to 100 recent messages.', perm: 'Manage Messages' },
     { cmd: '/webhooks', desc: 'List server webhooks and creators.', perm: 'Administrator' },
     { cmd: '/giverupee', desc: 'Grant rupees directly to a user.', perm: 'Administrator' },
@@ -41,6 +41,7 @@ const categories = {
     { cmd: '/colour set/get/reset', desc: 'Manage default embed colour for this server.', perm: 'Manage Server' },
     { cmd: '/botsettings', desc: 'View bot settings and change default embed colour.', perm: 'Administrator' },
     { cmd: '/rupeeconfig', desc: 'Configure Rupee rewards, store prices, immunity role, and rupee channels.', perm: 'Manage Server' },
+    { cmd: '/debug', desc: 'Run admin diagnostics for command and client health.', perm: 'Administrator' },
   ],
   'Media & Personalisation': [
     { cmd: '/chat', desc: 'Chat with the AI assistant.', perm: null },
@@ -66,6 +67,7 @@ const categories = {
     { cmd: '/serverbanner', desc: 'Display and download server banner.', perm: null },
     { cmd: '/serverlogo', desc: 'Display and download server icon.', perm: null },
     { cmd: '/botinfo', desc: 'View bot instance and uptime info.', perm: null },
+    { cmd: '/premium', desc: 'View Premium features and support server access.', perm: null },
   ],
 };
 
