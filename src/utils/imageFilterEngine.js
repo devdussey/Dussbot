@@ -128,6 +128,27 @@ function extractAnimationTiming(metadata) {
   return { delay, loop, pageHeight };
 }
 
+async function buildRepeatedBaseStrip(baseStillImage, width, frameHeight, frameCount) {
+  const totalHeight = Math.max(frameHeight, frameHeight * frameCount);
+  const composites = Array.from({ length: frameCount }, (_, idx) => ({
+    input: baseStillImage,
+    left: 0,
+    top: idx * frameHeight,
+  }));
+
+  return sharp({
+    create: {
+      width,
+      height: totalHeight,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite(composites)
+    .png()
+    .toBuffer();
+}
+
 async function downloadBuffer(url) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -199,12 +220,14 @@ async function applyImageFilter(inputBuffer, edit) {
   }
 
   const sourceMetadata = await sharp(inputBuffer, { animated: true }).metadata();
-  if (!sourceMetadata.width || !sourceMetadata.height) {
+  const sourceWidth = Number(sourceMetadata.width) || 0;
+  const sourceHeight = Number(sourceMetadata.pageHeight || sourceMetadata.height) || 0;
+  if (!sourceWidth || !sourceHeight) {
     throw new Error('Could not read image dimensions.');
   }
 
-  const width = clampDimension(sourceMetadata.width);
-  const height = clampDimension(sourceMetadata.height);
+  const width = clampDimension(sourceWidth);
+  const height = clampDimension(sourceHeight);
 
   const baseStillImage = await sharp(inputBuffer)
     .resize({
@@ -233,22 +256,20 @@ async function applyImageFilter(inputBuffer, edit) {
 
   const filterMetadata = await sharp(processedFilterGif, { animated: true }).metadata();
   const timing = extractAnimationTiming(filterMetadata);
+  const frameHeight = clampDimension(timing.pageHeight || height);
+  const frameCount = Math.max(1, Number(filterMetadata.pages) || 1);
+  const baseStrip = await buildRepeatedBaseStrip(baseStillImage, width, frameHeight, frameCount);
 
-  // Composite a static base behind each animation frame, preserving frame geometry.
+  // Compose against the animated filter canvas so page timing/frames are preserved.
   const blendMode = edit === EDIT_LOAD
     ? 'screen'
     : (filterMetadata.hasAlpha ? 'dest-over' : 'screen');
   const outputBuffer = await sharp(processedFilterGif, { animated: true })
-    .composite([{
-      input: baseStillImage,
-      blend: blendMode,
-      tile: true,
-      gravity: 'northwest',
-    }])
+    .composite([{ input: baseStrip, blend: blendMode }])
     .gif({
       ...STABLE_GIF_OUTPUT_OPTIONS,
       ...(timing.delay ? { delay: timing.delay } : {}),
-      ...(timing.pageHeight ? { pageHeight: timing.pageHeight } : {}),
+      pageHeight: frameHeight,
       loop: timing.loop,
     })
     .toBuffer();
