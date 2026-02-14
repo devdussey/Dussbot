@@ -26,6 +26,16 @@ module.exports = {
       InteractionContextType.BotDM,
       InteractionContextType.PrivateChannel,
     )
+    .addStringOption(option => {
+      option
+        .setName('edits')
+        .setDescription('Filter edit to apply')
+        .setRequired(true);
+      for (const choice of IMAGE_FILTER_EDIT_CHOICES) {
+        option.addChoices(choice);
+      }
+      return option;
+    })
     .addAttachmentOption(option =>
       option
         .setName('image')
@@ -37,17 +47,7 @@ module.exports = {
         .setName('image_url')
         .setDescription('Direct image URL to filter')
         .setRequired(false)
-    )
-    .addStringOption(option => {
-      option
-        .setName('edits')
-        .setDescription('Filter edit to apply')
-        .setRequired(true);
-      for (const choice of IMAGE_FILTER_EDIT_CHOICES) {
-        option.addChoices(choice);
-      }
-      return option;
-    }),
+    ),
 
   async execute(interaction) {
     await interaction.deferReply();
