@@ -29,12 +29,31 @@ function runCapture(cmd, args, options = {}) {
   });
 }
 
+function normalizeBranchName(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+  const unquoted = raw.replace(/^['"]+|['"]+$/g, '');
+  return unquoted
+    .replace(/^refs\/heads\//, '')
+    .replace(/^origin\//, '');
+}
+
+async function gitRefExists(ref) {
+  try {
+    await runCapture('git', ['rev-parse', '--verify', '--quiet', ref]);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 (async () => {
   // Optional Git pull on start
   const gitPullOnStart = String(process.env.GIT_PULL_ON_START || '').toLowerCase() === 'true';
   const gitResetHard = String(process.env.GIT_RESET_HARD || '').toLowerCase() === 'true';
   const gitStashOnStart = String(process.env.GIT_STASH_ON_START || '').toLowerCase() === 'true';
-  const gitBranch = process.env.GIT_BRANCH;
+  const gitBranchRaw = process.env.GIT_BRANCH;
+  const gitBranch = normalizeBranchName(gitBranchRaw);
   const cwd = process.cwd();
   const hasGit = fs.existsSync(path.join(cwd, '.git'));
 
@@ -58,8 +77,26 @@ function runCapture(cmd, args, options = {}) {
       console.log('[runner] git fetch --all --prune');
       await run('git', ['fetch', '--all', '--prune']);
       if (gitBranch) {
-        console.log(`[runner] git checkout ${gitBranch}`);
-        try { await run('git', ['checkout', gitBranch]); } catch (_) {}
+        if (typeof gitBranchRaw === 'string' && gitBranchRaw !== gitBranch) {
+          console.log(`[runner] normalized GIT_BRANCH from ${JSON.stringify(gitBranchRaw)} to ${JSON.stringify(gitBranch)}`);
+        }
+        const localRef = `refs/heads/${gitBranch}`;
+        const remoteRef = `refs/remotes/origin/${gitBranch}`;
+        const hasLocalBranch = await gitRefExists(localRef);
+        const hasRemoteBranch = await gitRefExists(remoteRef);
+
+        if (hasLocalBranch) {
+          console.log(`[runner] git checkout ${gitBranch}`);
+          await run('git', ['checkout', gitBranch]);
+        } else if (hasRemoteBranch) {
+          console.log(`[runner] git checkout --track origin/${gitBranch}`);
+          await run('git', ['checkout', '--track', `origin/${gitBranch}`]);
+        } else {
+          const { stdout: branchListOut } = await runCapture('git', ['branch', '-a']);
+          throw new Error(
+            `requested branch "${gitBranch}" was not found locally or on origin.\nAvailable branches:\n${branchListOut.trim()}`,
+          );
+        }
       }
       console.log('[runner] git pull --ff-only');
       await run('git', ['pull', '--ff-only']);
