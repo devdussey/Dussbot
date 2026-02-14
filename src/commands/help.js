@@ -67,6 +67,7 @@ const categories = {
     { cmd: '/avatar', desc: 'Display user avatar and download links.', perm: null },
     { cmd: '/serverbanner', desc: 'Display and download server banner.', perm: null },
     { cmd: '/serverlogo', desc: 'Display and download server icon.', perm: null },
+    { cmd: '/wordstats overview/word/media/user', desc: 'View tracked word, message, and media stats from wordstatsconfig data.', perm: null },
     { cmd: '/botinfo', desc: 'View bot instance and uptime info.', perm: null },
     { cmd: '/premium', desc: 'View Premium features and support server access.', perm: null },
   ],

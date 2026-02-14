@@ -8,7 +8,7 @@ module.exports = {
     if (message.author?.bot) return;
     try {
       const authorTag = message.author?.tag || message.author?.username || message.author?.id;
-      await recordTrackedMessage(message.guild.id, message.channelId, message.author.id, authorTag);
+      await recordTrackedMessage(message.guild.id, message.channelId, message.author.id, authorTag, message);
     } catch (err) {
       console.error('Failed to update configured word stats message counts', err);
     }

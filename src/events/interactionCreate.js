@@ -332,6 +332,7 @@ const COMMAND_CATEGORY_MAP = {
     botinfo: 'utility',
     help: 'utility',
     premium: 'utility',
+    wordstats: 'utility',
 };
 
 function getCategoryLabel(key) {

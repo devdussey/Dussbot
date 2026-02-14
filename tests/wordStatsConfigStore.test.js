@@ -142,3 +142,118 @@ test('parseBackfillPayload supports txt_only_scan style exports', async (t) => {
   assert.equal(entries.find((entry) => entry.userId === '111111111111111111')?.lastKnownTag, 'alpha');
   assert.equal(entries.find((entry) => entry.userId === '222222222222222222')?.count, 5);
 });
+
+test('recordTrackedMessage stores word usage and media breakdowns for queries', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
+  const prev = process.env.DISPHORIABOT_DATA_DIR;
+  process.env.DISPHORIABOT_DATA_DIR = tmp;
+  dataDir.resetDataDirCache();
+
+  t.after(() => {
+    if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
+    else delete process.env.DISPHORIABOT_DATA_DIR;
+    dataDir.resetDataDirCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const store = freshStore();
+  await store.setTrackedChannel('g1', 'c1');
+
+  await store.recordTrackedMessage('g1', 'c1', 'u1', 'Alpha#0001', {
+    content: 'hello hello world',
+    attachments: new Map(),
+    stickers: new Map(),
+  });
+
+  await store.recordTrackedMessage('g1', 'c1', 'u2', 'Beta#0001', {
+    content: 'check this 😀 <:wave:1234567890>',
+    attachments: new Map([['a1', { name: 'photo.png', contentType: 'image/png' }]]),
+    stickers: new Map(),
+  });
+
+  await store.recordTrackedMessage('g1', 'c1', 'u2', 'Beta#0001', {
+    content: '',
+    attachments: new Map(),
+    stickers: new Map([['s1', { id: 'sticker1', name: 'Sticker One' }]]),
+  });
+
+  const topUsers = store.getTopUsers('g1');
+  assert.equal(topUsers.entries[0].userId, 'u2');
+  assert.equal(topUsers.entries[0].count, 2);
+  assert.equal(topUsers.entries[0].textCount, 0);
+  assert.equal(topUsers.entries[0].mediaCount, 2);
+
+  const topWords = store.getTopWords('g1');
+  assert.equal(topWords.entries[0].word, 'hello');
+  assert.equal(topWords.entries[0].totalCount, 2);
+  assert.equal(topWords.entries[0].topUserId, 'u1');
+  assert.equal(topWords.entries[0].topUserCount, 2);
+
+  const helloUsage = store.searchWordUsage('g1', 'hello');
+  assert.equal(helloUsage.totalMatches, 2);
+  assert.equal(helloUsage.users.length, 1);
+  assert.equal(helloUsage.users[0].userId, 'u1');
+  assert.equal(helloUsage.users[0].count, 2);
+
+  const mediaLeaders = store.getTopMediaUsers('g1');
+  assert.equal(mediaLeaders.entries.length, 1);
+  assert.equal(mediaLeaders.entries[0].userId, 'u2');
+  assert.equal(mediaLeaders.entries[0].mediaBreakdown.images, 1);
+  assert.equal(mediaLeaders.entries[0].mediaBreakdown.stickers, 1);
+  assert.equal(mediaLeaders.entries[0].mediaBreakdown.emojis, 2);
+
+  const u1Stats = store.getUserWordStats('g1', 'u1');
+  assert.equal(u1Stats.count, 1);
+  assert.equal(u1Stats.topWords[0].word, 'hello');
+  assert.equal(u1Stats.topWords[0].count, 2);
+});
+
+test('parseBackfillPayload + importBackfill keep enriched media and word stats', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
+  const prev = process.env.DISPHORIABOT_DATA_DIR;
+  process.env.DISPHORIABOT_DATA_DIR = tmp;
+  dataDir.resetDataDirCache();
+
+  t.after(() => {
+    if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
+    else delete process.env.DISPHORIABOT_DATA_DIR;
+    dataDir.resetDataDirCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const store = freshStore();
+  const parsed = store.parseBackfillPayload({
+    entries: [
+      {
+        userId: 'u10',
+        tag: 'Gamma#0001',
+        count: 8,
+        textCount: 5,
+        mediaCount: 3,
+        mediaBreakdown: { images: 2, stickers: 1, emojis: 7 },
+        words: { hello: 4, world: 2 },
+      },
+    ],
+  }, 'g1');
+
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].userId, 'u10');
+  assert.equal(parsed[0].count, 8);
+  assert.equal(parsed[0].textCount, 5);
+  assert.equal(parsed[0].mediaCount, 3);
+  assert.equal(parsed[0].mediaBreakdown.images, 2);
+  assert.equal(parsed[0].words.hello, 4);
+
+  const imported = await store.importBackfill('g1', parsed);
+  assert.equal(imported.importedMessages, 8);
+
+  const userStats = store.getUserWordStats('g1', 'u10');
+  assert.equal(userStats.count, 8);
+  assert.equal(userStats.textCount, 5);
+  assert.equal(userStats.mediaCount, 3);
+  assert.equal(userStats.mediaBreakdown.images, 2);
+  assert.equal(userStats.mediaBreakdown.stickers, 1);
+  assert.equal(userStats.mediaBreakdown.emojis, 7);
+  assert.equal(userStats.topWords[0].word, 'hello');
+  assert.equal(userStats.topWords[0].count, 4);
+});
