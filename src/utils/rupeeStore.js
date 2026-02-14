@@ -55,6 +55,13 @@ async function saveStore() {
   await writeJson(STORE_FILE_NAME, safe);
 }
 
+function normalizeThreshold(threshold) {
+  const num = Number(threshold);
+  if (!Number.isFinite(num)) return AWARD_THRESHOLD;
+  const whole = Math.floor(num);
+  return whole >= 1 ? whole : AWARD_THRESHOLD;
+}
+
 function ensureRecord(guildId, userId) {
   const store = loadStore();
   if (!store.guilds[guildId] || typeof store.guilds[guildId] !== 'object') {
@@ -76,22 +83,18 @@ function ensureRecord(guildId, userId) {
   rec.totalMessages = Math.floor(rec.totalMessages);
   rec.progress = Math.floor(rec.progress);
   rec.tokens = Math.floor(rec.tokens);
-  if (rec.progress >= AWARD_THRESHOLD) {
-    const extra = Math.floor(rec.progress / AWARD_THRESHOLD);
-    rec.progress -= extra * AWARD_THRESHOLD;
-    rec.tokens += extra;
-  }
   return rec;
 }
 
-async function incrementMessage(guildId, userId) {
+async function incrementMessage(guildId, userId, options = {}) {
   if (!guildId || !userId) return null;
+  const awardThreshold = normalizeThreshold(options.awardThreshold);
   const rec = ensureRecord(guildId, userId);
   rec.totalMessages += 1;
   rec.progress += 1;
   let awarded = 0;
-  while (rec.progress >= AWARD_THRESHOLD) {
-    rec.progress -= AWARD_THRESHOLD;
+  while (rec.progress >= awardThreshold) {
+    rec.progress -= awardThreshold;
     rec.tokens += 1;
     awarded += 1;
   }
@@ -101,7 +104,7 @@ async function incrementMessage(guildId, userId) {
     tokens: rec.tokens,
     totalMessages: rec.totalMessages,
     progress: rec.progress,
-    messagesUntilNext: AWARD_THRESHOLD - rec.progress,
+    messagesUntilNext: awardThreshold - rec.progress,
   };
 }
 
@@ -141,13 +144,14 @@ function getBalance(guildId, userId) {
   return rec.tokens;
 }
 
-function getProgress(guildId, userId) {
+function getProgress(guildId, userId, options = {}) {
+  const awardThreshold = normalizeThreshold(options.awardThreshold);
   if (!guildId || !userId) {
     return {
       totalMessages: 0,
       tokens: 0,
       progress: 0,
-      messagesUntilNext: AWARD_THRESHOLD,
+      messagesUntilNext: awardThreshold,
     };
   }
   const rec = ensureRecord(guildId, userId);
@@ -155,7 +159,7 @@ function getProgress(guildId, userId) {
     totalMessages: rec.totalMessages,
     tokens: rec.tokens,
     progress: rec.progress,
-    messagesUntilNext: AWARD_THRESHOLD - rec.progress,
+    messagesUntilNext: awardThreshold - rec.progress,
   };
 }
 

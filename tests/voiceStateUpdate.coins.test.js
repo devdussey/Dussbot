@@ -24,7 +24,7 @@ test('awards one rupee after 15 minutes in voice', async () => {
   const originalNow = Date.now;
   const originalAddCoins = coinStore.addCoins;
   const originalAddTokens = rupeeStore.addTokens;
-  const originalEnabled = smiteConfigStore.isEnabled;
+  const originalGetConfig = smiteConfigStore.getConfig;
 
   const coinCalls = [];
   const rupeeCalls = [];
@@ -36,7 +36,12 @@ test('awards one rupee after 15 minutes in voice', async () => {
     rupeeCalls.push({ guildId, userId, amount });
     return amount;
   };
-  smiteConfigStore.isEnabled = () => true;
+  smiteConfigStore.getConfig = () => ({
+    enabled: true,
+    messageThreshold: 500,
+    voiceMinutesPerRupee: 15,
+    announceChannelId: null,
+  });
 
   let now = 1_000;
   Date.now = () => now;
@@ -53,7 +58,7 @@ test('awards one rupee after 15 minutes in voice', async () => {
     Date.now = originalNow;
     coinStore.addCoins = originalAddCoins;
     rupeeStore.addTokens = originalAddTokens;
-    smiteConfigStore.isEnabled = originalEnabled;
+    smiteConfigStore.getConfig = originalGetConfig;
   }
 });
 
@@ -61,14 +66,19 @@ test('does not award rupees when economy is disabled', async () => {
   const handler = loadHandler();
   const originalNow = Date.now;
   const originalAddTokens = rupeeStore.addTokens;
-  const originalEnabled = smiteConfigStore.isEnabled;
+  const originalGetConfig = smiteConfigStore.getConfig;
 
   const rupeeCalls = [];
   rupeeStore.addTokens = async (...args) => {
     rupeeCalls.push(args);
     return 0;
   };
-  smiteConfigStore.isEnabled = () => false;
+  smiteConfigStore.getConfig = () => ({
+    enabled: false,
+    messageThreshold: 500,
+    voiceMinutesPerRupee: 15,
+    announceChannelId: null,
+  });
 
   let now = 1_000;
   Date.now = () => now;
@@ -82,6 +92,6 @@ test('does not award rupees when economy is disabled', async () => {
   } finally {
     Date.now = originalNow;
     rupeeStore.addTokens = originalAddTokens;
-    smiteConfigStore.isEnabled = originalEnabled;
+    smiteConfigStore.getConfig = originalGetConfig;
   }
 });

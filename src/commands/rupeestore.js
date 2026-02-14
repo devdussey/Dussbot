@@ -18,6 +18,7 @@ const immunityStore = require('../utils/silenceImmunityStore');
 const rupeeCustomRoleStore = require('../utils/rupeeCustomRoleStore');
 const logSender = require('../utils/logSender');
 const { buildRupeeSpendEmbed } = require('../utils/rupeeLogEmbed');
+const smiteConfigStore = require('../utils/smiteConfigStore');
 
 const SHOP_ITEMS = [
   {
@@ -117,7 +118,23 @@ function buildDefaultRoleName(member) {
   return `${base}'s Custom Role`.slice(0, 100);
 }
 
-function buildShopEmbed({ guildId, balance, selectedItemId = null, blessingStatus }) {
+function resolveShopItemsForGuild(guildId) {
+  const config = smiteConfigStore.getConfig(guildId);
+  const storeItemCosts = config?.storeItemCosts && typeof config.storeItemCosts === 'object'
+    ? config.storeItemCosts
+    : {};
+
+  return SHOP_ITEMS.map((item) => {
+    const raw = storeItemCosts[item.id];
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return { ...item };
+    const cost = Math.floor(parsed);
+    if (cost < 1) return { ...item };
+    return { ...item, cost };
+  });
+}
+
+function buildShopEmbed({ guildId, balance, selectedItemId = null, blessingStatus, shopItems }) {
   const embed = makeEmbed(guildId)
     .setTitle('🏪 Rupee Store')
     .setDescription(
@@ -126,7 +143,7 @@ function buildShopEmbed({ guildId, balance, selectedItemId = null, blessingStatu
     )
     .addFields({ name: 'Blessing status', value: blessingStatus });
 
-  SHOP_ITEMS.forEach(item => {
+  shopItems.forEach(item => {
     const prefix = item.id === selectedItemId ? '👉 ' : '';
     embed.addFields({
       name: `${prefix}${item.label} — ${item.cost} rupee${item.cost === 1 ? '' : 's'}`,
@@ -187,14 +204,14 @@ async function logRupeeStorePurchase({ interaction, itemLabel, cost, target, bal
   }
 }
 
-function buildItemSelect(customId, disabled = false) {
+function buildItemSelect(customId, shopItems, disabled = false) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(customId)
       .setPlaceholder('Choose a rupee item to purchase')
       .setDisabled(disabled)
       .addOptions(
-        SHOP_ITEMS.map(item => ({
+        shopItems.map(item => ({
           label: item.label,
           description: item.description.slice(0, 100),
           value: item.id,
@@ -230,8 +247,8 @@ function buildModeratorSelect(customId, moderators, disabled = false) {
   );
 }
 
-function findItem(itemId) {
-  return SHOP_ITEMS.find(item => item.id === itemId);
+function findItem(itemId, shopItems) {
+  return shopItems.find(item => item.id === itemId);
 }
 
 async function applyTimeoutPurchase({ interaction, item, targetMember }) {
@@ -600,6 +617,7 @@ async function getModerators(guild) {
 }
 
 module.exports = {
+  SHOP_ITEMS,
   data: new SlashCommandBuilder()
     .setName('rupeestore')
     .setDescription('Browse and spend rupees on special items'),
@@ -617,12 +635,14 @@ module.exports = {
     const userId = interaction.user.id;
     const balance = rupeeStore.getBalance(guildId, userId);
     const blessingStatus = formatBlessingStatus(guildId, userId);
+    const getShopItems = () => resolveShopItemsForGuild(guildId);
 
     const selectId = `rupeestore-select-${interaction.id}`;
     const targetSelectBase = `rupeestore-target-${interaction.id}`;
 
-    const embed = buildShopEmbed({ guildId, balance, blessingStatus });
-    const itemRow = buildItemSelect(selectId, false);
+    const initialShopItems = getShopItems();
+    const embed = buildShopEmbed({ guildId, balance, blessingStatus, shopItems: initialShopItems });
+    const itemRow = buildItemSelect(selectId, initialShopItems, false);
     const userRow = buildUserSelect(targetSelectBase, true);
 
     const reply = await interaction.reply({
@@ -641,7 +661,8 @@ module.exports = {
 
       if (componentInteraction.isStringSelectMenu() && componentInteraction.customId === selectId) {
         const itemId = componentInteraction.values[0];
-        const selectedItem = findItem(itemId);
+        const shopItems = getShopItems();
+        const selectedItem = findItem(itemId, shopItems);
         if (!selectedItem) {
           await componentInteraction.reply({ content: 'That item is unavailable.', ephemeral: true });
           return;
@@ -654,8 +675,9 @@ module.exports = {
           balance: freshBalance,
           selectedItemId: itemId,
           blessingStatus: freshBlessing,
+          shopItems,
         });
-        const freshItemRow = buildItemSelect(selectId, false);
+        const freshItemRow = buildItemSelect(selectId, shopItems, false);
 
         if (selectedItem.kind === 'timeout' || selectedItem.kind === 'muzzle' || selectedItem.kind === 'nickname_member') {
           if (selectedItem.kind === 'nickname_member') {
@@ -752,6 +774,7 @@ module.exports = {
             guildId,
             balance: rupeeStore.getBalance(guildId, interaction.user.id),
             blessingStatus: formatBlessingStatus(guildId, userId),
+            shopItems: getShopItems(),
           });
           const resetUserRow = buildUserSelect(targetSelectBase, true);
           await interaction.editReply({
@@ -858,6 +881,7 @@ module.exports = {
             guildId,
             balance: rupeeStore.getBalance(guildId, interaction.user.id),
             blessingStatus: formatBlessingStatus(guildId, userId),
+            shopItems: getShopItems(),
           });
           const resetUserRow = buildUserSelect(targetSelectBase, true);
           await interaction.editReply({
@@ -873,7 +897,8 @@ module.exports = {
       if (componentInteraction.customId.startsWith(targetSelectBase)) {
         const parts = componentInteraction.customId.split(':');
         const itemId = parts[1];
-        const selectedItem = findItem(itemId);
+        const shopItems = getShopItems();
+        const selectedItem = findItem(itemId, shopItems);
         if (!selectedItem) {
           await componentInteraction.reply({ content: 'That item is no longer available.', ephemeral: true });
           return;
@@ -972,8 +997,9 @@ module.exports = {
             guildId,
             balance: rupeeStore.getBalance(guildId, interaction.user.id),
             blessingStatus: formatBlessingStatus(guildId, userId),
+            shopItems: getShopItems(),
           });
-          const freshItemRow = buildItemSelect(selectId, false);
+          const freshItemRow = buildItemSelect(selectId, getShopItems(), false);
           const resetUserRow = buildUserSelect(targetSelectBase, true);
           await interaction.editReply({
             embeds: [refreshedEmbed],
@@ -1052,8 +1078,9 @@ module.exports = {
           guildId,
           balance: freshBalance,
           blessingStatus: freshBlessing,
+          shopItems: getShopItems(),
         });
-        const freshItemRow = buildItemSelect(selectId, false);
+        const freshItemRow = buildItemSelect(selectId, getShopItems(), false);
         const resetUserRow = buildUserSelect(targetSelectBase, true);
 
         await interaction.editReply({

@@ -1,4 +1,4 @@
-const { Events, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { Events, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const coinStore = require('../utils/coinStore');
 const rupeeStore = require('../utils/rupeeStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
@@ -10,7 +10,6 @@ const {
 } = require('../utils/economyConfig');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
-const RUPEE_VOICE_INTERVAL_MS = 15 * MS_PER_MINUTE;
 const VOICE_RUPEE_EMBED_COLOR = 0x00f0ff;
 const sessions = new Map();
 
@@ -36,11 +35,28 @@ async function awardCoins(guildId, userId, session, deltaMs) {
 async function sendRupeeAnnouncement(newState, userId, awarded, newBalance) {
   const guild = newState?.guild;
   if (!guild) return;
-  const systemChannel = guild.systemChannel;
-  if (!systemChannel || !systemChannel.isTextBased?.()) return;
+
+  const config = smiteConfigStore.getConfig(guild.id);
+  const configuredChannelId = config.announceChannelId;
+  let announceChannel = null;
+
+  if (configuredChannelId) {
+    announceChannel = guild.channels?.cache?.get(String(configuredChannelId)) || null;
+    if (!announceChannel) {
+      try {
+        announceChannel = await guild.channels.fetch(String(configuredChannelId));
+      } catch (_) {
+        announceChannel = null;
+      }
+    }
+  }
+
+  if (!announceChannel) announceChannel = guild.systemChannel;
+  if (!announceChannel || !announceChannel.isTextBased?.()) return;
+  if (announceChannel.type === ChannelType.GuildForum) return;
 
   const me = guild.members?.me;
-  const perms = systemChannel.permissionsFor?.(me);
+  const perms = announceChannel.permissionsFor?.(me);
   if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.SendMessages)) return;
 
   const amountText = awarded === 1 ? 'a rupee' : `${awarded} rupees`;
@@ -50,25 +66,28 @@ async function sendRupeeAnnouncement(newState, userId, awarded, newBalance) {
     const embed = new EmbedBuilder()
       .setColor(resolveEmbedColour(guild.id, VOICE_RUPEE_EMBED_COLOR))
       .setDescription(`${announcement}\n\nTo spend your rupees, type /rupeestore.`);
-    await systemChannel.send({ embeds: [embed] });
+    await announceChannel.send({ embeds: [embed] });
     return;
   }
 
-  await systemChannel.send({ content: announcement });
+  await announceChannel.send({ content: announcement });
 }
 
 async function awardRupees(newState, guildId, userId, session, deltaMs) {
   if (!guildId || !userId || !session) return;
-  if (!smiteConfigStore.isEnabled(guildId)) {
+  const config = smiteConfigStore.getConfig(guildId);
+  if (!config.enabled) {
     session.rupeeRemainderMs = 0;
     return;
   }
 
+  const voiceMinutesPerRupee = Number(config.voiceMinutesPerRupee) || 15;
+  const rupeeIntervalMs = voiceMinutesPerRupee * MS_PER_MINUTE;
   session.rupeeRemainderMs = (session.rupeeRemainderMs || 0) + deltaMs;
-  const awarded = Math.floor(session.rupeeRemainderMs / RUPEE_VOICE_INTERVAL_MS);
+  const awarded = Math.floor(session.rupeeRemainderMs / rupeeIntervalMs);
   if (awarded <= 0) return;
 
-  session.rupeeRemainderMs -= awarded * RUPEE_VOICE_INTERVAL_MS;
+  session.rupeeRemainderMs -= awarded * rupeeIntervalMs;
   const newBalance = await rupeeStore.addTokens(guildId, userId, awarded);
   try {
     const actor = newState?.member?.user || null;
@@ -79,7 +98,7 @@ async function awardRupees(newState, guildId, userId, session, deltaMs) {
       target: actor,
       amount: awarded,
       balance: newBalance,
-      method: 'Voice Activity',
+      method: `Voice Activity (${voiceMinutesPerRupee} minute${voiceMinutesPerRupee === 1 ? '' : 's'})`,
     });
     await logSender.sendLog({
       guildId,

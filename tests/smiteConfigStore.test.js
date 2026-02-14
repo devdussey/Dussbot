@@ -29,8 +29,10 @@ test('defaults to enabled when no config exists', async () => {
     const config = store.getConfig('guild');
     assert.equal(config.enabled, true);
     assert.deepEqual(config.immuneRoleIds, []);
+    assert.deepEqual(config.storeItemCosts, {});
     assert.equal(store.isEnabled('guild'), true);
     assert.deepEqual(store.getImmuneRoleIds('guild'), []);
+    assert.deepEqual(store.getStoreItemCosts('guild'), {});
   });
 });
 
@@ -73,5 +75,32 @@ test('immune roles can be added, removed, and persisted', async () => {
     const file = path.join(process.env.DISPHORIABOT_DATA_DIR, 'smite_config.json');
     const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.deepEqual(saved.guilds[guildId].immuneRoleIds, ['456']);
+  });
+});
+
+test('store item costs can be set, reset, and persisted per guild', async () => {
+  await withTempStore(async (store) => {
+    const guildId = 'guild';
+    const otherGuildId = 'other';
+
+    await store.setStoreItemCost(guildId, 'stfu', 7);
+    await store.setStoreItemCost(guildId, 'muzzle', 9);
+    await store.setStoreItemCost(otherGuildId, 'stfu', 3);
+
+    let config = store.getConfig(guildId);
+    assert.equal(config.storeItemCosts.stfu, 7);
+    assert.equal(config.storeItemCosts.muzzle, 9);
+    assert.equal(store.getConfig(otherGuildId).storeItemCosts.stfu, 3);
+
+    await store.setStoreItemCost(guildId, 'stfu', null);
+    config = store.getConfig(guildId);
+    assert.equal(Object.prototype.hasOwnProperty.call(config.storeItemCosts, 'stfu'), false);
+    assert.equal(config.storeItemCosts.muzzle, 9);
+
+    const file = path.join(process.env.DISPHORIABOT_DATA_DIR, 'smite_config.json');
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.guilds[guildId].storeItemCosts.muzzle, 9);
+    assert.equal(Object.prototype.hasOwnProperty.call(saved.guilds[guildId].storeItemCosts, 'stfu'), false);
+    assert.equal(saved.guilds[otherGuildId].storeItemCosts.stfu, 3);
   });
 });

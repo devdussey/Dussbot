@@ -1,6 +1,17 @@
 const { ensureFileSync, writeJson, readJsonSync } = require('./dataDir');
 
 const STORE_FILE = 'smite_config.json';
+const DEFAULT_MESSAGE_THRESHOLD = 500;
+const DEFAULT_VOICE_MINUTES_PER_RUPEE = 15;
+const DEFAULT_STORE_ITEM_COSTS = Object.freeze({
+  stfu: 5,
+  abuse_mod: 10,
+  muzzle: 5,
+  nickname: 10,
+  nickname_member: 20,
+  custom_role_solid: 5,
+  custom_role_gradient: 15,
+});
 let cache = null;
 
 function normaliseRoleIds(roleIds) {
@@ -12,6 +23,30 @@ function normaliseRoleIds(roleIds) {
     if (id) seen.add(id);
   }
   return Array.from(seen);
+}
+
+function normalisePositiveInt(value, fallback) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  const whole = Math.floor(num);
+  return whole >= 1 ? whole : fallback;
+}
+
+function normaliseOptionalId(value) {
+  if (value === null || typeof value === 'undefined') return null;
+  const id = String(value).trim();
+  return id ? id : null;
+}
+
+function normaliseStoreItemCosts(value) {
+  const output = {};
+  if (!value || typeof value !== 'object') return output;
+  for (const [itemId, rawCost] of Object.entries(value)) {
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_STORE_ITEM_COSTS, itemId)) continue;
+    const cost = normalisePositiveInt(rawCost, null);
+    if (cost !== null) output[itemId] = cost;
+  }
+  return output;
 }
 
 function ensureStore() {
@@ -46,24 +81,47 @@ async function saveStore() {
 function getGuildRecord(guildId) {
   const store = loadStore();
   if (!store.guilds[guildId] || typeof store.guilds[guildId] !== 'object') {
-    store.guilds[guildId] = { enabled: true, immuneRoleIds: [] };
+    store.guilds[guildId] = {
+      enabled: true,
+      immuneRoleIds: [],
+      messageThreshold: DEFAULT_MESSAGE_THRESHOLD,
+      voiceMinutesPerRupee: DEFAULT_VOICE_MINUTES_PER_RUPEE,
+      announceChannelId: null,
+      storeItemCosts: {},
+    };
   }
   const guild = store.guilds[guildId];
   if (typeof guild.enabled !== 'boolean') guild.enabled = true;
   if (!Array.isArray(guild.immuneRoleIds)) guild.immuneRoleIds = [];
   guild.immuneRoleIds = normaliseRoleIds(guild.immuneRoleIds);
+  guild.messageThreshold = normalisePositiveInt(guild.messageThreshold, DEFAULT_MESSAGE_THRESHOLD);
+  guild.voiceMinutesPerRupee = normalisePositiveInt(guild.voiceMinutesPerRupee, DEFAULT_VOICE_MINUTES_PER_RUPEE);
+  guild.announceChannelId = normaliseOptionalId(guild.announceChannelId);
+  guild.storeItemCosts = normaliseStoreItemCosts(guild.storeItemCosts);
   return guild;
 }
 
 function getConfig(guildId) {
   if (!guildId) {
-    return { enabled: true, updatedAt: null, immuneRoleIds: [] };
+    return {
+      enabled: true,
+      updatedAt: null,
+      immuneRoleIds: [],
+      messageThreshold: DEFAULT_MESSAGE_THRESHOLD,
+      voiceMinutesPerRupee: DEFAULT_VOICE_MINUTES_PER_RUPEE,
+      announceChannelId: null,
+      storeItemCosts: {},
+    };
   }
   const guild = getGuildRecord(guildId);
   return {
     enabled: guild.enabled !== false,
     updatedAt: guild.updatedAt ?? null,
     immuneRoleIds: guild.immuneRoleIds || [],
+    messageThreshold: guild.messageThreshold,
+    voiceMinutesPerRupee: guild.voiceMinutesPerRupee,
+    announceChannelId: guild.announceChannelId,
+    storeItemCosts: normaliseStoreItemCosts(guild.storeItemCosts),
   };
 }
 
@@ -75,9 +133,25 @@ function getImmuneRoleIds(guildId) {
   return getConfig(guildId).immuneRoleIds;
 }
 
+function getMessageThreshold(guildId) {
+  return getConfig(guildId).messageThreshold;
+}
+
+function getVoiceMinutesPerRupee(guildId) {
+  return getConfig(guildId).voiceMinutesPerRupee;
+}
+
+function getAnnounceChannelId(guildId) {
+  return getConfig(guildId).announceChannelId;
+}
+
+function getStoreItemCosts(guildId) {
+  return getConfig(guildId).storeItemCosts || {};
+}
+
 async function setEnabled(guildId, enabled) {
   if (!guildId) {
-    return { enabled: true, updatedAt: null, immuneRoleIds: [] };
+    return getConfig(guildId);
   }
   const store = loadStore();
   const current = getGuildRecord(guildId);
@@ -91,12 +165,84 @@ async function setEnabled(guildId, enabled) {
 }
 
 async function setImmuneRoleIds(guildId, roleIds) {
-  if (!guildId) return { enabled: true, updatedAt: null, immuneRoleIds: [] };
+  if (!guildId) return getConfig(guildId);
   const store = loadStore();
   const current = getGuildRecord(guildId);
   store.guilds[guildId] = {
     ...current,
     immuneRoleIds: normaliseRoleIds(roleIds),
+    updatedAt: new Date().toISOString(),
+  };
+  await saveStore();
+  return getConfig(guildId);
+}
+
+async function setEarningRates(guildId, rates = {}) {
+  if (!guildId) return getConfig(guildId);
+  const store = loadStore();
+  const current = getGuildRecord(guildId);
+  const nextMessageThreshold = normalisePositiveInt(
+    rates.messageThreshold,
+    current.messageThreshold || DEFAULT_MESSAGE_THRESHOLD,
+  );
+  const nextVoiceMinutesPerRupee = normalisePositiveInt(
+    rates.voiceMinutesPerRupee,
+    current.voiceMinutesPerRupee || DEFAULT_VOICE_MINUTES_PER_RUPEE,
+  );
+
+  store.guilds[guildId] = {
+    ...current,
+    messageThreshold: nextMessageThreshold,
+    voiceMinutesPerRupee: nextVoiceMinutesPerRupee,
+    updatedAt: new Date().toISOString(),
+  };
+  await saveStore();
+  return getConfig(guildId);
+}
+
+async function setAnnounceChannelId(guildId, channelId) {
+  if (!guildId) return getConfig(guildId);
+  const store = loadStore();
+  const current = getGuildRecord(guildId);
+  store.guilds[guildId] = {
+    ...current,
+    announceChannelId: normaliseOptionalId(channelId),
+    updatedAt: new Date().toISOString(),
+  };
+  await saveStore();
+  return getConfig(guildId);
+}
+
+async function setStoreItemCost(guildId, itemId, cost) {
+  if (!guildId || !itemId || !Object.prototype.hasOwnProperty.call(DEFAULT_STORE_ITEM_COSTS, itemId)) {
+    return getConfig(guildId);
+  }
+  const store = loadStore();
+  const current = getGuildRecord(guildId);
+  const nextStoreItemCosts = normaliseStoreItemCosts(current.storeItemCosts);
+  if (cost === null || typeof cost === 'undefined') {
+    delete nextStoreItemCosts[itemId];
+  } else {
+    const parsed = normalisePositiveInt(cost, null);
+    if (parsed === null) return getConfig(guildId);
+    nextStoreItemCosts[itemId] = parsed;
+  }
+  store.guilds[guildId] = {
+    ...current,
+    storeItemCosts: nextStoreItemCosts,
+    updatedAt: new Date().toISOString(),
+  };
+  await saveStore();
+  return getConfig(guildId);
+}
+
+async function setStoreItemCosts(guildId, costs) {
+  if (!guildId) return getConfig(guildId);
+  const store = loadStore();
+  const current = getGuildRecord(guildId);
+  store.guilds[guildId] = {
+    ...current,
+    storeItemCosts: normaliseStoreItemCosts(costs),
     updatedAt: new Date().toISOString(),
   };
   await saveStore();
@@ -122,11 +268,22 @@ function clearCache() {
 }
 
 module.exports = {
+  DEFAULT_MESSAGE_THRESHOLD,
+  DEFAULT_VOICE_MINUTES_PER_RUPEE,
+  DEFAULT_STORE_ITEM_COSTS,
   getConfig,
   isEnabled,
   getImmuneRoleIds,
+  getMessageThreshold,
+  getVoiceMinutesPerRupee,
+  getAnnounceChannelId,
+  getStoreItemCosts,
   setEnabled,
   setImmuneRoleIds,
+  setEarningRates,
+  setAnnounceChannelId,
+  setStoreItemCost,
+  setStoreItemCosts,
   addImmuneRole,
   removeImmuneRole,
   clearCache,

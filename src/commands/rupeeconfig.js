@@ -1,32 +1,175 @@
-const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  PermissionsBitField,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ChannelType,
+} = require('discord.js');
 const smiteConfigStore = require('../utils/smiteConfigStore');
+const logChannelTypeStore = require('../utils/logChannelTypeStore');
+const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { SHOP_ITEMS } = require('./rupeestore');
+
+const HORSE_RACE_WIN_RUPEES = 1;
+const SESSION_TIMEOUT_MS = 10 * 60_000;
+const STORE_ITEM_LOOKUP = new Map((SHOP_ITEMS || []).map(item => [String(item.id), item]));
+
+function parseRoleId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  const mention = value.match(/^<@&(\d+)>$/);
+  if (mention) return mention[1];
+  const plain = value.match(/^\d{15,22}$/);
+  return plain ? plain[0] : null;
+}
+
+function parseChannelId(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  const mention = value.match(/^<#(\d+)>$/);
+  if (mention) return mention[1];
+  const plain = value.match(/^\d{15,22}$/);
+  return plain ? plain[0] : null;
+}
+
+function parsePositiveInteger(raw, { min = 1, max = 100_000 } = {}) {
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return null;
+  const whole = Math.floor(num);
+  if (whole < min || whole > max) return null;
+  return whole;
+}
+
+function parseStoreItemId(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value) return null;
+  if (STORE_ITEM_LOOKUP.has(value)) return value;
+  const index = Number.parseInt(value, 10);
+  if (Number.isInteger(index) && index >= 1 && index <= SHOP_ITEMS.length) {
+    return SHOP_ITEMS[index - 1].id;
+  }
+  return null;
+}
+
+async function resolveRupeeLogChannelId(guildId) {
+  const economyEntry = await logChannelTypeStore.getEntry(guildId, 'economy');
+  if (economyEntry?.channelId) return String(economyEntry.channelId);
+
+  const keys = ['rupee_earned', 'rupee_spend', 'rupee_given'];
+  const unique = new Set();
+  for (const key of keys) {
+    // eslint-disable-next-line no-await-in-loop
+    const entry = await logChannelTypeStore.getEntry(guildId, key);
+    if (entry?.channelId) unique.add(String(entry.channelId));
+  }
+  return unique.size === 1 ? Array.from(unique)[0] : null;
+}
+
+function formatImmuneRoles(roleIds) {
+  if (!Array.isArray(roleIds) || roleIds.length === 0) return 'Not Configured';
+  return roleIds.map(id => `<@&${id}>`).join(', ');
+}
+
+function formatStoreConfig(storeItemCosts) {
+  const safeCosts = storeItemCosts && typeof storeItemCosts === 'object' ? storeItemCosts : {};
+  if (!Array.isArray(SHOP_ITEMS) || SHOP_ITEMS.length === 0) return 'No store items found.';
+  return SHOP_ITEMS.map((item, idx) => {
+    const override = Number(safeCosts[item.id]);
+    const hasOverride = Number.isFinite(override) && Math.floor(override) >= 1;
+    const effectiveCost = hasOverride ? Math.floor(override) : item.cost;
+    const suffix = hasOverride ? ' (custom)' : '';
+    return `\`${idx + 1}.\` ${item.label} (\`${item.id}\`) = **${effectiveCost}** rupee${effectiveCost === 1 ? '' : 's'}${suffix}`;
+  }).join('\n');
+}
+
+function buildEmbed(guild, config, rupeeLogChannelId) {
+  const messageRate = Number(config.messageThreshold) || smiteConfigStore.DEFAULT_MESSAGE_THRESHOLD;
+  const voiceRate = Number(config.voiceMinutesPerRupee) || smiteConfigStore.DEFAULT_VOICE_MINUTES_PER_RUPEE;
+  const announceDisplay = config.announceChannelId ? `<#${config.announceChannelId}>` : 'Not Configured';
+  const logDisplay = rupeeLogChannelId ? `<#${rupeeLogChannelId}>` : 'Not Configured';
+  const enabledText = config.enabled ? 'Enabled' : 'Disabled';
+
+  return new EmbedBuilder()
+    .setTitle('Rupee Configuration')
+    .setDescription(`Current Rupee settings for **${guild?.name || 'this server'}**.`)
+    .setColor(resolveEmbedColour(guild?.id, 0x00f0ff))
+    .addFields(
+      { name: 'Status', value: `**${enabledText}**`, inline: false },
+      {
+        name: 'Earning Rates',
+        value: [
+          `**${messageRate}** messages = **1 Rupee**`,
+          `**${voiceRate}** minute${voiceRate === 1 ? '' : 's'} in voice chat = **1 Rupee**`,
+          `Horse Race Win = **${HORSE_RACE_WIN_RUPEES} Rupee${HORSE_RACE_WIN_RUPEES === 1 ? '' : 's'}**`,
+        ].join('\n'),
+        inline: false,
+      },
+      { name: 'Immunity Role', value: formatImmuneRoles(config.immuneRoleIds), inline: false },
+      { name: 'Rupee Announce Channel', value: announceDisplay, inline: false },
+      { name: 'Rupee Log Channel', value: logDisplay, inline: false },
+      { name: 'Store Config', value: formatStoreConfig(config.storeItemCosts), inline: false },
+    )
+    .setFooter({ text: 'Use the buttons below to update this server only.' })
+    .setTimestamp(new Date());
+}
+
+function buildButtons(baseId, enabled, disabled = false) {
+  const toggleStyle = enabled ? ButtonStyle.Danger : ButtonStyle.Success;
+  const toggleLabel = enabled ? 'Disable Rupees' : 'Enable Rupees';
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${baseId}:toggle`)
+        .setLabel(toggleLabel)
+        .setStyle(toggleStyle)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${baseId}:rates`)
+        .setLabel('Edit Message & VC Rates')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${baseId}:immunity`)
+        .setLabel('Set Immunity Role')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${baseId}:announce`)
+        .setLabel('Set Announce Channel')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${baseId}:log`)
+        .setLabel('Set Log Channel')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${baseId}:store`)
+        .setLabel('Edit Store Prices')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disabled),
+    ),
+  ];
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('rupeeconfig')
     .setDescription('Configure Rupee system settings for this server')
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
     .addBooleanOption(opt =>
       opt
         .setName('enabled')
-        .setDescription('Turn Rupee rewards on or off')
-        .setRequired(false)
-    )
-    .addRoleOption(opt =>
-      opt
-        .setName('immune_role')
-        .setDescription('Role to add or remove from the Rupee punishing items immunity list')
-        .setRequired(false)
-    )
-    .addStringOption(opt =>
-      opt
-        .setName('immune_action')
-        .setDescription('Whether to add or remove the immune role (defaults to add).')
-        .addChoices(
-          { name: 'Add', value: 'add' },
-          { name: 'Remove', value: 'remove' },
-          { name: 'Clear all', value: 'clear' },
-        )
-        .setRequired(false)
+        .setDescription('Turn Rupee rewards on or off before opening the config view')
+        .setRequired(false),
     ),
 
   async execute(interaction) {
@@ -36,58 +179,399 @@ module.exports = {
 
     await interaction.deferReply({ ephemeral: true });
 
-    if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-      return interaction.editReply({ content: 'You need the Manage Server permission to configure Rupees.' });
+    const canManageGuild = interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild);
+    const isAdmin = interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator);
+    const isGuildOwner = interaction.guild?.ownerId === interaction.user.id;
+    if (!canManageGuild && !isAdmin && !isGuildOwner) {
+      return interaction.editReply({ content: 'You need Manage Server, Administrator, or server owner access to configure Rupees.' });
     }
 
-    const choice = interaction.options.getBoolean('enabled');
-    const immuneRole = interaction.options.getRole('immune_role');
-    const immuneAction = interaction.options.getString('immune_action') || 'add';
-
-    const hasRoleChange = immuneAction === 'clear' || !!immuneRole;
-    if (immuneRole && immuneAction === 'clear') {
-      return interaction.editReply({ content: 'Select add or remove when specifying an immune role.' });
+    const baseId = `rupeeconfig:${interaction.id}`;
+    const initialEnabled = interaction.options.getBoolean('enabled');
+    if (initialEnabled !== null) {
+      await smiteConfigStore.setEnabled(interaction.guildId, initialEnabled);
     }
 
-    const updates = [];
-    let config = smiteConfigStore.getConfig(interaction.guildId);
+    const render = async () => {
+      const config = smiteConfigStore.getConfig(interaction.guildId);
+      const logChannelId = await resolveRupeeLogChannelId(interaction.guildId);
+      const embed = buildEmbed(interaction.guild, config, logChannelId);
+      const components = buildButtons(baseId, config.enabled, false);
+      return { config, embed, components };
+    };
 
-    if (choice !== null) {
-      config = await smiteConfigStore.setEnabled(interaction.guildId, choice);
-      const status = config.enabled ? 'enabled' : 'disabled';
-      updates.push(`Smite rewards have been **${status}**.`);
-    }
+    const view = await render();
+    const reply = await interaction.editReply({
+      embeds: [view.embed],
+      components: view.components,
+    });
 
-    if (hasRoleChange) {
-      if (immuneAction === 'clear') {
-        config = await smiteConfigStore.setImmuneRoleIds(interaction.guildId, []);
-        updates.push('Cleared all Smite immune roles.');
-      } else if (immuneAction === 'remove') {
-        config = await smiteConfigStore.removeImmuneRole(interaction.guildId, immuneRole.id);
-        updates.push(`Removed ${immuneRole} from the Smite immune list.`);
-      } else {
-        config = await smiteConfigStore.addImmuneRole(interaction.guildId, immuneRole.id);
-        updates.push(`Added ${immuneRole} to the Smite immune list.`);
+    const collector = reply.createMessageComponentCollector({ time: SESSION_TIMEOUT_MS });
+
+    collector.on('collect', async (componentInteraction) => {
+      if (componentInteraction.user.id !== interaction.user.id) {
+        await componentInteraction.reply({ content: 'This configuration panel belongs to someone else.', ephemeral: true });
+        return;
       }
-    }
 
-    if (!updates.length) {
-      const status = config.enabled ? 'enabled' : 'disabled';
-      const immune = config.immuneRoleIds;
-      const immuneList = immune.length
-        ? immune.map(id => `<@&${id}>`).join(', ')
-        : 'None';
-      return interaction.editReply({
-        content: `Smite rewards are currently **${status}** on this server.\nImmune roles: ${immuneList}.`,
-      });
-    }
+      if (componentInteraction.customId === `${baseId}:toggle`) {
+        const current = smiteConfigStore.getConfig(interaction.guildId);
+        await smiteConfigStore.setEnabled(interaction.guildId, !current.enabled);
+        const nextView = await render();
+        await componentInteraction.update({ embeds: [nextView.embed], components: nextView.components });
+        return;
+      }
 
-    const immune = config.immuneRoleIds;
-    const immuneList = immune.length
-      ? immune.map(id => `<@&${id}>`).join(', ')
-      : 'None';
-    await interaction.editReply({
-      content: `${updates.join(' ')}\nImmune roles: ${immuneList}.`,
+      if (componentInteraction.customId === `${baseId}:rates`) {
+        const current = smiteConfigStore.getConfig(interaction.guildId);
+        const modalId = `${baseId}:modal:rates`;
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Edit Rupee Earning Rates')
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('message_threshold')
+                .setLabel('Messages per 1 Rupee')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setValue(String(current.messageThreshold || smiteConfigStore.DEFAULT_MESSAGE_THRESHOLD)),
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('voice_minutes')
+                .setLabel('Voice minutes per 1 Rupee')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setValue(String(current.voiceMinutesPerRupee || smiteConfigStore.DEFAULT_VOICE_MINUTES_PER_RUPEE)),
+            ),
+          );
+
+        await componentInteraction.showModal(modal);
+
+        let submission;
+        try {
+          submission = await componentInteraction.awaitModalSubmit({
+            time: 180_000,
+            filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+          });
+        } catch (_) {
+          return;
+        }
+
+        const messageThreshold = parsePositiveInteger(submission.fields.getTextInputValue('message_threshold'));
+        const voiceMinutesPerRupee = parsePositiveInteger(submission.fields.getTextInputValue('voice_minutes'));
+        if (!messageThreshold || !voiceMinutesPerRupee) {
+          await submission.reply({
+            content: 'Please enter whole numbers greater than 0 for both message and voice earning rates.',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        await smiteConfigStore.setEarningRates(interaction.guildId, {
+          messageThreshold,
+          voiceMinutesPerRupee,
+        });
+        const nextView = await render();
+        await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+        await submission.reply({ content: 'Rupee earning rates updated for this server.', ephemeral: true });
+        return;
+      }
+
+      if (componentInteraction.customId === `${baseId}:immunity`) {
+        const modalId = `${baseId}:modal:immunity`;
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Set Immunity Role')
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('immune_role')
+                .setLabel('Role mention or ID (type "clear" to remove)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setPlaceholder('<@&ROLE_ID> | ROLE_ID | clear'),
+            ),
+          );
+
+        await componentInteraction.showModal(modal);
+
+        let submission;
+        try {
+          submission = await componentInteraction.awaitModalSubmit({
+            time: 180_000,
+            filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+          });
+        } catch (_) {
+          return;
+        }
+
+        const raw = (submission.fields.getTextInputValue('immune_role') || '').trim();
+        if (!raw) {
+          await submission.reply({ content: 'Please provide a role mention/ID, or `clear`.', ephemeral: true });
+          return;
+        }
+
+        if (raw.toLowerCase() === 'clear') {
+          await smiteConfigStore.setImmuneRoleIds(interaction.guildId, []);
+          const nextView = await render();
+          await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+          await submission.reply({ content: 'Immunity role cleared for this server.', ephemeral: true });
+          return;
+        }
+
+        const roleId = parseRoleId(raw);
+        if (!roleId) {
+          await submission.reply({ content: 'Invalid role format. Use a role mention, role ID, or `clear`.', ephemeral: true });
+          return;
+        }
+
+        let role = interaction.guild.roles.cache.get(roleId);
+        if (!role) {
+          try {
+            role = await interaction.guild.roles.fetch(roleId);
+          } catch (_) {
+            role = null;
+          }
+        }
+        if (!role) {
+          await submission.reply({ content: 'That role does not exist in this server.', ephemeral: true });
+          return;
+        }
+
+        await smiteConfigStore.setImmuneRoleIds(interaction.guildId, [role.id]);
+        const nextView = await render();
+        await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+        await submission.reply({ content: `Immunity role set to ${role}.`, ephemeral: true });
+        return;
+      }
+
+      if (componentInteraction.customId === `${baseId}:announce`) {
+        const modalId = `${baseId}:modal:announce`;
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Set Rupee Announce Channel')
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('announce_channel')
+                .setLabel('Channel mention or ID (type "clear" to remove)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setPlaceholder('<#CHANNEL_ID> | CHANNEL_ID | clear'),
+            ),
+          );
+
+        await componentInteraction.showModal(modal);
+
+        let submission;
+        try {
+          submission = await componentInteraction.awaitModalSubmit({
+            time: 180_000,
+            filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+          });
+        } catch (_) {
+          return;
+        }
+
+        const raw = (submission.fields.getTextInputValue('announce_channel') || '').trim();
+        if (!raw) {
+          await submission.reply({ content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
+          return;
+        }
+
+        if (raw.toLowerCase() === 'clear') {
+          await smiteConfigStore.setAnnounceChannelId(interaction.guildId, null);
+          const nextView = await render();
+          await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+          await submission.reply({ content: 'Rupee announce channel cleared.', ephemeral: true });
+          return;
+        }
+
+        const channelId = parseChannelId(raw);
+        if (!channelId) {
+          await submission.reply({ content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
+          return;
+        }
+
+        let channel = interaction.guild.channels.cache.get(channelId);
+        if (!channel) {
+          try {
+            channel = await interaction.guild.channels.fetch(channelId);
+          } catch (_) {
+            channel = null;
+          }
+        }
+        if (!channel || !channel.isTextBased?.() || channel.type === ChannelType.GuildForum) {
+          await submission.reply({ content: 'Please select a text or announcement channel in this server.', ephemeral: true });
+          return;
+        }
+
+        await smiteConfigStore.setAnnounceChannelId(interaction.guildId, channel.id);
+        const nextView = await render();
+        await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+        await submission.reply({ content: `Rupee announce channel set to ${channel}.`, ephemeral: true });
+        return;
+      }
+
+      if (componentInteraction.customId === `${baseId}:log`) {
+        const modalId = `${baseId}:modal:log`;
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Set Rupee Log Channel')
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('log_channel')
+                .setLabel('Channel mention or ID (type "clear" to remove)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setPlaceholder('<#CHANNEL_ID> | CHANNEL_ID | clear'),
+            ),
+          );
+
+        await componentInteraction.showModal(modal);
+
+        let submission;
+        try {
+          submission = await componentInteraction.awaitModalSubmit({
+            time: 180_000,
+            filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+          });
+        } catch (_) {
+          return;
+        }
+
+        const raw = (submission.fields.getTextInputValue('log_channel') || '').trim();
+        if (!raw) {
+          await submission.reply({ content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
+          return;
+        }
+
+        if (raw.toLowerCase() === 'clear') {
+          await logChannelTypeStore.setChannel(interaction.guildId, 'economy', null);
+          const nextView = await render();
+          await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+          await submission.reply({ content: 'Rupee log channel cleared.', ephemeral: true });
+          return;
+        }
+
+        const channelId = parseChannelId(raw);
+        if (!channelId) {
+          await submission.reply({ content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
+          return;
+        }
+
+        let channel = interaction.guild.channels.cache.get(channelId);
+        if (!channel) {
+          try {
+            channel = await interaction.guild.channels.fetch(channelId);
+          } catch (_) {
+            channel = null;
+          }
+        }
+        if (!channel || (!channel.isTextBased?.() && channel.type !== ChannelType.GuildForum)) {
+          await submission.reply({ content: 'Please select a text, announcement, thread, or forum channel in this server.', ephemeral: true });
+          return;
+        }
+
+        await logChannelTypeStore.setChannel(interaction.guildId, 'economy', channel.id);
+        await logChannelTypeStore.setEnabled(interaction.guildId, 'economy', true);
+
+        const nextView = await render();
+        await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+        await submission.reply({ content: `Rupee log channel set to ${channel}.`, ephemeral: true });
+        return;
+      }
+
+      if (componentInteraction.customId === `${baseId}:store`) {
+        const modalId = `${baseId}:modal:store`;
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Edit Store Item Price')
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('store_item_id')
+                .setLabel('Store item ID or number')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setPlaceholder('e.g. stfu or 1'),
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('store_item_cost')
+                .setLabel('Rupee cost (or "default" to reset)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setPlaceholder('e.g. 7 or default'),
+            ),
+          );
+
+        await componentInteraction.showModal(modal);
+
+        let submission;
+        try {
+          submission = await componentInteraction.awaitModalSubmit({
+            time: 180_000,
+            filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+          });
+        } catch (_) {
+          return;
+        }
+
+        const rawItemId = submission.fields.getTextInputValue('store_item_id');
+        const storeItemId = parseStoreItemId(rawItemId);
+        if (!storeItemId) {
+          await submission.reply({
+            content: `Invalid store item. Use one of: ${SHOP_ITEMS.map((item, idx) => `${idx + 1}:${item.id}`).join(', ')}`,
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const item = STORE_ITEM_LOOKUP.get(storeItemId);
+        const rawCost = (submission.fields.getTextInputValue('store_item_cost') || '').trim();
+        const lowerCost = rawCost.toLowerCase();
+
+        if (lowerCost === 'default' || lowerCost === 'reset' || lowerCost === 'clear') {
+          await smiteConfigStore.setStoreItemCost(interaction.guildId, storeItemId, null);
+          const nextView = await render();
+          await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+          await submission.reply({
+            content: `${item?.label || storeItemId} cost reset to default (${item?.cost ?? 'unknown'}).`,
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const parsedCost = parsePositiveInteger(rawCost, { min: 1, max: 1_000_000 });
+        if (!parsedCost) {
+          await submission.reply({
+            content: 'Invalid cost. Enter a whole number greater than 0, or `default`.',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        await smiteConfigStore.setStoreItemCost(interaction.guildId, storeItemId, parsedCost);
+        const nextView = await render();
+        await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+        await submission.reply({
+          content: `${item?.label || storeItemId} now costs ${parsedCost} rupee${parsedCost === 1 ? '' : 's'} in this server.`,
+          ephemeral: true,
+        });
+      }
+    });
+
+    collector.on('end', async () => {
+      try {
+        const latest = smiteConfigStore.getConfig(interaction.guildId);
+        await interaction.editReply({
+          components: buildButtons(baseId, latest.enabled, true),
+        });
+      } catch (_) {}
     });
   },
 };

@@ -1,4 +1,4 @@
-const { Events, EmbedBuilder } = require('discord.js');
+const { Events, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const messageLogStore = require('../utils/userMessageLogStore');
 const rupeeStore = require('../utils/rupeeStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
@@ -6,6 +6,33 @@ const { resolveEmbedColour } = require('../utils/guildColourStore');
 const messageCountStore = require('../utils/messageCountStore');
 const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
 const logSender = require('../utils/logSender');
+
+async function resolveAnnouncementChannel(guild, configuredChannelId, fallbackChannel) {
+  if (!guild) return null;
+
+  let channel = null;
+  if (configuredChannelId) {
+    const id = String(configuredChannelId);
+    channel = guild.channels?.cache?.get(id) || null;
+    if (!channel) {
+      try {
+        channel = await guild.channels.fetch(id);
+      } catch (_) {
+        channel = null;
+      }
+    }
+  }
+
+  if (!channel) channel = fallbackChannel || null;
+  if (!channel || !channel.isTextBased?.()) return null;
+
+  const me = guild.members?.me;
+  const perms = channel.permissionsFor?.(me);
+  if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.SendMessages)) {
+    return null;
+  }
+  return channel;
+}
 
 module.exports = {
   name: Events.MessageCreate,
@@ -30,10 +57,14 @@ module.exports = {
       console.error('Failed to update message leaderboard', err);
     }
 
-    if (!smiteConfigStore.isEnabled(message.guild.id)) return;
+    const config = smiteConfigStore.getConfig(message.guild.id);
+    if (!config.enabled) return;
 
     try {
-      const result = await rupeeStore.incrementMessage(message.guild.id, message.author.id);
+      const messageThreshold = Number(config.messageThreshold) || rupeeStore.AWARD_THRESHOLD;
+      const result = await rupeeStore.incrementMessage(message.guild.id, message.author.id, {
+        awardThreshold: messageThreshold,
+      });
       if (!result?.awarded || result.awarded <= 0) return;
 
       const newBalance = Number.isFinite(result.tokens) ? result.tokens : rupeeStore.getBalance(message.guild.id, message.author.id);
@@ -48,7 +79,7 @@ module.exports = {
           target: message.author,
           amount: result.awarded,
           balance: newBalance,
-          method: `Message Activity (${rupeeStore.AWARD_THRESHOLD} messages)`,
+          method: `Message Activity (${messageThreshold} messages)`,
         });
         await logSender.sendLog({
           guildId: message.guild.id,
@@ -63,11 +94,17 @@ module.exports = {
         .setColor(resolveEmbedColour(message.guild.id, 0x00f0ff))
         .setDescription(announcement)
         .setThumbnail(message.author.displayAvatarURL({ extension: 'png', size: 256 }));
+      const destinationChannel = await resolveAnnouncementChannel(
+        message.guild,
+        config.announceChannelId,
+        message.channel,
+      );
+      if (!destinationChannel) return;
       try {
-        await message.channel?.send({ embeds: [embed] });
+        await destinationChannel.send({ embeds: [embed] });
       } catch (_) {
         try {
-          await message.channel?.send({
+          await destinationChannel.send({
             content: announcement,
             allowedMentions: { users: [message.author.id] },
           });

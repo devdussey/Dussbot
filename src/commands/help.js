@@ -58,7 +58,7 @@ const categories = {
     { cmd: '/inventory', desc: 'View your coins and rupees.', perm: null },
     { cmd: '/rupeeboard', desc: 'View the server rupee leaderboard.', perm: null },
     { cmd: '/rupeestore', desc: 'Spend rupees on store items and actions.', perm: null },
-    { cmd: '/rupeeconfig', desc: 'Configure Smite/Rupee rewards and immune roles.', perm: 'Manage Server' },
+    { cmd: '/rupeeconfig', desc: 'Configure Rupee rewards, store prices, immunity role, and rupee channels.', perm: 'Manage Server' },
     { cmd: '/blessing', desc: 'Claim your daily blessing rupee.', perm: 'Administrator' },
     { cmd: '/horserace', desc: 'Start a race with live betting and payouts.', perm: null },
     { cmd: '/horseracestandings', desc: 'View race podium history and stats.', perm: null },
