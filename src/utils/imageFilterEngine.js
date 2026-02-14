@@ -22,6 +22,14 @@ const FALLBACK_FILTER_URLS = new Map([
 ]);
 
 const filterBufferCache = new Map();
+const STABLE_GIF_OUTPUT_OPTIONS = Object.freeze({
+  reoptimise: false,
+  colours: 256,
+  dither: 0,
+  effort: 10,
+  interFrameMaxError: 0,
+  interPaletteMaxError: 0,
+});
 
 function isHttpUrl(value) {
   if (!value) return false;
@@ -171,7 +179,6 @@ async function applyImageFilter(inputBuffer, edit) {
     .toBuffer();
 
   const filterBuffer = await getBundledFilterBuffer(edit);
-  const filterMetadata = await sharp(filterBuffer, { animated: true }).metadata();
   const resizedFilterGif = await sharp(filterBuffer, { animated: true })
     .resize({
       width,
@@ -179,14 +186,48 @@ async function applyImageFilter(inputBuffer, edit) {
       fit: 'cover',
       withoutEnlargement: false,
     })
-    .gif({ reoptimise: false })
+    .gif(STABLE_GIF_OUTPUT_OPTIONS)
     .toBuffer();
 
-  // If the filter has alpha, keep it above the image; otherwise blend it in.
-  const blendMode = filterMetadata.hasAlpha ? 'dest-over' : 'screen';
-  const outputBuffer = await sharp(resizedFilterGif, { animated: true })
-    .composite([{ input: baseStillImage, blend: blendMode }])
-    .gif({ reoptimise: false })
+  const filterMetadata = await sharp(resizedFilterGif, { animated: true }).metadata();
+  const frameCount = Math.max(1, Number(filterMetadata.pages) || 1);
+  const delay = Array.isArray(filterMetadata.delay) && filterMetadata.delay.length
+    ? filterMetadata.delay
+    : Array(frameCount).fill(60);
+
+  // Build an animated base with the same frame count so the background remains stable.
+  const animatedBase = await sharp({
+    create: {
+      width,
+      height: height * frameCount,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite(
+      Array.from({ length: frameCount }, (_, idx) => ({
+        input: baseStillImage,
+        left: 0,
+        top: idx * height,
+      }))
+    )
+    .gif({
+      ...STABLE_GIF_OUTPUT_OPTIONS,
+      delay,
+      loop: Number.isFinite(filterMetadata.loop) ? filterMetadata.loop : 0,
+      pageHeight: height,
+    })
+    .toBuffer();
+
+  // Keep the background static and let the moving filter effect render on top.
+  const blendMode = filterMetadata.hasAlpha ? 'over' : 'lighten';
+  const outputBuffer = await sharp(animatedBase, { animated: true })
+    .composite([{ input: resizedFilterGif, blend: blendMode }])
+    .gif({
+      ...STABLE_GIF_OUTPUT_OPTIONS,
+      delay,
+      loop: Number.isFinite(filterMetadata.loop) ? filterMetadata.loop : 0,
+    })
     .toBuffer();
 
   if (outputBuffer.length > MAX_MEDIA_BYTES) {

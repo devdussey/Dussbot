@@ -16,7 +16,7 @@ const DEFAULT_EDIT = 'load';
 
 module.exports = {
   data: new ContextMenuCommandBuilder()
-    .setName('Image Filter')
+    .setName('Load')
     .setType(ApplicationCommandType.Message)
     .setDMPermission(true)
     .setIntegrationTypes(
@@ -32,7 +32,7 @@ module.exports = {
   async execute(interaction) {
     const targetMessage = interaction.targetMessage;
     if (!targetMessage) {
-      await interaction.reply({ content: 'Could not resolve that message.', ephemeral: true });
+      await interaction.reply({ content: 'Could not resolve that message.' });
       return;
     }
 
@@ -40,12 +40,11 @@ module.exports = {
     if (!source?.url) {
       await interaction.reply({
         content: 'That message does not contain an image attachment or embed image.',
-        ephemeral: true,
       });
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply();
 
     try {
       const sourceBuffer = await downloadBuffer(source.url);
