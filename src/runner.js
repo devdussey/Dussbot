@@ -152,8 +152,31 @@ async function listLocalBranchNames() {
           console.log(`[runner] git checkout ${resolvedBranch}`);
           await run('git', ['checkout', resolvedBranch]);
         } else if (hasRemoteBranch) {
-          console.log(`[runner] git checkout -B ${resolvedBranch} --track origin/${resolvedBranch}`);
-          await run('git', ['checkout', '-B', resolvedBranch, '--track', `origin/${resolvedBranch}`]);
+          const remoteBranchRef = `origin/${resolvedBranch}`;
+          console.log(`[runner] git checkout -B ${resolvedBranch} --track ${remoteBranchRef}`);
+          try {
+            await run('git', ['checkout', '-B', resolvedBranch, '--track', remoteBranchRef]);
+          } catch (trackErr) {
+            const message = String(trackErr?.message || '');
+            if (!message.includes('cannot set up tracking information')) throw trackErr;
+
+            // Some providers expose a remote ref that resolves to a commit but is not typed as a branch,
+            // so `--track` fails even though checkout from origin/<branch> is valid.
+            console.warn(
+              `[runner] tracking setup failed for ${remoteBranchRef}; retrying checkout without --track and setting upstream if possible`,
+            );
+            console.log(`[runner] git checkout -B ${resolvedBranch} ${remoteBranchRef}`);
+            await run('git', ['checkout', '-B', resolvedBranch, remoteBranchRef]);
+
+            try {
+              console.log(`[runner] git branch --set-upstream-to=${remoteBranchRef} ${resolvedBranch}`);
+              await run('git', ['branch', `--set-upstream-to=${remoteBranchRef}`, resolvedBranch]);
+            } catch (upstreamErr) {
+              console.warn(
+                `[runner] could not set upstream to ${remoteBranchRef}; continuing without upstream (${upstreamErr?.message || upstreamErr})`,
+              );
+            }
+          }
         } else {
           const { stdout: branchListOut } = await runCapture('git', ['branch', '-a']);
           throw new Error(
