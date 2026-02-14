@@ -38,8 +38,10 @@ logger.info('Commands to deploy: ' + (Array.from(nameToFile.keys()).join(', ') |
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes('--dry-run') || process.env.DRY_RUN === '1';
+const deployBothScopes = args.includes('--both-scopes') || process.env.DEPLOY_BOTH_SCOPES === '1';
 
-const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+const token = process.env.DISCORD_TOKEN;
+const rest = new REST().setToken(token);
 
 (async () => {
     try {
@@ -52,13 +54,19 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
             .map(s => s.trim())
             .filter(Boolean);
 
+        if (!token) {
+            throw new Error('Missing DISCORD_TOKEN in environment.');
+        }
+
         if (!clientId) {
             throw new Error('Missing CLIENT_ID in environment.');
         }
 
         // Guild-scoped commands appear instantly, whereas global updates may take up to an hour to propagate.
-        if (env === 'development' && guildIds.length > 0) {
-            // Deploy to one or more guilds for faster iteration
+        const shouldDeployGuild = guildIds.length > 0 && (env === 'development' || deployBothScopes);
+        const shouldDeployGlobal = deployBothScopes || !(env === 'development' && guildIds.length > 0);
+
+        if (shouldDeployGuild) {
             logger.info(`Target scope: guild (${guildIds.join(', ')})`);
             if (!isDryRun) {
                 for (const gid of guildIds) {
@@ -71,8 +79,9 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
             } else {
                 logger.info('DRY-RUN: Skipping REST deployment for guild scope.');
             }
-        } else {
-            // Deploy globally (slower propagation across Discord)
+        }
+
+        if (shouldDeployGlobal) {
             logger.info('Target scope: global');
             if (!isDryRun) {
                 const data = await rest.put(
@@ -86,5 +95,6 @@ const rest = new REST().setToken(process.env.DISCORD_TOKEN);
         }
     } catch (error) {
         logger.error('Error deploying commands:', error);
+        process.exitCode = 1;
     }
 })();
