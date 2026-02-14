@@ -30,8 +30,7 @@ const STABLE_GIF_OUTPUT_OPTIONS = Object.freeze({
   interFrameMaxError: 0,
   interPaletteMaxError: 0,
 });
-const LOAD_SPLASH_BLACK_POINT = Number(process.env.IMAGEFILTER_LOAD_BLACK_POINT || 18);
-const LOAD_SPLASH_WHITE_POINT = Number(process.env.IMAGEFILTER_LOAD_WHITE_POINT || 185);
+const LOAD_WHITE_THRESHOLD = Number(process.env.IMAGEFILTER_LOAD_WHITE_THRESHOLD || 175);
 
 function isHttpUrl(value) {
   if (!value) return false;
@@ -177,16 +176,13 @@ async function getBundledFilterBuffer(edit) {
 async function applyLoadWhiteSplashOverlay(gifBuffer) {
   const metadata = await sharp(gifBuffer, { animated: true }).metadata();
   const timing = extractAnimationTiming(metadata);
-  const blackPoint = clampByte(LOAD_SPLASH_BLACK_POINT, 18);
-  const whitePoint = Math.max(blackPoint + 1, clampByte(LOAD_SPLASH_WHITE_POINT, 185));
-  const scale = 255 / (whitePoint - blackPoint);
-  const offset = -blackPoint * scale;
+  const whiteThreshold = clampByte(LOAD_WHITE_THRESHOLD, 175);
 
-  // Convert the filter to a luminance map so only white splash highlights remain.
+  // Extract only the white splash from the filter and drop darker background pixels.
   return sharp(gifBuffer, { animated: true })
     .removeAlpha()
     .greyscale()
-    .linear(scale, offset)
+    .threshold(whiteThreshold)
     .gif({
       ...STABLE_GIF_OUTPUT_OPTIONS,
       ...(timing.delay ? { delay: timing.delay } : {}),
@@ -243,7 +239,7 @@ async function applyImageFilter(inputBuffer, edit) {
     ? 'screen'
     : (filterMetadata.hasAlpha ? 'dest-over' : 'screen');
   const outputBuffer = await sharp(processedFilterGif, { animated: true })
-    .composite([{ input: baseStillImage, blend: blendMode }])
+    .composite([{ input: baseStillImage, blend: blendMode, tile: true }])
     .gif({
       ...STABLE_GIF_OUTPUT_OPTIONS,
       ...(timing.delay ? { delay: timing.delay } : {}),
