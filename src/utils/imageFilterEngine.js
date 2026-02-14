@@ -109,6 +109,18 @@ function assertSupportedEdit(edit) {
   }
 }
 
+function extractAnimationTiming(metadata) {
+  const delay = Array.isArray(metadata?.delay) && metadata.delay.length
+    ? metadata.delay
+    : undefined;
+  const loop = Number.isFinite(metadata?.loop) ? metadata.loop : 0;
+  const pages = Math.max(1, Number(metadata?.pages) || 1);
+  const pageHeight = Number(metadata?.pageHeight) > 0
+    ? Number(metadata.pageHeight)
+    : (Number(metadata?.height) > 0 ? Math.max(1, Math.floor(metadata.height / pages)) : null);
+  return { delay, loop, pageHeight };
+}
+
 async function downloadBuffer(url) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -154,6 +166,19 @@ async function getBundledFilterBuffer(edit) {
   return remoteBuffer;
 }
 
+async function applyLoadKeyedTransparency(gifBuffer) {
+  // Chroma-key pass for this exact filter: map black background to transparency
+  // while preserving per-frame animation geometry.
+  return sharp(gifBuffer, { animated: true })
+    .negate({ alpha: false })
+    .unflatten()
+    .negate({ alpha: false })
+    .gif({
+      ...STABLE_GIF_OUTPUT_OPTIONS,
+    })
+    .toBuffer();
+}
+
 async function applyImageFilter(inputBuffer, edit) {
   assertSupportedEdit(edit);
   if (!Buffer.isBuffer(inputBuffer) || !inputBuffer.length) {
@@ -189,19 +214,22 @@ async function applyImageFilter(inputBuffer, edit) {
     .gif(STABLE_GIF_OUTPUT_OPTIONS)
     .toBuffer();
 
-  const filterMetadata = await sharp(resizedFilterGif, { animated: true }).metadata();
-  const delay = Array.isArray(filterMetadata.delay) && filterMetadata.delay.length
-    ? filterMetadata.delay
-    : undefined;
+  const processedFilterGif = edit === EDIT_LOAD
+    ? await applyLoadKeyedTransparency(resizedFilterGif)
+    : resizedFilterGif;
+
+  const filterMetadata = await sharp(processedFilterGif, { animated: true }).metadata();
+  const timing = extractAnimationTiming(filterMetadata);
 
   // Composite a static base behind each animation frame, preserving frame geometry.
   const blendMode = filterMetadata.hasAlpha ? 'dest-over' : 'screen';
-  const outputBuffer = await sharp(resizedFilterGif, { animated: true })
+  const outputBuffer = await sharp(processedFilterGif, { animated: true })
     .composite([{ input: baseStillImage, blend: blendMode }])
     .gif({
       ...STABLE_GIF_OUTPUT_OPTIONS,
-      ...(delay ? { delay } : {}),
-      loop: Number.isFinite(filterMetadata.loop) ? filterMetadata.loop : 0,
+      ...(timing.delay ? { delay: timing.delay } : {}),
+      ...(timing.pageHeight ? { pageHeight: timing.pageHeight } : {}),
+      loop: timing.loop,
     })
     .toBuffer();
 
