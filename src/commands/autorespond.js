@@ -1,6 +1,40 @@
 const { SlashCommandBuilder, PermissionsBitField, ChannelType } = require('discord.js');
 const store = require('../utils/autoRespondStore');
 
+function chunkLines(lines, maxLength = 1900) {
+  const chunks = [];
+  let current = '';
+
+  for (const line of lines) {
+    const text = String(line || '');
+    if (!text) continue;
+    const withBreak = current ? `\n${text}` : text;
+
+    if ((current + withBreak).length <= maxLength) {
+      current += withBreak;
+      continue;
+    }
+
+    if (current) chunks.push(current);
+
+    if (text.length <= maxLength) {
+      current = text;
+      continue;
+    }
+
+    // Fallback for unexpectedly long single lines.
+    let remaining = text;
+    while (remaining.length > maxLength) {
+      chunks.push(remaining.slice(0, maxLength));
+      remaining = remaining.slice(maxLength);
+    }
+    current = remaining;
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('autorespond')
@@ -124,7 +158,20 @@ module.exports = {
         rule.reply ? `text '${rule.reply}'` : null,
         rule.mediaUrl ? `media ${rule.mediaUrl}` : null,
       ].filter(Boolean).join(' + ');
-      return interaction.editReply({ content: `Added rule #${rule.id}: when ${match}${caseSensitive ? ' (case)' : ''} '${trigger}'${rule.channelId ? ` in <#${rule.channelId}>` : ''} -> ${responseLabel}.` });
+      const addedLine = `Added rule #${rule.id}: when ${match}${caseSensitive ? ' (case)' : ''} '${trigger}'${rule.channelId ? ` in <#${rule.channelId}>` : ''} -> ${responseLabel}.`;
+      const chunks = chunkLines([addedLine], 1850);
+      if (chunks.length === 1) {
+        return interaction.editReply({ content: chunks[0] });
+      }
+
+      await interaction.editReply({ content: `Added rule #${rule.id} (1/${chunks.length})\n${chunks[0]}` });
+      for (let i = 1; i < chunks.length; i += 1) {
+        await interaction.followUp({
+          content: `Added rule #${rule.id} (${i + 1}/${chunks.length})\n${chunks[i]}`,
+          ephemeral: true,
+        });
+      }
+      return null;
     }
 
     if (sub === 'remove') {
@@ -146,7 +193,23 @@ module.exports = {
           lines.push(`#${r.id}: [${r.match}${r.caseSensitive ? ', case' : ''}] '${r.trigger}' -> ${output}${r.channelId ? ` in <#${r.channelId}>` : ''}`);
         }
       }
-      return interaction.editReply({ content: lines.join('\n') });
+      const chunks = chunkLines(lines, 1850);
+      if (!chunks.length) {
+        return interaction.editReply({ content: 'No rules configured. Use /autorespond add to create one.' });
+      }
+
+      if (chunks.length === 1) {
+        return interaction.editReply({ content: chunks[0] });
+      }
+
+      await interaction.editReply({ content: `Autorespond rules (1/${chunks.length})\n${chunks[0]}` });
+      for (let i = 1; i < chunks.length; i += 1) {
+        await interaction.followUp({
+          content: `Autorespond rules (${i + 1}/${chunks.length})\n${chunks[i]}`,
+          ephemeral: true,
+        });
+      }
+      return null;
     }
 
     return interaction.editReply({ content: 'Unknown subcommand.' });

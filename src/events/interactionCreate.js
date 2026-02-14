@@ -400,8 +400,9 @@ const MANAGE_GUILD_COMMANDS = new Set([
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
-        // Handle chat input commands
-        if (interaction.isChatInputCommand()) {
+        // Handle slash and right-click application commands
+        if (interaction.isChatInputCommand() || interaction.isUserContextMenuCommand() || interaction.isMessageContextMenuCommand()) {
+            const isChatInput = interaction.isChatInputCommand();
             const command = interaction.client.commands.get(interaction.commandName);
 
             if (!command) {
@@ -411,107 +412,112 @@ module.exports = {
                     await logger.logMissingCommand(interaction);
                 } catch (_) {}
                 const missingCommandError = new Error('Command handler missing');
+                const missingCommandContext = isChatInput
+                    ? 'Slash command was invoked but no matching handler is registered.'
+                    : 'Context menu command was invoked but no matching handler is registered.';
                 await logCommandError(
                     interaction,
                     missingCommandError,
-                    'Slash command was invoked but no matching handler is registered.'
+                    missingCommandContext,
                 );
                 await notifyCommandFailureAlert(
                     interaction,
                     missingCommandError,
-                    'Slash command was invoked but no matching handler is registered.'
+                    missingCommandContext,
                 );
                 return;
             }
 
-            const cmdName = interaction.commandName;
-            const isAdmin = interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
-            const isGuildOwner = interaction.guild?.ownerId === interaction.user.id;
-            if (OWNER_COMMANDS.has(cmdName) && !isOwner(interaction.user.id)) {
-                try { await interaction.reply({ content: 'Only the bot owner can run this command.', ephemeral: true }); } catch (_) {}
-                try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User is not a bot owner'); } catch (_) {}
-                return;
-            }
+            if (isChatInput) {
+                const cmdName = interaction.commandName;
+                const isAdmin = interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
+                const isGuildOwner = interaction.guild?.ownerId === interaction.user.id;
+                if (OWNER_COMMANDS.has(cmdName) && !isOwner(interaction.user.id)) {
+                    try { await interaction.reply({ content: 'Only the bot owner can run this command.', ephemeral: true }); } catch (_) {}
+                    try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User is not a bot owner'); } catch (_) {}
+                    return;
+                }
 
-            if (MODERATOR_COMMANDS.has(cmdName)) {
-                if (!interaction.inGuild()) {
-                    try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
-                    return;
+                if (MODERATOR_COMMANDS.has(cmdName)) {
+                    if (!interaction.inGuild()) {
+                        try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
+                        return;
+                    }
+                    const modRoleId = await modLogStore.getModeratorRole(interaction.guildId);
+                    const hasModRole = Boolean(modRoleId && interaction.member?.roles?.cache?.has(modRoleId));
+                    if (!hasModRole && !isAdmin) {
+                        const message = modRoleId
+                            ? 'The configured moderator role is required to run this command.'
+                            : 'No moderator role is configured; ask an admin to run /modconfig.';
+                        try { await interaction.reply({ content: message, ephemeral: true }); } catch (_) {}
+                        try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing moderator role'); } catch (_) {}
+                        return;
+                    }
                 }
-                const modRoleId = await modLogStore.getModeratorRole(interaction.guildId);
-                const hasModRole = Boolean(modRoleId && interaction.member?.roles?.cache?.has(modRoleId));
-                if (!hasModRole && !isAdmin) {
-                    const message = modRoleId
-                        ? 'The configured moderator role is required to run this command.'
-                        : 'No moderator role is configured; ask an admin to run /modconfig.';
-                    try { await interaction.reply({ content: message, ephemeral: true }); } catch (_) {}
-                    try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing moderator role'); } catch (_) {}
-                    return;
-                }
-            }
 
-            if (ADMIN_COMMANDS.has(cmdName)) {
-                if (!interaction.inGuild()) {
-                    try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
-                    return;
+                if (ADMIN_COMMANDS.has(cmdName)) {
+                    if (!interaction.inGuild()) {
+                        try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
+                        return;
+                    }
+                    const allowBotSettingsOwnerBypass = cmdName === 'botsettings' && (isGuildOwner || isOwner(interaction.user.id));
+                    if (!isAdmin && !allowBotSettingsOwnerBypass) {
+                        try { await interaction.reply({ content: 'Administrator permission is required to use this command.', ephemeral: true }); } catch (_) {}
+                        try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing Administrator'); } catch (_) {}
+                        return;
+                    }
                 }
-                const allowBotSettingsOwnerBypass = cmdName === 'botsettings' && (isGuildOwner || isOwner(interaction.user.id));
-                if (!isAdmin && !allowBotSettingsOwnerBypass) {
-                    try { await interaction.reply({ content: 'Administrator permission is required to use this command.', ephemeral: true }); } catch (_) {}
-                    try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing Administrator'); } catch (_) {}
-                    return;
-                }
-            }
 
-            if (MANAGE_GUILD_COMMANDS.has(cmdName)) {
-                if (!interaction.inGuild()) {
-                    try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
-                    return;
+                if (MANAGE_GUILD_COMMANDS.has(cmdName)) {
+                    if (!interaction.inGuild()) {
+                        try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
+                        return;
+                    }
+                    const canManageGuild = interaction.member?.permissions?.has(PermissionsBitField.Flags.ManageGuild);
+                    if (!canManageGuild) {
+                        try { await interaction.reply({ content: 'Manage Server permission is required to use this command.', ephemeral: true }); } catch (_) {}
+                        try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing ManageGuild'); } catch (_) {}
+                        return;
+                    }
                 }
-                const canManageGuild = interaction.member?.permissions?.has(PermissionsBitField.Flags.ManageGuild);
-                if (!canManageGuild) {
-                    try { await interaction.reply({ content: 'Manage Server permission is required to use this command.', ephemeral: true }); } catch (_) {}
-                    try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing ManageGuild'); } catch (_) {}
-                    return;
-                }
-            }
 
-            const categoryKey = COMMAND_CATEGORY_MAP[interaction.commandName];
-            const skipCategoryEnabledCheck = ALWAYS_ENABLED_COMMANDS.has(interaction.commandName);
-            let defaultEphemeral = null;
-            if (categoryKey && interaction.inGuild()) {
-                defaultEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, categoryKey, true);
-                if (!skipCategoryEnabledCheck && !botConfigStore.isCategoryEnabled(interaction.guildId, categoryKey, true)) {
-                    const label = getCategoryLabel(categoryKey);
-                    const content = `${label} commands are disabled by a server admin.`;
-                    try {
-                        await interaction.reply({ content, ephemeral: defaultEphemeral });
-                    } catch (replyError) {
-                        const rcode = replyError?.code;
-                        if (rcode !== 40060 && rcode !== 10062) {
-                            try { await interaction.followUp({ content, ephemeral: true }); } catch (_) {}
+                const categoryKey = COMMAND_CATEGORY_MAP[interaction.commandName];
+                const skipCategoryEnabledCheck = ALWAYS_ENABLED_COMMANDS.has(interaction.commandName);
+                let defaultEphemeral = null;
+                if (categoryKey && interaction.inGuild()) {
+                    defaultEphemeral = botConfigStore.shouldReplyEphemeral(interaction.guildId, categoryKey, true);
+                    if (!skipCategoryEnabledCheck && !botConfigStore.isCategoryEnabled(interaction.guildId, categoryKey, true)) {
+                        const label = getCategoryLabel(categoryKey);
+                        const content = `${label} commands are disabled by a server admin.`;
+                        try {
+                            await interaction.reply({ content, ephemeral: defaultEphemeral });
+                        } catch (replyError) {
+                            const rcode = replyError?.code;
+                            if (rcode !== 40060 && rcode !== 10062) {
+                                try { await interaction.followUp({ content, ephemeral: true }); } catch (_) {}
+                            }
                         }
+                        return;
                     }
-                    return;
+
+                    const wrapEphemeral = (fn) => (options) => {
+                        if (options === undefined) {
+                            return fn({ ephemeral: defaultEphemeral });
+                        }
+                        if (typeof options === 'string') {
+                            return fn({ content: options, ephemeral: defaultEphemeral });
+                        }
+                        if (options && typeof options === 'object' && !Object.prototype.hasOwnProperty.call(options, 'ephemeral')) {
+                            return fn({ ...options, ephemeral: defaultEphemeral });
+                        }
+                        return fn(options);
+                    };
+
+                    interaction.defaultEphemeral = defaultEphemeral;
+                    interaction.reply = wrapEphemeral(interaction.reply.bind(interaction));
+                    interaction.followUp = wrapEphemeral(interaction.followUp.bind(interaction));
+                    interaction.deferReply = wrapEphemeral(interaction.deferReply.bind(interaction));
                 }
-
-                const wrapEphemeral = (fn) => (options) => {
-                    if (options === undefined) {
-                        return fn({ ephemeral: defaultEphemeral });
-                    }
-                    if (typeof options === 'string') {
-                        return fn({ content: options, ephemeral: defaultEphemeral });
-                    }
-                    if (options && typeof options === 'object' && !Object.prototype.hasOwnProperty.call(options, 'ephemeral')) {
-                        return fn({ ...options, ephemeral: defaultEphemeral });
-                    }
-                    return fn(options);
-                };
-
-                interaction.defaultEphemeral = defaultEphemeral;
-                interaction.reply = wrapEphemeral(interaction.reply.bind(interaction));
-                interaction.followUp = wrapEphemeral(interaction.followUp.bind(interaction));
-                interaction.deferReply = wrapEphemeral(interaction.deferReply.bind(interaction));
             }
 
             try {
