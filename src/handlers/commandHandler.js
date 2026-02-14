@@ -6,6 +6,7 @@ function loadCommands(client, commandsPath = path.join(__dirname, '..', 'command
     if (!fs.existsSync(commandsPath)) {
         logger.warn('Commands directory not found, creating...');
         fs.mkdirSync(commandsPath, { recursive: true });
+        client.commandLoadStats = { loaded: 0, total: 0 };
         return;
     }
 
@@ -39,6 +40,10 @@ function loadCommands(client, commandsPath = path.join(__dirname, '..', 'command
         }
     }
 
+    client.commandLoadStats = {
+        loaded: client.commands.size,
+        total: commandFiles.length,
+    };
     logger.info(`Loaded ${client.commands.size} commands.`);
 }
 

@@ -1,7 +1,12 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { EmbedBuilder } = require('discord.js');
+const { readJsonSync, writeJsonSync } = require('./dataDir');
 
 const CHANNEL_ID = (process.env.CONSOLE_MESSAGES_CHANNELID || '').trim();
 const MAX_DESCRIPTION_LENGTH = 4000;
+const UPDATE_STATE_FILE = 'runtime/console-message-relay-state.json';
 
 function formatArg(arg) {
   try {
@@ -46,6 +51,79 @@ function buildContextFields(extraFields = []) {
     { name: 'Uptime', value: `${uptimeSeconds}s`, inline: true },
   ];
   return baseFields.concat(extraFields);
+}
+
+function readStoredCommitHash() {
+  const state = readJsonSync(UPDATE_STATE_FILE, {}) || {};
+  const hash = typeof state.lastCommitHash === 'string' ? state.lastCommitHash.trim() : '';
+  return hash;
+}
+
+function storeCommitHash(hash) {
+  if (!hash) return;
+  try {
+    writeJsonSync(UPDATE_STATE_FILE, {
+      lastCommitHash: hash,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (_) {
+    // Ignore persistence errors; update embeds are best-effort.
+  }
+}
+
+function runGit(args) {
+  try {
+    const result = spawnSync('git', args, {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (result?.status !== 0) return null;
+    return String(result.stdout || '').trim();
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseNumstat(raw) {
+  let additions = 0;
+  let deletions = 0;
+  const lines = String(raw || '').split(/\r?\n/);
+  for (const line of lines) {
+    if (!line) continue;
+    const parts = line.split('\t');
+    if (parts.length < 2) continue;
+    const addPart = parts[0];
+    const delPart = parts[1];
+    if (/^\d+$/.test(addPart)) additions += Number(addPart);
+    if (/^\d+$/.test(delPart)) deletions += Number(delPart);
+  }
+  return { additions, deletions };
+}
+
+function getCodeUpdatePayload(client) {
+  if (!fs.existsSync(path.join(process.cwd(), '.git'))) return null;
+
+  const currentHash = runGit(['rev-parse', 'HEAD']);
+  if (!currentHash) return null;
+
+  const previousHash = readStoredCommitHash();
+  storeCommitHash(currentHash);
+  if (!previousHash || previousHash === currentHash) return null;
+
+  const commitMessage = runGit(['log', '-1', '--pretty=%s', currentHash]) || 'Repository updated';
+  let statsRaw = runGit(['diff', '--numstat', `${previousHash}..${currentHash}`]);
+  if (statsRaw === null) statsRaw = runGit(['show', '--numstat', '--format=', currentHash]);
+  const { additions, deletions } = parseNumstat(statsRaw);
+
+  const loaded = Number(client?.commandLoadStats?.loaded ?? client?.commands?.size ?? 0);
+  const total = Number(client?.commandLoadStats?.total ?? loaded);
+  const dateTime = new Date().toLocaleString();
+
+  return {
+    title: `Bot Update - ${dateTime}`,
+    description: `${commitMessage}\n${additions} new additions, ${deletions} deletions, Loaded (${loaded}/${total}) commands`,
+  };
 }
 
 function install(client) {
@@ -123,6 +201,20 @@ function install(client) {
     if (success) lifecycleSent[key] = true;
   }
 
+  async function notifyCodeUpdate() {
+    const payload = getCodeUpdatePayload(client);
+    if (!payload) return;
+    const embed = createEmbed(
+      payload.title,
+      truncate(payload.description, MAX_DESCRIPTION_LENGTH),
+      colors.restart,
+      buildContextFields([
+        { name: 'Guilds', value: String(client.guilds.cache.size), inline: true },
+      ]),
+    );
+    await sendEmbed(embed);
+  }
+
   async function relayConsoleError(args) {
     const message = args.map(formatArg).join(' ');
     const errorArg = args.find((arg) => arg instanceof Error);
@@ -152,6 +244,7 @@ function install(client) {
     color: colors.start,
     fields: [{ name: 'Guilds', value: String(client.guilds.cache.size), inline: true }],
   });
+  void notifyCodeUpdate();
 
   const signalMapping = [
     { signal: 'SIGINT', type: 'shutdown' },
