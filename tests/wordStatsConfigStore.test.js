@@ -11,11 +11,17 @@ function freshStore() {
   return require('../src/utils/wordStatsConfigStore');
 }
 
+function seedIsolatedStoreFile(tmpDir) {
+  const target = path.join(tmpDir, 'word_stats_config.json');
+  fs.writeFileSync(target, JSON.stringify({ guilds: {} }, null, 2), 'utf8');
+}
+
 test('setTrackedChannel + recordTrackedMessage only tracks configured channel', async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
   const prev = process.env.DISPHORIABOT_DATA_DIR;
   process.env.DISPHORIABOT_DATA_DIR = tmp;
   dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
 
   t.after(() => {
     if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
@@ -42,6 +48,7 @@ test('parseBackfillPayload supports multiple JSON shapes', async (t) => {
   const prev = process.env.DISPHORIABOT_DATA_DIR;
   process.env.DISPHORIABOT_DATA_DIR = tmp;
   dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
 
   t.after(() => {
     if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
@@ -65,6 +72,7 @@ test('parseBackfillPayload accepts message arrays, alternate fields, and numeric
   const prev = process.env.DISPHORIABOT_DATA_DIR;
   process.env.DISPHORIABOT_DATA_DIR = tmp;
   dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
 
   t.after(() => {
     if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
@@ -113,6 +121,7 @@ test('parseBackfillPayload supports txt_only_scan style exports', async (t) => {
   const prev = process.env.DISPHORIABOT_DATA_DIR;
   process.env.DISPHORIABOT_DATA_DIR = tmp;
   dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
 
   t.after(() => {
     if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
@@ -148,6 +157,7 @@ test('recordTrackedMessage stores word usage and media breakdowns for queries', 
   const prev = process.env.DISPHORIABOT_DATA_DIR;
   process.env.DISPHORIABOT_DATA_DIR = tmp;
   dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
 
   t.after(() => {
     if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
@@ -213,6 +223,7 @@ test('parseBackfillPayload + importBackfill keep enriched media and word stats',
   const prev = process.env.DISPHORIABOT_DATA_DIR;
   process.env.DISPHORIABOT_DATA_DIR = tmp;
   dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
 
   t.after(() => {
     if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;

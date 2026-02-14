@@ -198,37 +198,29 @@ module.exports = {
     .setName('wordstats')
     .setDescription('View tracked word and message statistics')
     .setDMPermission(false)
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('overview')
-        .setDescription('View top words and top message senders'),
+    .addStringOption((option) =>
+      option
+        .setName('view')
+        .setDescription('Which stats view to show')
+        .addChoices(
+          { name: 'overview', value: 'overview' },
+          { name: 'word', value: 'word' },
+          { name: 'media', value: 'media' },
+          { name: 'user', value: 'user' },
+        )
+        .setRequired(false),
     )
-    .addSubcommand((subcommand) =>
-      subcommand
+    .addStringOption((option) =>
+      option
         .setName('word')
-        .setDescription('Search a specific word and view the top users for it')
-        .addStringOption((option) =>
-          option
-            .setName('word')
-            .setDescription('Word to search')
-            .setRequired(true),
-        ),
+        .setDescription('Word to search (used for the word view)')
+        .setRequired(false),
     )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('media')
-        .setDescription('See who posts the most media (images, stickers, emojis)'),
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
+    .addUserOption((option) =>
+      option
         .setName('user')
-        .setDescription('View top words and message totals for one user')
-        .addUserOption((option) =>
-          option
-            .setName('user')
-            .setDescription('User to inspect')
-            .setRequired(true),
-        ),
+        .setDescription('User to inspect (used for the user view)')
+        .setRequired(false),
     ),
 
   async execute(interaction) {
@@ -236,15 +228,28 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    const subcommand = interaction.options.getSubcommand(false) || 'overview';
+    const requestedView = interaction.options.getString('view');
+    const rawWord = interaction.options.getString('word');
+    const requestedUser = interaction.options.getUser('user');
 
-    if (subcommand === 'overview') {
+    let view = requestedView || 'overview';
+    if (!requestedView) {
+      if (rawWord && requestedUser) {
+        return interaction.reply({ content: 'Choose either a word lookup or a user lookup, not both.', ephemeral: true });
+      }
+      if (rawWord) view = 'word';
+      else if (requestedUser) view = 'user';
+    }
+
+    if (view === 'overview') {
       const embed = buildOverviewEmbed(interaction);
       return interaction.reply({ embeds: [embed] });
     }
 
-    if (subcommand === 'word') {
-      const rawWord = interaction.options.getString('word', true);
+    if (view === 'word') {
+      if (!rawWord) {
+        return interaction.reply({ content: 'Provide a word. Example: `/wordstats word hello`.', ephemeral: true });
+      }
       const normalizedWord = wordStatsStore.normalizeWordToken(rawWord);
       if (!normalizedWord) {
         return interaction.reply({ content: 'Please provide a valid word to search.', ephemeral: true });
@@ -255,13 +260,16 @@ module.exports = {
       return interaction.reply({ embeds: [embed] });
     }
 
-    if (subcommand === 'media') {
+    if (view === 'media') {
       const embed = buildMediaEmbed(interaction);
       return interaction.reply({ embeds: [embed] });
     }
 
-    if (subcommand === 'user') {
-      const user = interaction.options.getUser('user', true);
+    if (view === 'user') {
+      const user = requestedUser;
+      if (!user) {
+        return interaction.reply({ content: 'Provide a user. Example: `/wordstats user @member`.', ephemeral: true });
+      }
       const stats = wordStatsStore.getUserWordStats(interaction.guildId, user.id, MAX_ROWS);
       const embed = buildUserEmbed(interaction, user, stats);
       return interaction.reply({ embeds: [embed] });
