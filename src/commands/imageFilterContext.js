@@ -14,6 +14,19 @@ const {
 
 const DEFAULT_EDIT = 'load';
 
+async function safeRespond(interaction, message) {
+  const payload = { content: message };
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
+      return;
+    }
+    await interaction.reply(payload);
+  } catch (err) {
+    console.error('[Load context] Failed to send response:', err);
+  }
+}
+
 module.exports = {
   data: new ContextMenuCommandBuilder()
     .setName('Load')
@@ -30,23 +43,21 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const targetMessage = interaction.targetMessage;
-    if (!targetMessage) {
-      await interaction.reply({ content: 'Could not resolve that message.' });
-      return;
-    }
-
-    const source = resolveMessageImageSource(targetMessage);
-    if (!source?.url) {
-      await interaction.reply({
-        content: 'That message does not contain an image attachment or embed image.',
-      });
-      return;
-    }
-
-    await interaction.deferReply();
-
     try {
+      const targetMessage = interaction.targetMessage;
+      if (!targetMessage) {
+        await safeRespond(interaction, 'Could not resolve that message.');
+        return;
+      }
+
+      const source = resolveMessageImageSource(targetMessage);
+      if (!source?.url) {
+        await safeRespond(interaction, 'That message does not contain an image attachment or embed image.');
+        return;
+      }
+
+      await interaction.deferReply();
+
       const sourceBuffer = await downloadBuffer(source.url);
       const result = await applyImageFilter(sourceBuffer, DEFAULT_EDIT);
       const baseName = deriveBaseName(source.name || source.url || 'image');
@@ -54,11 +65,12 @@ module.exports = {
       const output = new AttachmentBuilder(result.buffer, { name: fileName });
 
       await interaction.editReply({
-        content: `Applied \`${DEFAULT_EDIT}\` filter at ${result.width}x${result.height}.`,
+        content: `Applied \`${DEFAULT_EDIT}\` filter at ${result.width}x${result.height} (fixed output size).`,
         files: [output],
       });
     } catch (err) {
-      await interaction.editReply(`Could not apply that filter: ${err.message}`);
+      console.error('[Load context] Command failed:', err);
+      await safeRespond(interaction, `Could not apply that filter: ${err?.message || 'Unknown error'}`);
     }
   },
 };

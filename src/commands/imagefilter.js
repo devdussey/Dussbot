@@ -12,6 +12,19 @@ const {
   isHttpUrl,
 } = require('../utils/imageFilterEngine');
 
+async function safeRespond(interaction, message) {
+  const payload = { content: message };
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
+      return;
+    }
+    await interaction.reply(payload);
+  } catch (err) {
+    console.error('[imagefilter] Failed to send response:', err);
+  }
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('imagefilter')
@@ -50,29 +63,29 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply();
-
-    const attachmentInput = interaction.options.getAttachment('image');
-    const urlInput = interaction.options.getString('image_url');
-    const edit = interaction.options.getString('edits', true);
-    const sourceUrl = attachmentInput?.url || urlInput;
-
-    if (!sourceUrl) {
-      await interaction.editReply('Please upload an image or provide an image URL.');
-      return;
-    }
-
-    if (!attachmentInput && !isHttpUrl(sourceUrl)) {
-      await interaction.editReply('Please provide a valid http/https URL.');
-      return;
-    }
-
-    if (attachmentInput?.contentType && !attachmentInput.contentType.startsWith('image/')) {
-      await interaction.editReply('The uploaded file must be an image.');
-      return;
-    }
-
     try {
+      await interaction.deferReply();
+
+      const attachmentInput = interaction.options.getAttachment('image');
+      const urlInput = interaction.options.getString('image_url');
+      const edit = interaction.options.getString('edits', true);
+      const sourceUrl = attachmentInput?.url || urlInput;
+
+      if (!sourceUrl) {
+        await safeRespond(interaction, 'Please upload an image or provide an image URL.');
+        return;
+      }
+
+      if (!attachmentInput && !isHttpUrl(sourceUrl)) {
+        await safeRespond(interaction, 'Please provide a valid http/https URL.');
+        return;
+      }
+
+      if (attachmentInput?.contentType && !attachmentInput.contentType.startsWith('image/')) {
+        await safeRespond(interaction, 'The uploaded file must be an image.');
+        return;
+      }
+
       const sourceBuffer = await downloadBuffer(sourceUrl);
       const result = await applyImageFilter(sourceBuffer, edit);
       const baseName = attachmentInput?.name
@@ -81,11 +94,12 @@ module.exports = {
       const fileName = `${baseName || 'image'}-${edit}-filter.${result.outputExt}`;
       const output = new AttachmentBuilder(result.buffer, { name: fileName });
       await interaction.editReply({
-        content: `Applied \`${edit}\` filter at ${result.width}x${result.height}.`,
+        content: `Applied \`${edit}\` filter at ${result.width}x${result.height} (fixed output size).`,
         files: [output],
       });
     } catch (err) {
-      await interaction.editReply(`Could not apply that filter: ${err.message}`);
+      console.error('[imagefilter] Command failed:', err);
+      await safeRespond(interaction, `Could not apply that filter: ${err?.message || 'Unknown error'}`);
     }
   },
 };

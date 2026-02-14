@@ -5,7 +5,8 @@ const sharp = require('sharp');
 const fetch = globalThis.fetch;
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
-const MAX_DIMENSION = 2048;
+const FILTER_TARGET_SIZE = Number(process.env.IMAGEFILTER_TARGET_SIZE || 256);
+const DOWNLOAD_TIMEOUT_MS = Number(process.env.IMAGEFILTER_DOWNLOAD_TIMEOUT_MS || 20000);
 const IMAGE_FILE_RE = /\.(png|jpe?g|webp|gif|bmp|tiff?|avif)(\?|$)/i;
 
 const EDIT_LOAD = 'load';
@@ -42,10 +43,10 @@ function isHttpUrl(value) {
   }
 }
 
-function clampDimension(value) {
+function clampDimension(value, max = 2048) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 1;
-  return Math.max(1, Math.min(Math.round(numeric), MAX_DIMENSION));
+  return Math.max(1, Math.min(Math.round(numeric), max));
 }
 
 function deriveBaseName(input, fallback = 'image') {
@@ -150,19 +151,39 @@ async function buildRepeatedBaseStrip(baseStillImage, width, frameHeight, frameC
 }
 
 async function downloadBuffer(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Download failed (${response.status}).`);
+  if (typeof fetch !== 'function') {
+    throw new Error('Fetch is unavailable in this runtime.');
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (!buffer.length) {
-    throw new Error('Downloaded file was empty.');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(1000, DOWNLOAD_TIMEOUT_MS));
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Download failed (${response.status}).`);
+    }
+
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (contentType && !contentType.startsWith('image/')) {
+      throw new Error(`URL did not return an image (content-type: ${contentType}).`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length) {
+      throw new Error('Downloaded file was empty.');
+    }
+    if (buffer.length > MAX_MEDIA_BYTES) {
+      throw new Error('File is too large to process (25 MB limit).');
+    }
+    return buffer;
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Download timed out after ${Math.round(DOWNLOAD_TIMEOUT_MS / 1000)}s.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-  if (buffer.length > MAX_MEDIA_BYTES) {
-    throw new Error('File is too large to process (25 MB limit).');
-  }
-  return buffer;
 }
 
 async function getBundledFilterBuffer(edit) {
@@ -220,20 +241,19 @@ async function applyImageFilter(inputBuffer, edit) {
   }
 
   const sourceMetadata = await sharp(inputBuffer, { animated: true }).metadata();
-  const sourceWidth = Number(sourceMetadata.width) || 0;
-  const sourceHeight = Number(sourceMetadata.pageHeight || sourceMetadata.height) || 0;
-  if (!sourceWidth || !sourceHeight) {
+  if (!Number(sourceMetadata.width) || !Number(sourceMetadata.height)) {
     throw new Error('Could not read image dimensions.');
   }
 
-  const width = clampDimension(sourceWidth);
-  const height = clampDimension(sourceHeight);
+  const width = clampDimension(FILTER_TARGET_SIZE, 1024);
+  const height = clampDimension(FILTER_TARGET_SIZE, 1024);
 
   const baseStillImage = await sharp(inputBuffer)
     .resize({
       width,
       height,
-      fit: 'cover',
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
       withoutEnlargement: false,
     })
     .png()
@@ -244,7 +264,8 @@ async function applyImageFilter(inputBuffer, edit) {
     .resize({
       width,
       height,
-      fit: 'cover',
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
       withoutEnlargement: false,
     })
     .gif(STABLE_GIF_OUTPUT_OPTIONS)
@@ -256,7 +277,7 @@ async function applyImageFilter(inputBuffer, edit) {
 
   const filterMetadata = await sharp(processedFilterGif, { animated: true }).metadata();
   const timing = extractAnimationTiming(filterMetadata);
-  const frameHeight = clampDimension(timing.pageHeight || height);
+  const frameHeight = clampDimension(timing.pageHeight || height, 1024);
   const frameCount = Math.max(1, Number(filterMetadata.pages) || 1);
   const baseStrip = await buildRepeatedBaseStrip(baseStillImage, width, frameHeight, frameCount);
 
