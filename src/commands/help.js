@@ -6,6 +6,8 @@ const {
   ComponentType,
 } = require('discord.js');
 
+const SUPPORT_SERVER_LINE = 'For more detailed help and updates, join the support server https://discord.gg/d83rZnXETm';
+
 const categories = {
   'Moderation & Enforcement': [
     { cmd: '/banlist', desc: 'List current bans in the server.', perm: 'Ban Members' },
@@ -16,7 +18,7 @@ const categories = {
     { cmd: '/unmute', desc: 'Remove a timeout with a reason.', perm: 'Moderate Members' },
     { cmd: '/automodconfig', desc: 'Configure AI automod, review actions, and filters.', perm: 'Administrator' },
   ],
-  'Server Setup & Messaging': [
+  Administration: [
     { cmd: '/modconfig', desc: 'Configure the moderator role and mod log channel.', perm: 'Manage Server' },
     { cmd: '/role create/delete/edit/clean', desc: 'Manage roles and clean empty roles.', perm: 'Administrator' },
     { cmd: '/boosterroleconfig', desc: 'Post the booster role configuration panel.', perm: 'Manage Server' },
@@ -28,17 +30,17 @@ const categories = {
     { cmd: '/autorespond toggle/add/remove/list', desc: 'Configure keyword-based automated replies.', perm: 'Administrator' },
     { cmd: '/automessage create/delete/list', desc: 'Schedule recurring server messages.', perm: 'Manage Server' },
     { cmd: '/say', desc: 'Send a custom bot message to a selected channel.', perm: 'Administrator' },
-  ],
-  'Logging & Security': [
     { cmd: '/logconfig', desc: 'Configure logging channels and toggle events.', perm: 'Administrator' },
     { cmd: '/antinuke config', desc: 'Configure anti-nuke detections and thresholds.', perm: 'Manage Server' },
-    { cmd: '/transriptconfig enable/disable/status', desc: 'Manage voice transcription automation.', perm: 'Manage Server' },
-  ],
-  Admin: [
+    { cmd: '/transcriptconfig enable/disable/status', desc: 'Manage voice transcription automation.', perm: 'Manage Server' },
     { cmd: '/purge', desc: 'Bulk delete up to 100 recent messages.', perm: 'Manage Messages' },
     { cmd: '/webhooks', desc: 'List server webhooks and creators.', perm: 'Administrator' },
     { cmd: '/giverupee', desc: 'Grant rupees directly to a user.', perm: 'Administrator' },
     { cmd: '/massblessing', desc: 'Give every non-bot user rupees.', perm: 'Administrator' },
+    { cmd: '/embed create/quick', desc: 'Build embeds through guided tools.', perm: 'Administrator' },
+    { cmd: '/colour set/get/reset', desc: 'Manage default embed colour for this server.', perm: 'Manage Server' },
+    { cmd: '/botsettings', desc: 'View bot settings and change default embed colour.', perm: 'Administrator' },
+    { cmd: '/rupeeconfig', desc: 'Configure Rupee rewards, store prices, immunity role, and rupee channels.', perm: 'Manage Server' },
   ],
   'Media & Personalisation': [
     { cmd: '/chat', desc: 'Chat with the AI assistant.', perm: null },
@@ -49,12 +51,7 @@ const categories = {
     { cmd: '/enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
     { cmd: '/clone emoji/sticker', desc: 'Clone an emoji or sticker.', perm: 'Manage Emojis and Stickers' },
   ],
-  'Embeds & Branding': [
-    { cmd: '/embed create/quick', desc: 'Build embeds through guided tools.', perm: null },
-    { cmd: '/colour set/get/reset', desc: 'Manage default embed colour for this server.', perm: 'Manage Server' },
-    { cmd: '/botsettings', desc: 'View bot settings and change default embed colour.', perm: 'Administrator / Owner' },
-  ],
-  'Economy & Games': [
+  'Rupee System': [
     { cmd: '/inventory', desc: 'View your coins and rupees.', perm: null },
     { cmd: '/rupeeboard', desc: 'View the server rupee leaderboard.', perm: null },
     { cmd: '/rupeestore', desc: 'Spend rupees on store items and actions.', perm: null },
@@ -73,14 +70,11 @@ const categories = {
 };
 
 const categoryMeta = {
-  'Moderation & Enforcement': { emoji: '🛡️', blurb: 'Moderation actions and enforcement controls.' },
-  'Server Setup & Messaging': { emoji: '🧰', blurb: 'Server configuration, channels, roles, and message systems.' },
-  'Logging & Security': { emoji: '🛰️', blurb: 'Audit and server protection settings.' },
-  Admin: { emoji: '⚙️', blurb: 'Administrator-only management tools.' },
-  'Media & Personalisation': { emoji: '🤖', blurb: 'AI and media transformation tools.' },
-  'Embeds & Branding': { emoji: '🖌️', blurb: 'Embeds, branding, and color defaults.' },
-  'Economy & Games': { emoji: '🎲', blurb: 'Rupee systems and game commands.' },
-  'Utilities & Insights': { emoji: '🧭', blurb: 'Everyday utility commands and diagnostics.' },
+  'Moderation & Enforcement': { blurb: 'Moderation actions and enforcement controls.' },
+  Administration: { blurb: 'Commands to make administration tasks simple and easy. Also includes bot feature configurations.' },
+  'Media & Personalisation': { blurb: 'AI and media transformation tools.' },
+  'Rupee System': { blurb: 'Rupee systems and game commands.' },
+  'Utilities & Insights': { blurb: 'Everyday utility commands and diagnostics.' },
 };
 
 const PERMISSION_KEYWORDS = [
@@ -120,9 +114,9 @@ function formatCategoryPermissions(categoryName) {
 
 function buildEmbed(categoryName, guildId, botUser) {
   const embed = new EmbedBuilder()
-    .setTitle('✨ Command Compass')
+    .setTitle('Command Categories')
     .setColor(0x5865f2)
-    .setFooter({ text: 'Use the selector below to explore categories.' })
+    .setFooter({ text: SUPPORT_SERVER_LINE })
     .setTimestamp();
 
   const avatarURL = typeof botUser?.displayAvatarURL === 'function'
@@ -130,7 +124,7 @@ function buildEmbed(categoryName, guildId, botUser) {
     : null;
   if (avatarURL) {
     embed.setThumbnail(avatarURL);
-    embed.setAuthor({ name: botUser.username || 'DisphoriaBot Help', iconURL: avatarURL });
+    embed.setAuthor({ name: botUser.username || 'Dussbot Help', iconURL: avatarURL });
   }
 
   try {
@@ -140,12 +134,11 @@ function buildEmbed(categoryName, guildId, botUser) {
 
   if (categoryName && categories[categoryName]) {
     const meta = categoryMeta[categoryName] || {};
-    const emoji = meta.emoji || '📘';
     const blurb = meta.blurb ? `\n_${meta.blurb}_` : '';
-    embed.setDescription(`${emoji} **${categoryName} Commands**${blurb}`);
+    embed.setDescription(`**${categoryName} Commands**${blurb}`);
     embed.addFields(
       ...categories[categoryName].map(({ cmd, desc, perm }) => ({
-        name: `${emoji} ${cmd}`,
+        name: cmd,
         value: `_${desc}_${perm ? `\n> **Requires:** ${perm}` : ''}`,
         inline: false,
       })),
@@ -160,7 +153,7 @@ function buildEmbed(categoryName, guildId, botUser) {
     if (meta.blurb) lines.push(`_${meta.blurb}_`);
     lines.push(`> Requires: ${formatCategoryPermissions(name)}`);
     return {
-      name: `${meta.emoji || '📘'} ${name}`,
+      name,
       value: lines.join('\n'),
       inline: true,
     };
@@ -178,14 +171,14 @@ module.exports = {
     const embed = buildEmbed(null, interaction.guildId, interaction.client.user);
     const options = Object.keys(categories).map((name) => {
       const meta = categoryMeta[name] || {};
-      const option = { label: meta.emoji ? `${meta.emoji} ${name}` : name, value: name };
+      const option = { label: name, value: name };
       if (meta.blurb) option.description = meta.blurb.slice(0, 100);
       return option;
     });
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId('help-category')
-      .setPlaceholder('✨ Browse a command category')
+      .setPlaceholder('Browse a command category')
       .addOptions(options);
     const row = new ActionRowBuilder().addComponents(menu);
 

@@ -1,6 +1,4 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { isOwner } = require('../utils/ownerIds');
-const fetch = globalThis.fetch;
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,51 +24,9 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    if (!interaction.inGuild()) {
-      return interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
-    }
-
-    if (!isOwner(interaction.user.id)) {
-      return interaction.reply({ content: 'Only the bot owner can use this command.', ephemeral: true });
-    }
-
-    const client = interaction.client;
-    const avatar = interaction.options.getAttachment('avatar');
-    const nickname = interaction.options.getString('nickname');
-    const bio = interaction.options.getString('bio');
-
-    const changes = [];
-
-    try {
-      if (avatar) {
-        const res = await fetch(avatar.url);
-        const buf = Buffer.from(await res.arrayBuffer());
-        await client.user.setAvatar(buf);
-        changes.push('avatar');
-      }
-
-      if (nickname) {
-        await interaction.guild.members.me.setNickname(nickname);
-        changes.push('nickname');
-      }
-
-      if (bio) {
-        let finalBio = bio.trim();
-        if (!/clone of disphoriabot$/i.test(finalBio)) {
-          finalBio += `${finalBio ? '\n' : ''}Clone of DisphoriaBot`;
-        }
-        await client.application.fetch();
-        await client.application.edit({ description: finalBio });
-        changes.push('bio');
-      }
-    } catch (err) {
-      return interaction.reply({ content: `Error updating bot: ${err.message}`, ephemeral: true });
-    }
-
-    if (!changes.length) {
-      return interaction.reply({ content: 'No changes provided.', ephemeral: true });
-    }
-
-    return interaction.reply({ content: `Updated bot ${changes.join(', ')}.`, ephemeral: true });
+    return interaction.reply({
+      content: 'Premium Servers Only, visit https://discord.gg/d83rZnXETm',
+      ephemeral: true,
+    });
   },
 };

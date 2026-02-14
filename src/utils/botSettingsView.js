@@ -13,6 +13,7 @@ const {
   DEFAULT_EMBED_COLOUR,
   resolveEmbedColour,
 } = require('./guildColourStore');
+const premiumManager = require('./premiumManager');
 
 const BOTSETTINGS_ACTION_SELECT_ID = 'botsettings:action';
 const BOTSETTINGS_COLOUR_MODAL_ID = 'botsettings:colour';
@@ -45,12 +46,17 @@ function buildBotSettingsView(guild) {
   const guildId = guild?.id || null;
   const storedColour = guildId ? getStoredColour(guildId) : null;
   const effectiveColour = getDefaultColour(guildId);
+  const premiumActive = guildId ? premiumManager.hasGuildPremium(guildId) : false;
 
   const embedColourLines = [
     `Current: ${toHex6(effectiveColour)}`,
     storedColour == null
       ? `Source: bot default (${toHex6(DEFAULT_EMBED_COLOUR)}), no server override set.`
       : 'Source: server override via /botsettings.',
+  ];
+  const premiumLines = [
+    `Premium enabled for this server: ${premiumActive ? 'Yes ✅' : 'No ⛔'}`,
+    'Premium members get custom bot avatar and banner, and Bot Name.',
   ];
 
   const embed = new EmbedBuilder()
@@ -59,6 +65,7 @@ function buildBotSettingsView(guild) {
     .addFields(
       { name: 'Embed Colour', value: embedColourLines.join('\n'), inline: false },
       { name: 'API Keys', value: buildApiKeyLines().join('\n'), inline: false },
+      { name: 'Premium Benefits', value: premiumLines.join('\n'), inline: false },
     )
     .setColor(resolveEmbedColour(guildId, DEFAULT_EMBED_COLOUR))
     .setTimestamp(new Date());

@@ -5,7 +5,9 @@ const DEFAULT_STATE = { users: {}, guilds: {} };
 const VOTE_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 const staticUserPremium = parseIdSet(process.env.PREMIUM_USER_IDS || process.env.PREMIUM_USERS);
-const staticGuildPremium = parseIdSet(process.env.PREMIUM_GUILD_IDS || process.env.PREMIUM_GUILDS);
+const staticGuildPremium = parseIdSet(
+  process.env.PREMIUM_SERVER_IDS || process.env.PREMIUM_GUILD_IDS || process.env.PREMIUM_GUILDS
+);
 
 let cache = null;
 
