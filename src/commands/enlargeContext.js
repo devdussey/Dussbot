@@ -1,5 +1,6 @@
 const {
   ApplicationCommandType,
+  ApplicationIntegrationType,
   AttachmentBuilder,
   ContextMenuCommandBuilder,
 } = require('discord.js');
@@ -112,7 +113,9 @@ async function upscaleMedia(buffer, scale) {
 module.exports = {
   data: new ContextMenuCommandBuilder()
     .setName('Enlarge')
-    .setType(ApplicationCommandType.Message),
+    .setType(ApplicationCommandType.Message)
+    .setDMPermission(true)
+    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall),
 
   async execute(interaction) {
     const source = resolveMediaSource(interaction.targetMessage);

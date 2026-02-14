@@ -1,4 +1,9 @@
-const { SlashCommandBuilder, AttachmentBuilder, parseEmoji } = require('discord.js');
+const {
+  ApplicationIntegrationType,
+  AttachmentBuilder,
+  parseEmoji,
+  SlashCommandBuilder,
+} = require('discord.js');
 const sharp = require('sharp');
 const fetch = globalThis.fetch;
 
@@ -208,6 +213,8 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('enlarge')
     .setDescription('Enlarge an emoji, sticker, or image and post it as an attachment')
+    .setDMPermission(true)
+    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
     .addSubcommand(sub =>
       sub
         .setName('emoji')

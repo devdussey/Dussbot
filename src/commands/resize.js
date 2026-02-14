@@ -129,10 +129,7 @@ module.exports = {
     .setName('resize')
     .setDescription('Resize an image by percentage or pixel preset')
     .setDMPermission(true)
-    .setIntegrationTypes(
-      ApplicationIntegrationType.GuildInstall,
-      ApplicationIntegrationType.UserInstall,
-    )
+    .setIntegrationTypes(ApplicationIntegrationType.GuildInstall)
     .setContexts(
       InteractionContextType.Guild,
       InteractionContextType.BotDM,
