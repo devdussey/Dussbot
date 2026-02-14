@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const logger = require('../utils/securityLogger');
 const modlog = require('../utils/modLogger');
+const { buildModActionEmbed } = require('../utils/modActionResponseEmbed');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -32,8 +33,7 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    // Make the response public and avoid timeouts
-    await interaction.deferReply();
+    await interaction.deferReply({ ephemeral: false });
 
     const me = interaction.guild.members.me;
     if (!me.permissions.has(PermissionsBitField.Flags.BanMembers)) {
@@ -81,7 +81,17 @@ module.exports = {
         deleteMessageSeconds: pruneSeconds,
         reason: auditReason,
       });
-      await interaction.editReply({ content: `Banned ${user.tag} for: ${reason}${pruneDays ? ` (deleted ${pruneDays}d of messages)` : ''}` });
+      const embed = buildModActionEmbed(interaction, {
+        title: 'Member Banned',
+        targetUser: user,
+        reason,
+        color: 0xff0000,
+        extraFields: [
+          { name: 'Target', value: `${user.tag} (${user.id})`, inline: false },
+          { name: 'Prune Days', value: String(pruneDays), inline: true },
+        ],
+      });
+      await interaction.editReply({ embeds: [embed] });
         try { await modlog.log(interaction, 'User Banned', {
           target: `${user.tag} (${user.id})`,
           reason,
@@ -91,7 +101,13 @@ module.exports = {
           color: 0xff0000,
         }); } catch (_) {}
     } catch (err) {
-      await interaction.editReply({ content: `Failed to ban: ${err.message || 'Unknown error'}` });
+      const embed = buildModActionEmbed(interaction, {
+        title: 'Ban Failed',
+        targetUser: user,
+        reason: err.message || 'Unknown error',
+        color: 0xed4245,
+      });
+      await interaction.editReply({ embeds: [embed] });
     }
   },
 };

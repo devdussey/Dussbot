@@ -51,7 +51,7 @@ module.exports = {
       const parts = [
         `Moderator role: ${config.moderatorRoleId ? `<@&${config.moderatorRoleId}>` : 'Not set'}`,
         `Mod log channel: ${config.channelId ? `<#${config.channelId}>` : 'Not set'}`,
-        'Mod actions (/ban /kick /jail /mute /unban /unmute) require a reason',
+        'Mod actions (/ban /kick /mute /unban /unmute) require a reason',
       ];
       return interaction.editReply({ content: parts.join('\n') });
     }

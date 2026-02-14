@@ -1,14 +1,13 @@
 const {
-  SlashCommandBuilder,
   PermissionsBitField,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
 } = require('discord.js');
-const { applyDefaultColour } = require('../utils/guildColourStore');
+const { applyDefaultColour } = require('./guildColourStore');
 
-const MAX_ROLE_BUTTONS = 20; // keeps us under the 25 component limit after control buttons
+const MAX_ROLE_BUTTONS = 20;
 
 function canUserManageRole(member, role) {
   if (!member || !role) return false;
@@ -19,9 +18,8 @@ function canUserManageRole(member, role) {
 async function collectEmptyRoles(guild, requester) {
   await guild.roles.fetch();
   try {
-    // Fetch all members so role membership counts are accurate before deleting
     await guild.members.fetch();
-  } catch (err) {
+  } catch (_) {
     throw new Error('Could not load members. Enable the Server Members Intent to safely check empty roles.');
   }
 
@@ -30,11 +28,11 @@ async function collectEmptyRoles(guild, requester) {
 
   const roles = [];
   for (const role of guild.roles.cache.values()) {
-    if (role.id === guild.id) continue; // @everyone
-    if (role.managed) continue; // integrations
-    if (role.members.size > 0) continue; // has users
-    if (me.roles.highest.comparePositionTo(role) <= 0) continue; // bot cannot delete
-    if (!canUserManageRole(requester, role)) continue; // requester cannot delete
+    if (role.id === guild.id) continue;
+    if (role.managed) continue;
+    if (role.members.size > 0) continue;
+    if (me.roles.highest.comparePositionTo(role) <= 0) continue;
+    if (!canUserManageRole(requester, role)) continue;
     roles.push(role);
   }
 
@@ -44,8 +42,7 @@ async function collectEmptyRoles(guild, requester) {
 
 function buildRoleListField(roles) {
   if (!roles.length) return 'No empty, manageable roles found.';
-  const lines = roles.map(r => `${r} (\`${r.id}\`)`);
-  return lines.join('\n');
+  return roles.map(r => `${r} (\`${r.id}\`)`).join('\n');
 }
 
 function buildComponents(emptyRoles, ownerId) {
@@ -71,8 +68,7 @@ function buildComponents(emptyRoles, ownerId) {
   );
 
   for (let i = 0; i < roleButtons.length; i += 5) {
-    const row = new ActionRowBuilder().addComponents(roleButtons.slice(i, i + 5));
-    components.push(row);
+    components.push(new ActionRowBuilder().addComponents(roleButtons.slice(i, i + 5)));
   }
 
   return components;
@@ -88,7 +84,11 @@ function buildEmbed(guildId, emptyRoles) {
       name: emptyRoles.length ? `Empty roles (${Math.min(emptyRoles.length, MAX_ROLE_BUTTONS)} shown)` : 'Status',
       value: buildRoleListField(emptyRoles.slice(0, MAX_ROLE_BUTTONS)),
     })
-    .setFooter({ text: emptyRoles.length > MAX_ROLE_BUTTONS ? `Showing first ${MAX_ROLE_BUTTONS} roles. Delete All affects every empty role I can manage.` : ' ' })
+    .setFooter({
+      text: emptyRoles.length > MAX_ROLE_BUTTONS
+        ? `Showing first ${MAX_ROLE_BUTTONS} roles. Delete All affects every empty role I can manage.`
+        : ' ',
+    })
     .setTimestamp();
 
   try { applyDefaultColour(embed, guildId); } catch (_) {}
@@ -97,9 +97,16 @@ function buildEmbed(guildId, emptyRoles) {
 
 async function buildView(guild, requester) {
   const emptyRoles = await collectEmptyRoles(guild, requester);
-  const embed = buildEmbed(guild.id, emptyRoles);
-  const components = buildComponents(emptyRoles, requester.id);
-  return { embed, components, emptyRoles };
+  return {
+    embed: buildEmbed(guild.id, emptyRoles),
+    components: buildComponents(emptyRoles, requester.id),
+    emptyRoles,
+  };
+}
+
+async function refreshView(interaction) {
+  const view = await buildView(interaction.guild, interaction.member);
+  await interaction.editReply({ embeds: [view.embed], components: view.components });
 }
 
 async function handleDeleteOne(interaction, ownerId, roleId) {
@@ -129,9 +136,8 @@ async function handleDeleteOne(interaction, ownerId, roleId) {
   } else if (me.roles.highest.comparePositionTo(role) <= 0 || !canUserManageRole(interaction.member, role)) {
     try { await interaction.followUp({ content: 'Role hierarchy prevents deleting that role.', ephemeral: true }); } catch (_) {}
   } else {
-    const reason = `Role clean by ${interaction.user.tag} (${interaction.user.id})`;
     try {
-      await role.delete({ reason });
+      await role.delete({ reason: `Role clean by ${interaction.user.tag} (${interaction.user.id})` });
       try { await interaction.followUp({ content: `Deleted role ${role.name}.`, ephemeral: true }); } catch (_) {}
     } catch (err) {
       try { await interaction.followUp({ content: `Failed to delete ${role.name}: ${err?.message || 'Unknown error'}`, ephemeral: true }); } catch (_) {}
@@ -139,8 +145,7 @@ async function handleDeleteOne(interaction, ownerId, roleId) {
   }
 
   try {
-    const view = await buildView(interaction.guild, interaction.member);
-    await interaction.editReply({ embeds: [view.embed], components: view.components });
+    await refreshView(interaction);
   } catch (err) {
     await interaction.editReply({ content: err.message || 'Failed to refresh empty roles.', components: [] });
   }
@@ -188,8 +193,7 @@ async function handleDeleteAll(interaction, ownerId) {
   }
 
   try {
-    const view = await buildView(interaction.guild, interaction.member);
-    await interaction.editReply({ embeds: [view.embed], components: view.components });
+    await refreshView(interaction);
   } catch (err) {
     await interaction.editReply({ content: err.message || 'Failed to refresh empty roles.', components: [] });
   }
@@ -211,57 +215,53 @@ async function handleRefresh(interaction, ownerId) {
 
   await interaction.deferUpdate();
   try {
-    const view = await buildView(interaction.guild, interaction.member);
-    await interaction.editReply({ embeds: [view.embed], components: view.components });
+    await refreshView(interaction);
   } catch (err) {
     await interaction.editReply({ content: err.message || 'Failed to refresh empty roles.', components: [] });
   }
 }
 
+async function openRoleCleanup(interaction) {
+  if (!interaction.inGuild()) {
+    return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
+  }
+
+  const me = interaction.guild.members.me;
+  if (!me?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
+    return interaction.reply({ content: 'I need the Manage Roles permission to delete roles.', ephemeral: true });
+  }
+  if (!interaction.member?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
+    return interaction.reply({ content: 'You need Manage Roles to use this command.', ephemeral: true });
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+  try {
+    await refreshView(interaction);
+  } catch (err) {
+    await interaction.editReply({ content: err.message || 'Failed to find empty roles.', components: [] });
+  }
+}
+
+async function handleRoleCleanButton(interaction) {
+  if (typeof interaction.customId !== 'string') return;
+  const parts = interaction.customId.split(':');
+  const action = parts[1];
+  const ownerId = parts[2] || null;
+
+  if (action === 'delete') {
+    const roleId = parts[3];
+    if (!roleId) return;
+    return handleDeleteOne(interaction, ownerId, roleId);
+  }
+  if (action === 'deleteall') {
+    return handleDeleteAll(interaction, ownerId);
+  }
+  if (action === 'refresh') {
+    return handleRefresh(interaction, ownerId);
+  }
+}
+
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('roleclean')
-    .setDescription('List roles with no members and delete them in bulk or one by one'),
-
-  async execute(interaction) {
-    if (!interaction.inGuild()) {
-      return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
-    }
-
-    const me = interaction.guild.members.me;
-    if (!me?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
-      return interaction.reply({ content: 'I need the Manage Roles permission to delete roles.', ephemeral: true });
-    }
-    if (!interaction.member?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) {
-      return interaction.reply({ content: 'You need Manage Roles to use this command.', ephemeral: true });
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-
-    try {
-      const view = await buildView(interaction.guild, interaction.member);
-      await interaction.editReply({ embeds: [view.embed], components: view.components });
-    } catch (err) {
-      await interaction.editReply({ content: err.message || 'Failed to find empty roles.', components: [] });
-    }
-  },
-
-  async handleRoleCleanButton(interaction) {
-    if (typeof interaction.customId !== 'string') return;
-    const parts = interaction.customId.split(':');
-    const action = parts[1];
-    const ownerId = parts[2] || null;
-
-    if (action === 'delete') {
-      const roleId = parts[3];
-      if (!roleId) return;
-      return handleDeleteOne(interaction, ownerId, roleId);
-    }
-    if (action === 'deleteall') {
-      return handleDeleteAll(interaction, ownerId);
-    }
-    if (action === 'refresh') {
-      return handleRefresh(interaction, ownerId);
-    }
-  },
+  openRoleCleanup,
+  handleRoleCleanButton,
 };

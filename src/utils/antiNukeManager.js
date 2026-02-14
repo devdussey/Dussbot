@@ -150,7 +150,7 @@ async function buildConfigEmbed(guild, config) {
   if (!config.enabled) warnings.push('• Anti-nuke is currently disabled. Enable "Anti-nuke enabled" to activate protections.');
   if (config.autoJail) {
     const jailConfig = await jailStore.getConfig(guild.id);
-    if (!jailConfig?.jailRoleId) warnings.push('• Auto jail is on, but no jail role is configured. Set one via `/jail config`.');
+    if (!jailConfig?.jailRoleId) warnings.push('• Auto jail is on, but no jail role is configured.');
     if (!me?.permissions?.has(PermissionsBitField.Flags.ManageRoles)) warnings.push('• Auto jail is on, but the bot lacks **Manage Roles**.');
   }
   const canViewAudit = me?.permissions?.has(PermissionsBitField.Flags.ViewAuditLog);

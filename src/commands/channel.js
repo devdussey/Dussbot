@@ -39,6 +39,22 @@ module.exports = {
             .setDescription('New channel name')
             .setRequired(true)
         )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName('sync')
+        .setDescription('Sync child channel permissions with their parent category')
+        .addChannelOption(opt =>
+          opt.setName('category')
+            .setDescription('Limit to a specific category')
+            .addChannelTypes(ChannelType.GuildCategory)
+            .setRequired(false)
+        )
+        .addBooleanOption(opt =>
+          opt.setName('dry_run')
+            .setDescription('Show what would change without applying it')
+            .setRequired(false)
+        )
     ),
 
   async execute(interaction) {
@@ -101,6 +117,61 @@ module.exports = {
         } catch (_) {}
 
         return interaction.reply({ content: `Renamed ${channel.toString()} to ${newName}.`, ephemeral: true });
+      }
+
+      if (sub === 'sync') {
+        await interaction.deferReply({ ephemeral: true });
+        const category = interaction.options.getChannel('category');
+        const dryRun = interaction.options.getBoolean('dry_run') ?? false;
+
+        const candidates = [];
+        const validTypes = new Set([
+          ChannelType.GuildText,
+          ChannelType.GuildAnnouncement,
+          ChannelType.GuildVoice,
+          ChannelType.GuildStageVoice,
+          ChannelType.GuildForum,
+          ChannelType.GuildMedia,
+        ]);
+
+        for (const ch of interaction.guild.channels.cache.values()) {
+          if (!validTypes.has(ch.type)) continue;
+          if (!ch.parentId) continue;
+          if (category && ch.parentId !== category.id) continue;
+          candidates.push(ch);
+        }
+
+        if (!candidates.length) {
+          const scope = category ? `in ${category.name}` : 'in this server';
+          return interaction.editReply({ content: `No child channels found to sync ${scope}.` });
+        }
+
+        let ok = 0;
+        let fail = 0;
+        const errors = [];
+        for (const ch of candidates) {
+          if (dryRun) {
+            ok += 1;
+            continue;
+          }
+          try {
+            await ch.lockPermissions(`Requested by ${interaction.user.tag} (${interaction.user.id}) via /channel sync`);
+            ok += 1;
+          } catch (err) {
+            fail += 1;
+            if (errors.length < 5) errors.push(`${ch.name}: ${err.message || 'error'}`);
+          }
+        }
+
+        const scope = category ? `for category ${category.name}` : 'across all categories';
+        const summary = dryRun
+          ? `Dry run: would sync ${ok} channel(s) ${scope}.`
+          : `Synced ${ok} channel(s) ${scope}${fail ? `; ${fail} failed` : ''}.`;
+
+        if (errors.length) {
+          return interaction.editReply({ content: `${summary}\nIssues:\n- ${errors.join('\n- ')}` });
+        }
+        return interaction.editReply({ content: summary });
       }
 
       return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });

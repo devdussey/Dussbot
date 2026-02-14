@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const modlog = require('../utils/modLogger');
+const roleCleanManager = require('../utils/roleCleanManager');
 
 function normalizeColor(input) {
   if (!input) return null;
@@ -61,6 +62,11 @@ module.exports = {
             .setDescription('New hex colour (6 digits)')
             .setRequired(false)
         )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName('clean')
+        .setDescription('List empty roles and delete them individually or in bulk')
     ),
 
   async execute(interaction) {
@@ -74,6 +80,10 @@ module.exports = {
     }
 
     const sub = interaction.options.getSubcommand();
+    if (sub === 'clean') {
+      return roleCleanManager.openRoleCleanup(interaction);
+    }
+
     const auditReason = buildAuditReason(interaction, sub);
     try {
       if (sub === 'create') {

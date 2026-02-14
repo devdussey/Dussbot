@@ -61,7 +61,7 @@ function buildInventoryEmbed({
         name: '💎 Rupees',
         value: `**Owned:** ${rupeeBalance}\n**Cost:** ${formatCoins(
           rupeeCost
-        )} coins each\nRupees unlock the powerful /analysis command, can be bestowed by moderators using /giverupee, and are spent in /rupeestore.`,
+        )} coins each\nRupees unlock the powerful /analysis command, can be granted by admins using /giverupee, and are spent in /rupeestore.`,
       }
     );
 

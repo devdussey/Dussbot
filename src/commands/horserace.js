@@ -36,8 +36,9 @@ function renderTrack(position) {
   const slots = Math.max(12, TRACK_SLOTS);
   const arr = Array(slots).fill('·');
   const clamped = Math.max(0, Math.min(position, slots - 1));
-  arr[clamped] = '🏇';
-  return `🚦${arr.join('')}`;
+  const displayIndex = (slots - 1) - clamped;
+  arr[displayIndex] = '🏇';
+  return `🏁${arr.join('')}🚦`;
 }
 
 function renderRaceLines(horses, betTotals) {
@@ -180,7 +181,7 @@ function buildComponents(stage, participantCount, joinButtonId, betButtonId, sta
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('horserace')
-    .setDescription('Start a left-to-right horse race featuring your own steed.'),
+    .setDescription('Start a right-to-left horse race featuring your own steed.'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {

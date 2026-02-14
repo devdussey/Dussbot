@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const logger = require('../utils/securityLogger');
 const modlog = require('../utils/modLogger');
+const { buildModActionEmbed } = require('../utils/modActionResponseEmbed');
 
 function parseDurationMs(input) {
   if (!input || typeof input !== 'string') return null;
@@ -42,8 +43,7 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    // Acknowledge early to avoid interaction timeouts (public reply)
-    await interaction.deferReply();
+    await interaction.deferReply({ ephemeral: false });
 
     const me = interaction.guild.members.me;
     if (!me.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
@@ -98,7 +98,17 @@ module.exports = {
     try {
       const auditReason = `By ${interaction.user.tag} (${interaction.user.id}) | ${reason}`.slice(0, 512);
       await memberToMute.timeout(durationMs, auditReason);
-      await interaction.editReply({ content: `Muted ${user.tag} for ${durationStr} | Reason: ${reason}` });
+      const embed = buildModActionEmbed(interaction, {
+        title: 'Member Muted',
+        targetUser: user,
+        reason,
+        color: 0xffcc00,
+        extraFields: [
+          { name: 'Target', value: `${user.tag} (${user.id})`, inline: false },
+          { name: 'Duration', value: durationStr, inline: true },
+        ],
+      });
+      await interaction.editReply({ embeds: [embed] });
       try { await modlog.log(interaction, 'Member Timed Out', {
         target: `${user.tag} (${user.id})`,
         reason,
@@ -108,7 +118,13 @@ module.exports = {
         ],
       }); } catch (_) {}
     } catch (err) {
-      await interaction.editReply({ content: `Failed to mute: ${err.message || 'Unknown error'}` });
+      const embed = buildModActionEmbed(interaction, {
+        title: 'Mute Failed',
+        targetUser: user,
+        reason: err.message || 'Unknown error',
+        color: 0xed4245,
+      });
+      await interaction.editReply({ embeds: [embed] });
     }
   },
 };

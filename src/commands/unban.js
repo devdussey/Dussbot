@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const logger = require('../utils/securityLogger');
 const modlog = require('../utils/modLogger');
+const { buildModActionEmbed } = require('../utils/modActionResponseEmbed');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -24,7 +25,7 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    await interaction.deferReply();
+    await interaction.deferReply({ ephemeral: false });
 
     const me = interaction.guild.members.me;
     if (!me.permissions.has(PermissionsBitField.Flags.BanMembers)) {
@@ -45,7 +46,16 @@ module.exports = {
     try {
       const auditReason = `By ${interaction.user.tag} (${interaction.user.id}) | ${reason}`.slice(0, 512);
       await interaction.guild.members.unban(user.id, auditReason);
-      await interaction.editReply({ content: `Unbanned ${user.tag} for: ${reason}` });
+      const embed = buildModActionEmbed(interaction, {
+        title: 'Member Unbanned',
+        targetUser: user,
+        reason,
+        color: 0x57f287,
+        extraFields: [
+          { name: 'Target', value: `${user.tag} (${user.id})`, inline: false },
+        ],
+      });
+      await interaction.editReply({ embeds: [embed] });
       try {
         await modlog.log(interaction, 'User Unbanned', {
           target: `${user.tag} (${user.id})`,
@@ -54,7 +64,13 @@ module.exports = {
         });
       } catch (_) {}
     } catch (err) {
-      await interaction.editReply({ content: `Failed to unban: ${err.message || 'Unknown error'}` });
+      const embed = buildModActionEmbed(interaction, {
+        title: 'Unban Failed',
+        targetUser: user,
+        reason: err.message || 'Unknown error',
+        color: 0xed4245,
+      });
+      await interaction.editReply({ embeds: [embed] });
     }
   },
 };

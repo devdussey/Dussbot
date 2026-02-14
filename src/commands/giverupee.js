@@ -1,7 +1,5 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { isOwner } = require('../utils/ownerIds');
+const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
-const premiumManager = require('../utils/premiumManager');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
 const logSender = require('../utils/logSender');
@@ -9,7 +7,7 @@ const logSender = require('../utils/logSender');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('giverupee')
-    .setDescription('Owners: grant Rupees to a user')
+    .setDescription('Admins: grant Rupees to a user')
     .addUserOption(opt =>
       opt
         .setName('user')
@@ -27,33 +25,17 @@ module.exports = {
         .setName('reason')
         .setDescription('Optional note for the recipient (max 200 characters)')
         .setMaxLength(200)
-    ),
+    )
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .setDMPermission(false),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    if (!(await premiumManager.ensurePremium(interaction, 'Give Rupee'))) return;
-
-    const isBotOwner = isOwner(interaction.user.id);
-    let isGuildOwner = false;
-    if (interaction.guild && interaction.guild.ownerId) {
-      isGuildOwner = interaction.guild.ownerId === interaction.user.id;
-    }
-    if (!isGuildOwner && interaction.guild && interaction.guild.fetchOwner) {
-      try {
-        const owner = await interaction.guild.fetchOwner();
-        if (owner && owner.id === interaction.user.id) {
-          isGuildOwner = true;
-        }
-      } catch (_) {
-        // ignore fetch errors and fall back to known state
-      }
-    }
-
-    if (!isBotOwner && !isGuildOwner) {
-      return interaction.reply({ content: 'Only the bot owner or the guild owner can use this command.', ephemeral: true });
+    if (!interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: 'Only administrators can use this command.', ephemeral: true });
     }
 
     const target = interaction.options.getUser('user', true);

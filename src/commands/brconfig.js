@@ -8,7 +8,7 @@ const { postBoosterRolePanel } = require('../utils/boosterRolePanel');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('brconfig')
+    .setName('boosterroleconfig')
     .setDescription('Post the booster role configuration panel')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addChannelOption((option) =>

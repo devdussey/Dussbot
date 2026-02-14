@@ -4,7 +4,7 @@ const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY;
 const premiumManager = require('../utils/premiumManager');
 const removeBgUsageStore = require('../utils/removeBgUsageStore');
 
-const DAILY_FREE_LIMIT = 2;
+const DAILY_FREE_LIMIT = 1;
 const MAX_GIF_SIZE_BYTES = Number(process.env.REMOVE_BG_GIF_MAX_BYTES || 8 * 1024 * 1024); // default 8 MB cap for attachments
 
 function resolveUrl(interaction, stringOptName, attachmentOptName) {
@@ -158,16 +158,17 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        const hasPremium = premiumManager.hasPremiumAccess(interaction.guild, interaction.member, interaction.user);
+        const hasServerPremium = premiumManager.hasGuildPremium(interaction.guildId) || premiumManager.isGuildBoosted(interaction.guild);
         let usageInfo = null;
 
-        if (!hasPremium) {
-            usageInfo = removeBgUsageStore.tryConsume(interaction.user?.id, DAILY_FREE_LIMIT);
+        if (!hasServerPremium) {
+            const usageKey = interaction.guildId || interaction.user?.id;
+            usageInfo = removeBgUsageStore.tryConsume(usageKey, DAILY_FREE_LIMIT);
             if (!usageInfo.allowed) {
                 const message = premiumManager.buildUpsellMessage('Remove Background', {
                     freebiesRemaining: usageInfo.remaining,
                     freebiesTotal: DAILY_FREE_LIMIT,
-                    extraNote: 'You have used all of your free remove background uses for today.',
+                    extraNote: 'This non-premium server has used its free remove background use for today.',
                 });
                 await interaction.reply({ content: message, ephemeral: true });
                 return;
@@ -186,8 +187,8 @@ module.exports = {
                 await handleImage(interaction);
             }
 
-            if (!hasPremium && usageInfo) {
-                const note = `Free remove background uses remaining today: ${usageInfo.remaining} of ${DAILY_FREE_LIMIT}.`;
+            if (!hasServerPremium && usageInfo) {
+                const note = `Free remove background uses remaining today for this server: ${usageInfo.remaining} of ${DAILY_FREE_LIMIT}.`;
                 try { await interaction.followUp({ content: note, ephemeral: true }); } catch (_) {}
             }
         } catch (error) {

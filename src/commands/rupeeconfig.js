@@ -4,7 +4,7 @@ const smiteConfigStore = require('../utils/smiteConfigStore');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('rupeeconfig')
-    .setDescription('Configure Smite/Rupee rewards and immunity roles')
+    .setDescription('Configure Rupee system settings for this server')
     .addBooleanOption(opt =>
       opt
         .setName('enabled')
@@ -14,7 +14,7 @@ module.exports = {
     .addRoleOption(opt =>
       opt
         .setName('immune_role')
-        .setDescription('Role to add or remove from the Smite immunity list')
+        .setDescription('Role to add or remove from the Rupee punishing items immunity list')
         .setRequired(false)
     )
     .addStringOption(opt =>

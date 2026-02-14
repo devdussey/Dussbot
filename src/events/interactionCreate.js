@@ -1,7 +1,5 @@
 const { Events, PermissionsBitField, EmbedBuilder, ModalBuilder, ActionRowBuilder, TextInputBuilder, TextInputStyle, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } = require('discord.js');
-const verifyStore = require('../utils/verificationStore');
 const securityLogger = require('../utils/securityLogger');
-const verifySession = require('../utils/verificationSession');
 const antiNukeManager = require('../utils/antiNukeManager');
 const logSender = require('../utils/logSender');
 const logChannelTypeStore = require('../utils/logChannelTypeStore');
@@ -10,14 +8,16 @@ const logConfigView = require('../utils/logConfigView');
 const { buildLogEmbed } = require('../utils/logEmbedFactory');
 const botConfigStore = require('../utils/botConfigStore');
 const botConfigView = require('../utils/botConfigView');
+const botSettingsView = require('../utils/botSettingsView');
 const modLogStore = require('../utils/modLogStore');
 const reactionRoleStore = require('../utils/reactionRoleStore');
 const reactionRoleManager = require('../utils/reactionRoleManager');
 const boosterManager = require('../utils/boosterRoleManager');
 const boosterStore = require('../utils/boosterRoleStore');
 const boosterConfigStore = require('../utils/boosterRoleConfigStore');
+const { setDefaultColour, toHex6 } = require('../utils/guildColourStore');
 const vanityRoleCommand = require('../commands/vanityrole');
-const roleCleanCommand = require('../commands/roleclean');
+const roleCleanManager = require('../utils/roleCleanManager');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
 const rupeeStore = require('../utils/rupeeStore');
 const { isOwner } = require('../utils/ownerIds');
@@ -232,12 +232,8 @@ const COMMAND_CATEGORY_MAP = {
     automodconfig: 'moderation',
     ban: 'moderation',
     banlist: 'moderation',
-    isolate: 'moderation',
-    jail: 'moderation',
     kick: 'moderation',
     mute: 'moderation',
-    purge: 'moderation',
-    roleclean: 'moderation',
     restrainingorder: 'moderation',
 
     // AI
@@ -251,24 +247,20 @@ const COMMAND_CATEGORY_MAP = {
 
     // Admin / Owner
     antinuke: 'admin',
-    backup: 'admin',
-    backupdelete: 'admin',
-    backuplist: 'admin',
-    backupview: 'admin',
+    boosterroleconfig: 'admin',
     clone: 'admin',
     embed: 'admin',
+    giverupee: 'admin',
+    massblessing: 'admin',
+    purge: 'admin',
     sacrificeconfig: 'admin',
     say: 'admin',
-    showbans: 'admin',
     vanityrole: 'admin',
-    verify: 'admin',
     webhooks: 'admin',
     reactionrole: 'admin',
 
     // Economy
-    giverupee: 'economy',
     inventory: 'economy',
-    massblessing: 'economy',
     rupeeconfig: 'economy',
     rupeeboard: 'economy',
     rupeestore: 'economy',
@@ -278,11 +270,9 @@ const COMMAND_CATEGORY_MAP = {
     blessing: 'games',
     horserace: 'games',
     horseracestandings: 'games',
-    sentancerush: 'games',
     wordrush: 'games',
 
     // Automations
-    autobump: 'automations',
     automessage: 'automations',
     autorespond: 'automations',
     autoroles: 'automations',
@@ -296,27 +286,28 @@ function getCategoryLabel(key) {
   return botConfigStore.getCategoryDefinition(key)?.label || key || 'This category';
 }
 
-const MODERATOR_COMMANDS = new Set(['ban', 'banlist', 'kick', 'jail', 'mute', 'unban', 'unmute']);
-const OWNER_COMMANDS = new Set(['wraith']);
+function canManageBotSettings(interaction) {
+    if (!interaction?.inGuild?.() || !interaction.member) return false;
+    const hasAdmin = interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator);
+    const isGuildOwner = interaction.guild?.ownerId === interaction.user?.id;
+    const isBotOwner = isOwner(interaction.user?.id);
+    return Boolean(hasAdmin || isGuildOwner || isBotOwner);
+}
+
+const MODERATOR_COMMANDS = new Set(['ban', 'banlist', 'kick', 'mute', 'unban', 'unmute']);
+const OWNER_COMMANDS = new Set([]);
 const ADMIN_COMMANDS = new Set([
   'analysis',
   'antinuke',
-  'autobump',
   'automessage',
   'automodconfig',
   'autoroles',
   'autorespond',
-  'backup',
-  'backupdelete',
-  'backuplist',
-  'backupview',
   'blessing',
   'botconfig',
   'botlook',
   'botsettings',
-  'brconfig',
   'channel',
-  'channelsync',
   'chat',
   'clone',
   'colour',
@@ -328,25 +319,19 @@ const ADMIN_COMMANDS = new Set([
   'fetchmessage',
   'giverupee',
   'horseracestandings',
-  'isolate',
   'logconfig',
   'massblessing',
   'purge',
   'reactionrole',
   'removebg',
   'role',
-  'roleclean',
-  'rupeeconfig',
   'sacrificeconfig',
   'setdefaultcolour',
   'say',
-  'sentancerush',
-  'showbans',
   'summarize',
   'transcribe',
   'transriptconfig',
   'vanityrole',
-  'verify',
   'viewrupees',
   'webhooks',
   'wordrush',
@@ -355,6 +340,9 @@ const ALWAYS_ENABLED_COMMANDS = new Set([
   'rupeestore',
 ]);
 const MANAGE_GUILD_COMMANDS = new Set([
+  'boosterroleconfig',
+  'modconfig',
+  'rupeeconfig',
   'searchword',
 ]);
 
@@ -381,6 +369,7 @@ module.exports = {
 
             const cmdName = interaction.commandName;
             const isAdmin = interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
+            const isGuildOwner = interaction.guild?.ownerId === interaction.user.id;
             if (OWNER_COMMANDS.has(cmdName) && !isOwner(interaction.user.id)) {
                 try { await interaction.reply({ content: 'Only the bot owner can run this command.', ephemeral: true }); } catch (_) {}
                 try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User is not a bot owner'); } catch (_) {}
@@ -409,7 +398,8 @@ module.exports = {
                     try { await interaction.reply({ content: 'Use this command in a server.', ephemeral: true }); } catch (_) {}
                     return;
                 }
-                if (!isAdmin) {
+                const allowBotSettingsOwnerBypass = cmdName === 'botsettings' && (isGuildOwner || isOwner(interaction.user.id));
+                if (!isAdmin && !allowBotSettingsOwnerBypass) {
                     try { await interaction.reply({ content: 'Administrator permission is required to use this command.', ephemeral: true }); } catch (_) {}
                     try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User missing Administrator'); } catch (_) {}
                     return;
@@ -503,6 +493,27 @@ module.exports = {
 
         // Handle select menus
         if (interaction.isStringSelectMenu()) {
+            if (typeof interaction.customId === 'string' && interaction.customId === botSettingsView.BOTSETTINGS_ACTION_SELECT_ID) {
+                if (!interaction.inGuild()) return;
+                if (!canManageBotSettings(interaction)) {
+                    try { await interaction.reply({ content: 'Administrator or server owner access is required to edit bot settings.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                try {
+                    const action = interaction.values?.[0] || null;
+                    if (action === botSettingsView.BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR) {
+                        const modal = botSettingsView.buildEmbedColourModal(interaction.guildId);
+                        await interaction.showModal(modal);
+                        return;
+                    }
+                    const view = botSettingsView.buildBotSettingsView(interaction.guild);
+                    await interaction.update({ embeds: [view.embed], components: view.components });
+                } catch (err) {
+                    console.error('Failed to handle bot settings select menu action:', err);
+                    try { await interaction.followUp({ content: 'Failed to update bot settings. Please try again.', ephemeral: true }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId === 'botconfig:category') {
                 if (!interaction.inGuild()) return;
                 if (!interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -1105,7 +1116,7 @@ module.exports = {
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('roleclean:')) {
                 if (!interaction.inGuild()) return;
                 try {
-                    await roleCleanCommand.handleRoleCleanButton(interaction);
+                    await roleCleanManager.handleRoleCleanButton(interaction);
                 } catch (err) {
                     console.error('Failed to handle roleclean button:', err);
                 }
@@ -1171,89 +1182,6 @@ module.exports = {
                     await interaction.showModal(modal);
                 } catch (_) {
                     try { await interaction.reply({ content: 'Could not open the booster role form. Please try again.', ephemeral: true }); } catch (_) {}
-                }
-                return;
-            }
-            if (interaction.customId === 'verify:go') {
-                if (!interaction.inGuild()) return;
-
-                const cfg = verifyStore.get(interaction.guild.id);
-                if (!cfg) {
-                    try { await interaction.reply({ content: 'Verification is not configured on this server.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                let role = null;
-                try { role = await interaction.guild.roles.fetch(cfg.roleId); } catch (_) {}
-                if (!role) {
-                    try { await interaction.reply({ content: 'The verification role no longer exists. Please contact an admin.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                const me = interaction.guild.members.me;
-                if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-                    try { await interaction.reply({ content: 'I am missing Manage Roles.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-                if (role.managed || me.roles.highest.comparePositionTo(role) <= 0) {
-                    try { await interaction.reply({ content: 'I cannot assign the verification role due to role hierarchy.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                let member = null;
-                try { member = await interaction.guild.members.fetch(interaction.user.id); } catch (_) {}
-                if (!member) {
-                    try { await interaction.reply({ content: 'Could not fetch your member data.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                // Check account age requirement
-                const minDays = Math.max(0, cfg.minAccountAgeDays || 0);
-                if (minDays > 0) {
-                    const accountAgeMs = Date.now() - interaction.user.createdTimestamp;
-                    const acctDays = Math.floor(accountAgeMs / (24 * 60 * 60 * 1000));
-                    if (acctDays < minDays) {
-                        try {
-                            await interaction.reply({ content: `Your account must be at least ${minDays} day(s) old to verify. Current: ${acctDays} day(s).`, ephemeral: true });
-                        } catch (_) {}
-                        try { await securityLogger.logPermissionDenied(interaction, 'verify', 'Account below minimum age'); } catch (_) {}
-                        return;
-                    }
-                }
-
-                // Already verified
-                if (member.roles.cache.has(role.id)) {
-                    try { await interaction.reply({ content: 'You are already verified.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                // Begin captcha flow via modal
-                const code = [...Array(5)].map(() => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
-                verifySession.create(interaction.guild.id, interaction.user.id, {
-                    code,
-                    roleId: role.id,
-                    removeRoleId: cfg.removeRoleId || null,
-                    minAccountAgeDays: cfg.minAccountAgeDays || 0,
-                    ttlMs: 3 * 60 * 1000,
-                    attempts: 3,
-                });
-
-                const modal = new ModalBuilder()
-                    .setCustomId('verify:modal')
-                    .setTitle(`Verification • Enter: ${code}`);
-                const input = new TextInputBuilder()
-                    .setCustomId('verify:answer')
-                    .setLabel('Type the code shown in the title')
-                    .setStyle(TextInputStyle.Short)
-                    .setMinLength(code.length)
-                    .setMaxLength(code.length)
-                    .setRequired(true);
-                const row = new ActionRowBuilder().addComponents(input);
-                modal.addComponents(row);
-                try {
-                    await interaction.showModal(modal);
-                } catch (_) {
-                    try { await interaction.reply({ content: 'Could not open verification challenge. Try again.', ephemeral: true }); } catch (_) {}
                 }
                 return;
             }
@@ -1336,6 +1264,34 @@ module.exports = {
 
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
+            if (typeof interaction.customId === 'string' && interaction.customId === botSettingsView.BOTSETTINGS_COLOUR_MODAL_ID) {
+                if (!interaction.inGuild()) return;
+                if (!canManageBotSettings(interaction)) {
+                    try { await interaction.reply({ content: 'Administrator or server owner access is required to edit bot settings.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                const rawColour = (interaction.fields.getTextInputValue(botSettingsView.BOTSETTINGS_COLOUR_INPUT_ID) || '').trim();
+                if (!rawColour) {
+                    try { await interaction.reply({ content: 'Please enter a colour value, or type `reset`.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                try {
+                    const parsed = await setDefaultColour(interaction.guildId, rawColour);
+                    const view = botSettingsView.buildBotSettingsView(interaction.guild);
+                    const message = parsed === null
+                        ? 'Embed colour reset to bot default for this server.'
+                        : `Embed colour updated for this server: ${toHex6(parsed)}.`;
+                    await interaction.reply({
+                        content: message,
+                        embeds: [view.embed],
+                        components: view.components,
+                        ephemeral: true,
+                    });
+                } catch (err) {
+                    try { await interaction.reply({ content: `Failed to update embed colour: ${err.message}`, ephemeral: true }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('vanityrole:modal:')) {
                 if (!interaction.inGuild()) return;
 
@@ -1585,86 +1541,6 @@ module.exports = {
                 } catch (err) {
                     return interaction.reply({ content: `Failed to save welcome: ${err.message}`, ephemeral: true });
                 }
-            }
-            if (interaction.customId === 'verify:modal') {
-                if (!interaction.inGuild()) return;
-                const sess = verifySession.get(interaction.guild.id, interaction.user.id);
-                if (!sess) {
-                    try { await interaction.reply({ content: 'Verification session expired. Press Verify again.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-                const answer = (interaction.fields.getTextInputValue('verify:answer') || '').trim().toUpperCase();
-                const expect = String(sess.code || '').toUpperCase();
-
-                if (answer !== expect) {
-                    const after = verifySession.consumeAttempt(interaction.guild.id, interaction.user.id);
-                    if (!after || after.attempts <= 0) {
-                        try { await interaction.reply({ content: 'Incorrect code. Session ended. Press Verify to try again.', ephemeral: true }); } catch (_) {}
-                        return;
-                    }
-                    try { await interaction.reply({ content: `Incorrect code. Attempts left: ${after.attempts}. Press Verify to try again.`, ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                // Correct answer; proceed to assign role
-                verifySession.clear(interaction.guild.id, interaction.user.id);
-
-                let role = null;
-                try { role = await interaction.guild.roles.fetch(sess.roleId); } catch (_) {}
-                if (!role) {
-                    try { await interaction.reply({ content: 'Verification role was removed. Contact an admin.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-                let member = null;
-                try { member = await interaction.guild.members.fetch(interaction.user.id); } catch (_) {}
-                if (!member) {
-                    try { await interaction.reply({ content: 'Could not fetch your member data.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-                const me = interaction.guild.members.me;
-                if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles) || role.managed || me.roles.highest.comparePositionTo(role) <= 0) {
-                    try { await interaction.reply({ content: 'I cannot assign the verification role due to missing permission or role hierarchy.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-                try {
-                    await member.roles.add(role, 'User verified via captcha');
-                    if (sess.removeRoleId) {
-                        let removeRole = null;
-                        try { removeRole = await interaction.guild.roles.fetch(sess.removeRoleId); } catch (_) {}
-                        if (removeRole && removeRole.id !== role.id && !removeRole.managed && me.roles.highest.comparePositionTo(removeRole) > 0) {
-                            try {
-                                await member.roles.remove(removeRole, 'User verified via captcha');
-                            } catch (removeErr) {
-                                console.warn('Failed to remove configured verification remove-role:', removeErr);
-                            }
-                        }
-                    }
-                    try { await interaction.reply({ content: 'Verification passed. Role assigned. Welcome!', ephemeral: true }); } catch (_) {}
-                } catch (err) {
-                    try { await interaction.reply({ content: `Failed to assign role: ${err.message}`, ephemeral: true }); } catch (_) {}
-                }
-                return;
-            }
-            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('wraith:start:')) {
-                const parts = interaction.customId.split(':');
-                const ownerId = parts[2];
-                const targetId = parts[3];
-                if (!ownerId || !targetId) return;
-                if (interaction.user.id !== ownerId) {
-                    try { await interaction.reply({ content: 'This wraith configuration modal is not for you.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                try {
-                    const wraith = require('../commands/isolate');
-                    if (typeof wraith.handleWraithStartModalSubmit === 'function') {
-                        await wraith.handleWraithStartModalSubmit(interaction, targetId);
-                    }
-                } catch (err) {
-                    console.error('Wraith modal submit failed:', err);
-                    try { await interaction.reply({ content: 'Failed to start wraith. Please try again.', ephemeral: true }); } catch (_) {}
-                }
-                return;
             }
             if (interaction.customId === 'embedBuilderModal') {
                 await interaction.deferReply({ ephemeral: true });
