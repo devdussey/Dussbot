@@ -4,6 +4,8 @@ const path = require('path');
 const logger = require('./src/utils/logger')('DeployCommands');
 require('dotenv').config();
 
+const GUILD_INSTALL_INTEGRATION_TYPE = 0;
+
 function getAllCommandFiles(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     const files = [];
@@ -23,6 +25,10 @@ for (const filePath of files) {
     const command = require(filePath);
     if ('data' in command && 'execute' in command) {
         const json = command.data.toJSON();
+        if (!Array.isArray(json.integration_types) || !json.integration_types.length) {
+            // Prevent Discord user-install command cap issues by defaulting unspecified commands to guild install only.
+            json.integration_types = [GUILD_INSTALL_INTEGRATION_TYPE];
+        }
         if (nameToFile.has(json.name)) {
             const firstPath = nameToFile.get(json.name);
             logger.warn(`[WARNING] Duplicate slash command name '${json.name}' in ${filePath}; skipping (already defined in ${firstPath}).`);
