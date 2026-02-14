@@ -35,6 +35,8 @@ const categories = {
     { cmd: '/transriptconfig enable/disable/status', desc: 'Manage voice transcription automation.', perm: 'Manage Server' },
     { cmd: '/purge', desc: 'Bulk delete up to 100 recent messages.', perm: 'Manage Messages' },
     { cmd: '/webhooks', desc: 'List server webhooks and creators.', perm: 'Administrator' },
+    { cmd: '/emoji add/edit/delete/clone', desc: 'Manage server emojis from uploads or media URLs.', perm: 'Manage Expressions' },
+    { cmd: '/sticker add/edit/delete/clone', desc: 'Manage server stickers from uploads or media URLs.', perm: 'Manage Expressions' },
     { cmd: '/giverupee', desc: 'Grant rupees directly to a user.', perm: 'Administrator' },
     { cmd: '/massblessing', desc: 'Give every non-bot user rupees.', perm: 'Administrator' },
     { cmd: '/embed create/quick', desc: 'Build embeds through guided tools.', perm: 'Administrator' },
@@ -50,7 +52,6 @@ const categories = {
     { cmd: '/transcribe', desc: 'Transcribe an attached audio file.', perm: null },
     { cmd: '/removebg image/gif', desc: 'Remove image background (non-premium servers: 1 use/day).', perm: 'Premium server for unlimited' },
     { cmd: '/enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
-    { cmd: '/clone emoji/sticker', desc: 'Clone an emoji or sticker.', perm: 'Manage Emojis and Stickers' },
   ],
   'Rupee System and Games': [
     { cmd: '/inventory', desc: 'View your coins and rupees.', perm: null },
