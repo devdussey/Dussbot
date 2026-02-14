@@ -239,7 +239,12 @@ async function applyImageFilter(inputBuffer, edit) {
     ? 'screen'
     : (filterMetadata.hasAlpha ? 'dest-over' : 'screen');
   const outputBuffer = await sharp(processedFilterGif, { animated: true })
-    .composite([{ input: baseStillImage, blend: blendMode, tile: true }])
+    .composite([{
+      input: baseStillImage,
+      blend: blendMode,
+      tile: true,
+      gravity: 'northwest',
+    }])
     .gif({
       ...STABLE_GIF_OUTPUT_OPTIONS,
       ...(timing.delay ? { delay: timing.delay } : {}),
