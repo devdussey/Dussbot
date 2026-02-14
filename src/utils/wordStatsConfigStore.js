@@ -7,6 +7,8 @@ const CUSTOM_EMOJI_REGEX = /<a?:[A-Za-z0-9_]+:\d+>/g;
 const IMAGE_ATTACHMENT_EXT_RE = /\.(png|jpe?g|webp|gif|bmp|tiff|apng|heic|avif|svg)(?:[?#].*)?$/i;
 const MAX_QUERY_LIMIT = 50;
 const MAX_WORD_LENGTH = 48;
+const MAX_DEDUPED_MESSAGE_IDS = 10000;
+const BACKFILL_MESSAGE_ARRAY_KEYS = ['messages', 'messageLog', 'message_log', 'messageEntries', 'message_entries'];
 
 let cache = null;
 
@@ -39,10 +41,19 @@ function loadStore() {
 function ensureGuild(guildId) {
   const store = loadStore();
   if (!store.guilds[guildId] || typeof store.guilds[guildId] !== 'object') {
-    store.guilds[guildId] = { trackedChannelId: null, users: {} };
+    store.guilds[guildId] = {
+      trackedChannelId: null,
+      users: {},
+      processedMessageIds: Object.create(null),
+      processedMessageOrder: [],
+    };
   }
   const guild = store.guilds[guildId];
   if (!guild.users || typeof guild.users !== 'object') guild.users = {};
+  if (!guild.processedMessageIds || typeof guild.processedMessageIds !== 'object' || Array.isArray(guild.processedMessageIds)) {
+    guild.processedMessageIds = Object.create(null);
+  }
+  if (!Array.isArray(guild.processedMessageOrder)) guild.processedMessageOrder = [];
   return guild;
 }
 
@@ -60,6 +71,12 @@ function normalizeTag(value) {
   const text = String(value).trim();
   if (!text) return null;
   return text.slice(0, 100);
+}
+
+function normalizeMessageId(value) {
+  if (value === null || value === undefined) return null;
+  const id = String(value).trim();
+  return id || null;
 }
 
 function normalizeWordToken(value) {
@@ -256,11 +273,40 @@ function extractMessageStats(message) {
   };
 }
 
+function markMessageAsProcessed(guild, rawMessageId) {
+  const messageId = normalizeMessageId(rawMessageId);
+  if (!messageId) return true;
+
+  if (!guild.processedMessageIds || typeof guild.processedMessageIds !== 'object' || Array.isArray(guild.processedMessageIds)) {
+    guild.processedMessageIds = Object.create(null);
+  }
+  if (!Array.isArray(guild.processedMessageOrder)) guild.processedMessageOrder = [];
+
+  if (Object.prototype.hasOwnProperty.call(guild.processedMessageIds, messageId)) {
+    return false;
+  }
+
+  guild.processedMessageIds[messageId] = true;
+  guild.processedMessageOrder.push(messageId);
+
+  if (guild.processedMessageOrder.length > MAX_DEDUPED_MESSAGE_IDS) {
+    const toPrune = guild.processedMessageOrder.splice(0, guild.processedMessageOrder.length - MAX_DEDUPED_MESSAGE_IDS);
+    for (const oldId of toPrune) {
+      delete guild.processedMessageIds[oldId];
+    }
+  }
+
+  return true;
+}
+
 async function recordTrackedMessage(guildId, channelId, userId, userTag, message) {
   if (!guildId || !channelId || !userId) return { recorded: false, reason: 'missing-data' };
   const guild = ensureGuild(guildId);
   if (!guild.trackedChannelId || guild.trackedChannelId !== String(channelId)) {
     return { recorded: false, reason: 'channel-not-tracked' };
+  }
+  if (!markMessageAsProcessed(guild, message?.id)) {
+    return { recorded: false, reason: 'duplicate-message' };
   }
   if (!guild.users[userId] || typeof guild.users[userId] !== 'object') {
     guild.users[userId] = {
@@ -409,6 +455,23 @@ function parseBackfillPayload(payload, guildId) {
     return 0;
   };
 
+  const hasExplicitCountField = (value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+
+    const checkContainer = (container) => {
+      for (const key of COUNT_KEYS) {
+        if (!(key in container)) continue;
+        if (key === 'messages' && Array.isArray(container[key])) continue;
+        return true;
+      }
+      return false;
+    };
+
+    if (checkContainer(value)) return true;
+    if (value.stats && typeof value.stats === 'object' && checkContainer(value.stats)) return true;
+    return false;
+  };
+
   const mergeCandidateWordMap = (target, candidate) => {
     if (!candidate) return;
     if (Array.isArray(candidate)) {
@@ -502,15 +565,93 @@ function parseBackfillPayload(payload, guildId) {
     return null;
   };
 
+  const extractMessageArray = (value) => {
+    if (!value) return null;
+    if (Array.isArray(value)) return value;
+    if (typeof value !== 'object') return null;
+
+    for (const key of BACKFILL_MESSAGE_ARRAY_KEYS) {
+      if (Array.isArray(value[key])) return value[key];
+    }
+
+    if (value.stats && typeof value.stats === 'object') {
+      for (const key of BACKFILL_MESSAGE_ARRAY_KEYS) {
+        if (Array.isArray(value.stats[key])) return value.stats[key];
+      }
+    }
+
+    return null;
+  };
+
+  const summarizeMessageArray = (messages) => {
+    if (!Array.isArray(messages) || !messages.length) return null;
+    const seenIds = new Set();
+    const summary = {
+      count: 0,
+      textCount: 0,
+      mediaCount: 0,
+      mediaBreakdown: { images: 0, stickers: 0, emojis: 0 },
+      words: {},
+    };
+
+    for (const rawMessage of messages) {
+      const candidate = rawMessage && typeof rawMessage === 'object'
+        ? rawMessage
+        : { content: typeof rawMessage === 'string' ? rawMessage : '' };
+
+      const messageId = normalizeMessageId(candidate.id ?? candidate.messageId ?? candidate.message_id);
+      if (messageId) {
+        if (seenIds.has(messageId)) continue;
+        seenIds.add(messageId);
+      }
+
+      const stats = extractMessageStats(candidate);
+      summary.count += 1;
+      summary.textCount += stats.textCount;
+      summary.mediaCount += stats.mediaCount;
+      summary.mediaBreakdown.images += stats.mediaBreakdown.images;
+      summary.mediaBreakdown.stickers += stats.mediaBreakdown.stickers;
+      summary.mediaBreakdown.emojis += stats.mediaBreakdown.emojis;
+      mergeWordMaps(summary.words, stats.words);
+    }
+
+    return summary.count > 0 ? summary : null;
+  };
+
   const pushRecord = (target, userId, value) => {
     const id = normalizeUserId(userId);
     if (!id) return;
 
-    const count = extractCount(value);
-    const textCountResult = extractCountByKeys(value, TEXT_COUNT_KEYS);
-    const mediaCountResult = extractCountByKeys(value, MEDIA_COUNT_KEYS);
-    const mediaBreakdown = extractMediaBreakdown(value);
-    const words = extractWordMap(value);
+    const messageSummary = summarizeMessageArray(extractMessageArray(value));
+    const hasExplicitCount = hasExplicitCountField(value);
+
+    let count = extractCount(value);
+    let textCountResult = extractCountByKeys(value, TEXT_COUNT_KEYS);
+    let mediaCountResult = extractCountByKeys(value, MEDIA_COUNT_KEYS);
+    let mediaBreakdown = extractMediaBreakdown(value);
+    let words = extractWordMap(value);
+
+    if (messageSummary) {
+      if (Array.isArray(value) || !hasExplicitCount) {
+        count = messageSummary.count;
+      }
+      if (!textCountResult.found) textCountResult = normalizeCountResult(messageSummary.textCount, true);
+      if (!mediaCountResult.found) mediaCountResult = normalizeCountResult(messageSummary.mediaCount, true);
+
+      const messageMediaTotal = (
+        messageSummary.mediaBreakdown.images
+        + messageSummary.mediaBreakdown.stickers
+        + messageSummary.mediaBreakdown.emojis
+      );
+      if (!mediaBreakdown.hasAny && messageMediaTotal > 0) {
+        mediaBreakdown = { hasAny: true, ...messageSummary.mediaBreakdown };
+      }
+
+      if (!Object.keys(words).length) {
+        words = { ...messageSummary.words };
+      }
+    }
+
     const wordTotal = Object.values(words).reduce((sum, amount) => sum + amount, 0);
     const hasMediaDetails = mediaCountResult.found || mediaBreakdown.hasAny;
     const hasTextDetails = textCountResult.found;

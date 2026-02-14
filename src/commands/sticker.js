@@ -25,6 +25,11 @@ function isHttpUrl(value) {
     }
 }
 
+function getAttachmentUrl(attachment) {
+    if (!attachment) return null;
+    return attachment.url || attachment.proxyURL || null;
+}
+
 function sanitizeStickerName(name, fallback = 'sticker') {
     const raw = String(name || '').trim();
     const normalized = raw
@@ -307,8 +312,8 @@ async function createStickerWithFallback(guild, params) {
 
     const buildPayload = (asset) => ({
         file: {
+            attachment: asset.buffer,
             name: `${name}.${asset.extension}`,
-            data: asset.buffer,
         },
         name,
         tags,
@@ -340,13 +345,17 @@ async function resolveMediaSource(interaction, sourceInput, attachment) {
     }
 
     if (attachment) {
+        const attachmentUrl = getAttachmentUrl(attachment);
+        if (!isHttpUrl(attachmentUrl)) {
+            throw new Error('Attached file URL could not be read. Try re-uploading the file.');
+        }
         if (attachment.size && attachment.size > MAX_INPUT_BYTES) {
             throw new Error('Attached file is too large (25 MB max).');
         }
-        const { buffer, contentType } = await fetchBufferFromUrl(attachment.url);
+        const { buffer, contentType } = await fetchBufferFromUrl(attachmentUrl);
         return {
             buffer,
-            sourceUrl: attachment.url,
+            sourceUrl: attachmentUrl,
             sourceName: attachment.name || null,
             contentType: attachment.contentType || contentType || '',
             stickerMetadata: null,

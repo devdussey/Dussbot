@@ -17,6 +17,11 @@ function isHttpUrl(value) {
     }
 }
 
+function getAttachmentUrl(attachment) {
+    if (!attachment) return null;
+    return attachment.url || attachment.proxyURL || null;
+}
+
 function buildEmojiCdnUrl(id, animated, size = 128, extOverride) {
     const ext = extOverride || (animated ? 'gif' : 'png');
     return `https://cdn.discordapp.com/emojis/${id}.${ext}?size=${size}&quality=lossless`;
@@ -167,7 +172,8 @@ async function handleAdd(interaction) {
     const url = interaction.options.getString('url');
     const file = interaction.options.getAttachment('file');
 
-    const source = file?.url || url;
+    const fileUrl = getAttachmentUrl(file);
+    const source = fileUrl || url;
     if (!source) {
         return interaction.reply({ content: 'Provide a media URL or upload a file.', ephemeral: true });
     }

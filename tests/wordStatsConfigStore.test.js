@@ -43,6 +43,54 @@ test('setTrackedChannel + recordTrackedMessage only tracks configured channel', 
   assert.equal(config.totalMessages, 1);
 });
 
+test('recordTrackedMessage ignores duplicate message IDs for counts and stats', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
+  const prev = process.env.DISPHORIABOT_DATA_DIR;
+  process.env.DISPHORIABOT_DATA_DIR = tmp;
+  dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
+
+  t.after(() => {
+    if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
+    else delete process.env.DISPHORIABOT_DATA_DIR;
+    dataDir.resetDataDirCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const store = freshStore();
+  await store.setTrackedChannel('g1', 'c1');
+
+  const first = await store.recordTrackedMessage('g1', 'c1', 'u1', 'Alpha#0001', {
+    id: 'm-duplicate-1',
+    content: 'hello hello <:wave:1234567890>',
+    attachments: new Map([['a1', { name: 'image.png', contentType: 'image/png' }]]),
+    stickers: new Map(),
+  });
+  const second = await store.recordTrackedMessage('g1', 'c1', 'u1', 'Alpha#0001', {
+    id: 'm-duplicate-1',
+    content: 'hello hello <:wave:1234567890>',
+    attachments: new Map([['a1', { name: 'image.png', contentType: 'image/png' }]]),
+    stickers: new Map(),
+  });
+
+  assert.equal(first.recorded, true);
+  assert.equal(second.recorded, false);
+  assert.equal(second.reason, 'duplicate-message');
+
+  const config = store.getConfig('g1');
+  assert.equal(config.totalMessages, 1);
+
+  const topWords = store.getTopWords('g1');
+  assert.equal(topWords.entries[0].word, 'hello');
+  assert.equal(topWords.entries[0].totalCount, 2);
+
+  const mediaLeaders = store.getTopMediaUsers('g1');
+  assert.equal(mediaLeaders.entries.length, 1);
+  assert.equal(mediaLeaders.entries[0].mediaCount, 1);
+  assert.equal(mediaLeaders.entries[0].mediaBreakdown.images, 1);
+  assert.equal(mediaLeaders.entries[0].mediaBreakdown.emojis, 1);
+});
+
 test('parseBackfillPayload supports multiple JSON shapes', async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
   const prev = process.env.DISPHORIABOT_DATA_DIR;
@@ -114,6 +162,62 @@ test('parseBackfillPayload accepts message arrays, alternate fields, and numeric
   assert.equal(fromTopLevelMap.length, 1);
   assert.equal(fromTopLevelMap[0]?.userId, 'u5');
   assert.equal(fromTopLevelMap[0]?.count, 4);
+});
+
+test('parseBackfillPayload dedupes message IDs in arrays and keeps media/word detail', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
+  const prev = process.env.DISPHORIABOT_DATA_DIR;
+  process.env.DISPHORIABOT_DATA_DIR = tmp;
+  dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
+
+  t.after(() => {
+    if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
+    else delete process.env.DISPHORIABOT_DATA_DIR;
+    dataDir.resetDataDirCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const store = freshStore();
+  const entries = store.parseBackfillPayload({
+    users: {
+      u1: {
+        messages: [
+          { id: 'm1', content: 'hello hello' },
+          { id: 'm1', content: 'hello hello' },
+          {
+            id: 'm2',
+            content: '<:wave:1234567890>',
+            attachments: [{ name: 'photo.png', contentType: 'image/png' }],
+            stickers: [],
+          },
+        ],
+      },
+    },
+  }, 'g1');
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].userId, 'u1');
+  assert.equal(entries[0].count, 2);
+  assert.equal(entries[0].textCount, 1);
+  assert.equal(entries[0].mediaCount, 1);
+  assert.equal(entries[0].mediaBreakdown.images, 1);
+  assert.equal(entries[0].mediaBreakdown.emojis, 1);
+  assert.equal(entries[0].words.hello, 2);
+
+  const imported = await store.importBackfill('g1', entries);
+  assert.equal(imported.importedMessages, 2);
+
+  const topWords = store.getTopWords('g1');
+  assert.equal(topWords.entries[0].word, 'hello');
+  assert.equal(topWords.entries[0].totalCount, 2);
+
+  const mediaLeaders = store.getTopMediaUsers('g1');
+  assert.equal(mediaLeaders.entries.length, 1);
+  assert.equal(mediaLeaders.entries[0].userId, 'u1');
+  assert.equal(mediaLeaders.entries[0].mediaCount, 1);
+  assert.equal(mediaLeaders.entries[0].mediaBreakdown.images, 1);
+  assert.equal(mediaLeaders.entries[0].mediaBreakdown.emojis, 1);
 });
 
 test('parseBackfillPayload supports txt_only_scan style exports', async (t) => {

@@ -106,7 +106,7 @@ function buildWordEmbed(interaction, normalizedWord, searchResult) {
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x3498db))
     .setTitle(`Word Usage: "${normalizedWord}"`)
-    .setDescription(joinLines(usageLines))
+    .setDescription(joinLines(usageLines, 'No data yet.', 4096))
     .setFooter({
       text: [
         `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
@@ -133,7 +133,7 @@ function buildMediaEmbed(interaction) {
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0xe67e22))
     .setTitle('Media Stats')
-    .setDescription(joinLines(lines))
+    .setDescription(joinLines(lines, 'No data yet.', 4096))
     .setFooter({
       text: [
         `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
