@@ -47,6 +47,43 @@ async function gitRefExists(ref) {
   }
 }
 
+function findCaseInsensitiveMatch(items, target) {
+  const normalizedTarget = String(target || '').toLowerCase();
+  if (!normalizedTarget) return '';
+  const exact = items.find((item) => item === target);
+  if (exact) return exact;
+  return items.find((item) => String(item).toLowerCase() === normalizedTarget) || '';
+}
+
+async function listRemoteBranchNames() {
+  try {
+    const { stdout } = await runCapture('git', ['ls-remote', '--heads', 'origin']);
+    const names = String(stdout || '')
+      .split(/\r?\n/)
+      .map((line) => {
+        const match = line.match(/refs\/heads\/(.+)$/);
+        return match ? match[1].trim() : '';
+      })
+      .filter(Boolean);
+    return [...new Set(names)];
+  } catch (_) {
+    return [];
+  }
+}
+
+async function listLocalBranchNames() {
+  try {
+    const { stdout } = await runCapture('git', ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
+    const names = String(stdout || '')
+      .split(/\r?\n/)
+      .map((name) => name.trim())
+      .filter(Boolean);
+    return [...new Set(names)];
+  } catch (_) {
+    return [];
+  }
+}
+
 (async () => {
   // Optional Git pull on start
   const gitPullOnStart = String(process.env.GIT_PULL_ON_START || '').toLowerCase() === 'true';
@@ -77,24 +114,50 @@ async function gitRefExists(ref) {
       console.log('[runner] git fetch --all --prune');
       await run('git', ['fetch', '--all', '--prune']);
       if (gitBranch) {
-        if (typeof gitBranchRaw === 'string' && gitBranchRaw !== gitBranch) {
-          console.log(`[runner] normalized GIT_BRANCH from ${JSON.stringify(gitBranchRaw)} to ${JSON.stringify(gitBranch)}`);
+        let resolvedBranch = gitBranch;
+        if (typeof gitBranchRaw === 'string' && gitBranchRaw !== resolvedBranch) {
+          console.log(`[runner] normalized GIT_BRANCH from ${JSON.stringify(gitBranchRaw)} to ${JSON.stringify(resolvedBranch)}`);
         }
-        const localRef = `refs/heads/${gitBranch}`;
-        const remoteRef = `refs/remotes/origin/${gitBranch}`;
-        const hasLocalBranch = await gitRefExists(localRef);
-        const hasRemoteBranch = await gitRefExists(remoteRef);
+
+        const localBranches = await listLocalBranchNames();
+        const localCaseMatch = findCaseInsensitiveMatch(localBranches, resolvedBranch);
+        if (localCaseMatch && localCaseMatch !== resolvedBranch) {
+          console.log(`[runner] matched local branch case: ${JSON.stringify(resolvedBranch)} -> ${JSON.stringify(localCaseMatch)}`);
+          resolvedBranch = localCaseMatch;
+        }
+
+        let localRef = `refs/heads/${resolvedBranch}`;
+        let remoteRef = `refs/remotes/origin/${resolvedBranch}`;
+        let hasLocalBranch = await gitRefExists(localRef);
+        let hasRemoteBranch = await gitRefExists(remoteRef);
+
+        if (!hasLocalBranch && !hasRemoteBranch) {
+          const remoteBranches = await listRemoteBranchNames();
+          const remoteCaseMatch = findCaseInsensitiveMatch(remoteBranches, resolvedBranch);
+          if (remoteCaseMatch && remoteCaseMatch !== resolvedBranch) {
+            console.log(`[runner] matched remote branch case: ${JSON.stringify(resolvedBranch)} -> ${JSON.stringify(remoteCaseMatch)}`);
+            resolvedBranch = remoteCaseMatch;
+            localRef = `refs/heads/${resolvedBranch}`;
+            remoteRef = `refs/remotes/origin/${resolvedBranch}`;
+          }
+          if (remoteCaseMatch) {
+            console.log(`[runner] git fetch origin refs/heads/${resolvedBranch}:refs/remotes/origin/${resolvedBranch}`);
+            await run('git', ['fetch', 'origin', `refs/heads/${resolvedBranch}:refs/remotes/origin/${resolvedBranch}`]);
+            hasLocalBranch = await gitRefExists(localRef);
+            hasRemoteBranch = await gitRefExists(remoteRef);
+          }
+        }
 
         if (hasLocalBranch) {
-          console.log(`[runner] git checkout ${gitBranch}`);
-          await run('git', ['checkout', gitBranch]);
+          console.log(`[runner] git checkout ${resolvedBranch}`);
+          await run('git', ['checkout', resolvedBranch]);
         } else if (hasRemoteBranch) {
-          console.log(`[runner] git checkout --track origin/${gitBranch}`);
-          await run('git', ['checkout', '--track', `origin/${gitBranch}`]);
+          console.log(`[runner] git checkout -B ${resolvedBranch} --track origin/${resolvedBranch}`);
+          await run('git', ['checkout', '-B', resolvedBranch, '--track', `origin/${resolvedBranch}`]);
         } else {
           const { stdout: branchListOut } = await runCapture('git', ['branch', '-a']);
           throw new Error(
-            `requested branch "${gitBranch}" was not found locally or on origin.\nAvailable branches:\n${branchListOut.trim()}`,
+            `requested branch "${resolvedBranch}" was not found locally or on origin.\nAvailable branches:\n${branchListOut.trim()}`,
           );
         }
       }
