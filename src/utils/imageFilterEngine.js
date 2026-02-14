@@ -30,6 +30,8 @@ const STABLE_GIF_OUTPUT_OPTIONS = Object.freeze({
   interFrameMaxError: 0,
   interPaletteMaxError: 0,
 });
+const LOAD_SPLASH_BLACK_POINT = Number(process.env.IMAGEFILTER_LOAD_BLACK_POINT || 18);
+const LOAD_SPLASH_WHITE_POINT = Number(process.env.IMAGEFILTER_LOAD_WHITE_POINT || 185);
 
 function isHttpUrl(value) {
   if (!value) return false;
@@ -109,6 +111,12 @@ function assertSupportedEdit(edit) {
   }
 }
 
+function clampByte(value, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(0, Math.min(255, Math.round(numeric)));
+}
+
 function extractAnimationTiming(metadata) {
   const delay = Array.isArray(metadata?.delay) && metadata.delay.length
     ? metadata.delay
@@ -166,15 +174,24 @@ async function getBundledFilterBuffer(edit) {
   return remoteBuffer;
 }
 
-async function applyLoadKeyedTransparency(gifBuffer) {
-  // Chroma-key pass for this exact filter: map black background to transparency
-  // while preserving per-frame animation geometry.
+async function applyLoadWhiteSplashOverlay(gifBuffer) {
+  const metadata = await sharp(gifBuffer, { animated: true }).metadata();
+  const timing = extractAnimationTiming(metadata);
+  const blackPoint = clampByte(LOAD_SPLASH_BLACK_POINT, 18);
+  const whitePoint = Math.max(blackPoint + 1, clampByte(LOAD_SPLASH_WHITE_POINT, 185));
+  const scale = 255 / (whitePoint - blackPoint);
+  const offset = -blackPoint * scale;
+
+  // Convert the filter to a luminance map so only white splash highlights remain.
   return sharp(gifBuffer, { animated: true })
-    .negate({ alpha: false })
-    .unflatten()
-    .negate({ alpha: false })
+    .removeAlpha()
+    .greyscale()
+    .linear(scale, offset)
     .gif({
       ...STABLE_GIF_OUTPUT_OPTIONS,
+      ...(timing.delay ? { delay: timing.delay } : {}),
+      ...(timing.pageHeight ? { pageHeight: timing.pageHeight } : {}),
+      loop: timing.loop,
     })
     .toBuffer();
 }
@@ -215,14 +232,16 @@ async function applyImageFilter(inputBuffer, edit) {
     .toBuffer();
 
   const processedFilterGif = edit === EDIT_LOAD
-    ? await applyLoadKeyedTransparency(resizedFilterGif)
+    ? await applyLoadWhiteSplashOverlay(resizedFilterGif)
     : resizedFilterGif;
 
   const filterMetadata = await sharp(processedFilterGif, { animated: true }).metadata();
   const timing = extractAnimationTiming(filterMetadata);
 
   // Composite a static base behind each animation frame, preserving frame geometry.
-  const blendMode = filterMetadata.hasAlpha ? 'dest-over' : 'screen';
+  const blendMode = edit === EDIT_LOAD
+    ? 'screen'
+    : (filterMetadata.hasAlpha ? 'dest-over' : 'screen');
   const outputBuffer = await sharp(processedFilterGif, { animated: true })
     .composite([{ input: baseStillImage, blend: blendMode }])
     .gif({
