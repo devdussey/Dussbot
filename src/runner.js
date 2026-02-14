@@ -157,9 +157,6 @@ async function listLocalBranchNames() {
           try {
             await run('git', ['checkout', '-B', resolvedBranch, '--track', remoteBranchRef]);
           } catch (trackErr) {
-            const message = String(trackErr?.message || '');
-            if (!message.includes('cannot set up tracking information')) throw trackErr;
-
             // Some providers expose a remote ref that resolves to a commit but is not typed as a branch,
             // so `--track` fails even though checkout from origin/<branch> is valid.
             console.warn(
