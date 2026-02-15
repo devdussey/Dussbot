@@ -33,6 +33,25 @@ async function buildSnapshotFromSource(interaction, sourceMessageId, sourceChann
   }
 }
 
+async function fetchBotMember(guild) {
+  if (!guild) return null;
+  if (guild.members.me) return guild.members.me;
+  try {
+    return await guild.members.fetchMe();
+  } catch (_) {
+    return null;
+  }
+}
+
+function collectMissingStickyPerms(channel, member, mode) {
+  const perms = channel?.permissionsFor(member);
+  const missing = [];
+  if (!perms?.has(PermissionsBitField.Flags.ViewChannel)) missing.push('ViewChannel');
+  if (!perms?.has(PermissionsBitField.Flags.SendMessages)) missing.push('SendMessages');
+  if (mode === 'embed' && !perms?.has(PermissionsBitField.Flags.EmbedLinks)) missing.push('EmbedLinks');
+  return missing;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('stickymessage')
@@ -138,6 +157,17 @@ module.exports = {
       }
       if (mode === 'normal' && content.length > 2000) {
         return interaction.editReply({ content: 'Normal sticky content cannot be longer than 2000 characters.' });
+      }
+
+      const me = await fetchBotMember(interaction.guild);
+      if (!me) {
+        return interaction.editReply({ content: 'I could not resolve my member profile in this server. Please try again.' });
+      }
+      const missingPerms = collectMissingStickyPerms(channel, me, mode);
+      if (missingPerms.length) {
+        return interaction.editReply({
+          content: `I cannot post sticky messages in ${channel}. Missing permission(s): ${missingPerms.map(p => `\`${p}\``).join(', ')}.`,
+        });
       }
 
       await store.setChannelConfig(interaction.guildId, channel.id, {

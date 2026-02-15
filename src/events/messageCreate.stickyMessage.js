@@ -22,12 +22,21 @@ async function postStickyMessage(message, config) {
 
   let me = guild.members.me;
   if (!me) {
-    try { me = await guild.members.fetchMe(); } catch (_) { return; }
+    try { me = await guild.members.fetchMe(); } catch (err) {
+      console.warn(`Sticky message skipped: failed to fetch bot member for guild ${guild.id}:`, err?.message || err);
+      return;
+    }
   }
 
   const perms = channel.permissionsFor(me);
-  if (!perms?.has(PermissionsBitField.Flags.ViewChannel)) return;
-  if (!perms?.has(PermissionsBitField.Flags.SendMessages)) return;
+  if (!perms?.has(PermissionsBitField.Flags.ViewChannel)) {
+    console.warn(`Sticky message skipped: missing ViewChannel in ${guild.id}/${channel.id}`);
+    return;
+  }
+  if (!perms?.has(PermissionsBitField.Flags.SendMessages)) {
+    console.warn(`Sticky message skipped: missing SendMessages in ${guild.id}/${channel.id}`);
+    return;
+  }
 
   if (config.stickyMessageId && perms.has(PermissionsBitField.Flags.ManageMessages)) {
     try {
@@ -39,9 +48,12 @@ async function postStickyMessage(message, config) {
   }
 
   let sent;
-  if (config.mode === 'embed') {
+  if (config.mode === 'embed' && perms.has(PermissionsBitField.Flags.EmbedLinks)) {
     sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(config.content)] });
   } else {
+    if (config.mode === 'embed' && !perms.has(PermissionsBitField.Flags.EmbedLinks)) {
+      console.warn(`Sticky message fallback: missing EmbedLinks in ${guild.id}/${channel.id}, sending plain text.`);
+    }
     sent = await channel.send({ content: config.content });
   }
 
