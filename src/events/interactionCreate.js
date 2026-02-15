@@ -323,6 +323,7 @@ const COMMAND_CATEGORY_MAP = {
     automessage: 'automations',
     autorespond: 'automations',
     autoroles: 'automations',
+    stickymessage: 'automations',
 
     // Images
     enlarge: 'images',
@@ -382,6 +383,7 @@ const ADMIN_COMMANDS = new Set([
   'sacrificeconfig',
   'setdefaultcolour',
   'say',
+  'stickymessage',
   'summarize',
   'transcribe',
   'transriptconfig',
