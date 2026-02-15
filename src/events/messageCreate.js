@@ -39,12 +39,26 @@ module.exports = {
         if (matched) {
           const content = String(rule.reply || '').slice(0, 2000).trim();
           const mediaUrl = String(rule.mediaUrl || '').trim();
-          if (!content && !mediaUrl) continue;
+          const stickerId = String(rule.stickerId || '').trim();
+          if (!content && !mediaUrl && !stickerId) continue;
           const payload = {
             ...(content ? { content } : {}),
             ...(mediaUrl ? { files: [mediaUrl] } : {}),
+            ...(stickerId ? { stickers: [stickerId] } : {}),
           };
-          try { await message.reply(payload); } catch (_) {}
+          try {
+            await message.reply(payload);
+          } catch (_) {
+            // If the sticker is invalid/deleted, still send text/media when possible.
+            if (!stickerId) continue;
+            const fallbackPayload = {
+              ...(content ? { content } : {}),
+              ...(mediaUrl ? { files: [mediaUrl] } : {}),
+            };
+            if (fallbackPayload.content || fallbackPayload.files) {
+              try { await message.reply(fallbackPayload); } catch (_) {}
+            }
+          }
           // do not break; allow multiple rules to respond if applicable
         }
       }

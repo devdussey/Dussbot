@@ -57,6 +57,13 @@ function parseStoreItemId(raw) {
   return null;
 }
 
+async function replyToModal(submission, payload) {
+  if (submission.deferred || submission.replied) {
+    return submission.followUp(payload);
+  }
+  return submission.reply(payload);
+}
+
 async function resolveRupeeLogChannelId(guildId) {
   const economyEntry = await logChannelTypeStore.getEntry(guildId, 'economy');
   if (economyEntry?.channelId) return String(economyEntry.channelId);
@@ -244,7 +251,7 @@ module.exports = {
 
       if (componentInteraction.customId === `${baseId}:rates`) {
         const current = smiteConfigStore.getConfig(interaction.guildId);
-        const modalId = `${baseId}:modal:rates`;
+        const modalId = `${baseId}:modal:rates:${componentInteraction.id}`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
           .setTitle('Edit Economy Earning Rates')
@@ -282,7 +289,7 @@ module.exports = {
         const messageThreshold = parsePositiveInteger(submission.fields.getTextInputValue('message_threshold'));
         const voiceMinutesPerRupee = parsePositiveInteger(submission.fields.getTextInputValue('voice_minutes'));
         if (!messageThreshold || !voiceMinutesPerRupee) {
-          await submission.reply({
+          await replyToModal(submission, {
             content: 'Please enter whole numbers greater than 0 for both message and voice earning rates.',
             ephemeral: true,
           });
@@ -295,12 +302,12 @@ module.exports = {
         });
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: 'Economy earning rates updated for this server.', ephemeral: true });
+        await replyToModal(submission, { content: 'Economy earning rates updated for this server.', ephemeral: true });
         return;
       }
 
       if (componentInteraction.customId === `${baseId}:immunity`) {
-        const modalId = `${baseId}:modal:immunity`;
+        const modalId = `${baseId}:modal:immunity:${componentInteraction.id}`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
           .setTitle('Set Immunity Role')
@@ -329,7 +336,7 @@ module.exports = {
 
         const raw = (submission.fields.getTextInputValue('immune_role') || '').trim();
         if (!raw) {
-          await submission.reply({ content: 'Please provide a role mention/ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Please provide a role mention/ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -337,13 +344,13 @@ module.exports = {
           await smiteConfigStore.setImmuneRoleIds(interaction.guildId, []);
           const nextView = await render();
           await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-          await submission.reply({ content: 'Immunity role cleared for this server.', ephemeral: true });
+          await replyToModal(submission, { content: 'Immunity role cleared for this server.', ephemeral: true });
           return;
         }
 
         const roleId = parseRoleId(raw);
         if (!roleId) {
-          await submission.reply({ content: 'Invalid role format. Use a role mention, role ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Invalid role format. Use a role mention, role ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -356,20 +363,20 @@ module.exports = {
           }
         }
         if (!role) {
-          await submission.reply({ content: 'That role does not exist in this server.', ephemeral: true });
+          await replyToModal(submission, { content: 'That role does not exist in this server.', ephemeral: true });
           return;
         }
 
         await smiteConfigStore.setImmuneRoleIds(interaction.guildId, [role.id]);
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: `Immunity role set to ${role}.`, ephemeral: true });
+        await replyToModal(submission, { content: `Immunity role set to ${role}.`, ephemeral: true });
         return;
       }
 
       if (componentInteraction.customId === `${baseId}:announce`) {
         const currencyName = getCurrencyName(interaction.guildId);
-        const modalId = `${baseId}:modal:announce`;
+        const modalId = `${baseId}:modal:announce:${componentInteraction.id}`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
           .setTitle(trimModalTitle(`Set ${currencyName} Announce Channel`))
@@ -398,7 +405,7 @@ module.exports = {
 
         const raw = (submission.fields.getTextInputValue('announce_channel') || '').trim();
         if (!raw) {
-          await submission.reply({ content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -406,13 +413,13 @@ module.exports = {
           await smiteConfigStore.setAnnounceChannelId(interaction.guildId, null);
           const nextView = await render();
           await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-          await submission.reply({ content: `${currencyName} announce channel cleared.`, ephemeral: true });
+          await replyToModal(submission, { content: `${currencyName} announce channel cleared.`, ephemeral: true });
           return;
         }
 
         const channelId = parseChannelId(raw);
         if (!channelId) {
-          await submission.reply({ content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -425,20 +432,20 @@ module.exports = {
           }
         }
         if (!channel || !channel.isTextBased?.() || channel.type === ChannelType.GuildForum) {
-          await submission.reply({ content: 'Please select a text or announcement channel in this server.', ephemeral: true });
+          await replyToModal(submission, { content: 'Please select a text or announcement channel in this server.', ephemeral: true });
           return;
         }
 
         await smiteConfigStore.setAnnounceChannelId(interaction.guildId, channel.id);
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: `${currencyName} announce channel set to ${channel}.`, ephemeral: true });
+        await replyToModal(submission, { content: `${currencyName} announce channel set to ${channel}.`, ephemeral: true });
         return;
       }
 
       if (componentInteraction.customId === `${baseId}:log`) {
         const currencyName = getCurrencyName(interaction.guildId);
-        const modalId = `${baseId}:modal:log`;
+        const modalId = `${baseId}:modal:log:${componentInteraction.id}`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
           .setTitle(trimModalTitle(`Set ${currencyName} Log Channel`))
@@ -467,7 +474,7 @@ module.exports = {
 
         const raw = (submission.fields.getTextInputValue('log_channel') || '').trim();
         if (!raw) {
-          await submission.reply({ content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -475,13 +482,13 @@ module.exports = {
           await logChannelTypeStore.setChannel(interaction.guildId, 'economy', null);
           const nextView = await render();
           await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-          await submission.reply({ content: `${currencyName} log channel cleared.`, ephemeral: true });
+          await replyToModal(submission, { content: `${currencyName} log channel cleared.`, ephemeral: true });
           return;
         }
 
         const channelId = parseChannelId(raw);
         if (!channelId) {
-          await submission.reply({ content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -494,7 +501,7 @@ module.exports = {
           }
         }
         if (!channel || (!channel.isTextBased?.() && channel.type !== ChannelType.GuildForum)) {
-          await submission.reply({ content: 'Please select a text, announcement, thread, or forum channel in this server.', ephemeral: true });
+          await replyToModal(submission, { content: 'Please select a text, announcement, thread, or forum channel in this server.', ephemeral: true });
           return;
         }
 
@@ -503,13 +510,13 @@ module.exports = {
 
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: `${currencyName} log channel set to ${channel}.`, ephemeral: true });
+        await replyToModal(submission, { content: `${currencyName} log channel set to ${channel}.`, ephemeral: true });
         return;
       }
 
       if (componentInteraction.customId === `${baseId}:storepanel`) {
         const currencyName = getCurrencyName(interaction.guildId);
-        const modalId = `${baseId}:modal:storepanel`;
+        const modalId = `${baseId}:modal:storepanel:${componentInteraction.id}`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
           .setTitle(trimModalTitle(`Set ${currencyName} Store Panel Channel`))
@@ -538,7 +545,7 @@ module.exports = {
 
         const raw = (submission.fields.getTextInputValue('store_panel_channel') || '').trim();
         if (!raw) {
-          await submission.reply({ content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -546,13 +553,13 @@ module.exports = {
           await smiteConfigStore.setStorePanelChannelId(interaction.guildId, null);
           const nextView = await render();
           await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-          await submission.reply({ content: `${currencyName} store panel channel cleared.`, ephemeral: true });
+          await replyToModal(submission, { content: `${currencyName} store panel channel cleared.`, ephemeral: true });
           return;
         }
 
         const channelId = parseChannelId(raw);
         if (!channelId) {
-          await submission.reply({ content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -565,26 +572,26 @@ module.exports = {
           }
         }
         if (!channel || !channel.isTextBased?.() || channel.type === ChannelType.GuildForum) {
-          await submission.reply({ content: 'Please select a text or announcement channel in this server.', ephemeral: true });
+          await replyToModal(submission, { content: 'Please select a text or announcement channel in this server.', ephemeral: true });
           return;
         }
 
         const me = interaction.guild.members.me;
         const perms = channel.permissionsFor(me);
         if (!perms?.has(PermissionsBitField.Flags.SendMessages)) {
-          await submission.reply({ content: `I cannot send messages in ${channel}.`, ephemeral: true });
+          await replyToModal(submission, { content: `I cannot send messages in ${channel}.`, ephemeral: true });
           return;
         }
 
         await smiteConfigStore.setStorePanelChannelId(interaction.guildId, channel.id);
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: `${currencyName} store panel channel set to ${channel}. Run /storeconfig to publish store item embeds.`, ephemeral: true });
+        await replyToModal(submission, { content: `${currencyName} store panel channel set to ${channel}. Run /storeconfig to publish store item embeds.`, ephemeral: true });
         return;
       }
 
       if (componentInteraction.customId === `${baseId}:currency`) {
-        const modalId = `${baseId}:modal:currency`;
+        const modalId = `${baseId}:modal:currency:${componentInteraction.id}`;
         const current = getCurrencyName(interaction.guildId);
         const modal = new ModalBuilder()
           .setCustomId(modalId)
@@ -616,14 +623,14 @@ module.exports = {
 
         const rawName = (submission.fields.getTextInputValue('currency_name') || '').trim();
         if (!rawName) {
-          await submission.reply({ content: 'Currency name cannot be empty.', ephemeral: true });
+          await replyToModal(submission, { content: 'Currency name cannot be empty.', ephemeral: true });
           return;
         }
 
         await smiteConfigStore.setCurrencyName(interaction.guildId, rawName);
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({
+        await replyToModal(submission, {
           content: `Currency name updated to **${formatCurrencyWord(interaction.guildId, 1)}**.`,
           ephemeral: true,
         });
@@ -631,7 +638,7 @@ module.exports = {
       }
 
       if (componentInteraction.customId === `${baseId}:store`) {
-        const modalId = `${baseId}:modal:store`;
+        const modalId = `${baseId}:modal:store:${componentInteraction.id}`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
           .setTitle('Edit Store Item Price')
@@ -669,7 +676,7 @@ module.exports = {
         const rawItemId = submission.fields.getTextInputValue('store_item_id');
         const storeItemId = parseStoreItemId(rawItemId);
         if (!storeItemId) {
-          await submission.reply({
+          await replyToModal(submission, {
             content: `Invalid store item. Use one of: ${SHOP_ITEMS.map((item, idx) => `${idx + 1}:${item.id}`).join(', ')}`,
             ephemeral: true,
           });
@@ -684,7 +691,7 @@ module.exports = {
           await smiteConfigStore.setStoreItemCost(interaction.guildId, storeItemId, null);
           const nextView = await render();
           await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-          await submission.reply({
+          await replyToModal(submission, {
             content: `${item?.label || storeItemId} cost reset to default (${item?.cost ?? 'unknown'}).`,
             ephemeral: true,
           });
@@ -693,7 +700,7 @@ module.exports = {
 
         const parsedCost = parsePositiveInteger(rawCost, { min: 1, max: 1_000_000 });
         if (!parsedCost) {
-          await submission.reply({
+          await replyToModal(submission, {
             content: 'Invalid cost. Enter a whole number greater than 0, or `default`.',
             ephemeral: true,
           });
@@ -703,7 +710,7 @@ module.exports = {
         await smiteConfigStore.setStoreItemCost(interaction.guildId, storeItemId, parsedCost);
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({
+        await replyToModal(submission, {
           content: `${item?.label || storeItemId} now costs ${formatCurrencyAmount(interaction.guildId, parsedCost, { lowercase: true })} in this server.`,
           ephemeral: true,
         });

@@ -1,6 +1,32 @@
 const { SlashCommandBuilder, PermissionsBitField, ChannelType } = require('discord.js');
 const store = require('../utils/autoRespondStore');
 
+async function resolveGuildSticker(guild, value) {
+  if (!guild || !value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (/^[0-9]{15,25}$/.test(raw)) {
+    try {
+      return await guild.stickers.fetch(raw);
+    } catch (_) {}
+  }
+
+  const lowerNeedle = raw.toLowerCase();
+  let found = guild.stickers.cache.get(raw) || null;
+  if (!found) {
+    found = guild.stickers.cache.find(sticker => sticker.name.toLowerCase() === lowerNeedle) || null;
+  }
+  if (found) return found;
+
+  try {
+    const fetched = await guild.stickers.fetch();
+    return fetched.get(raw) || fetched.find(sticker => sticker.name.toLowerCase() === lowerNeedle) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function chunkLines(lines, maxLength = 1900) {
   const chunks = [];
   let current = '';
@@ -71,6 +97,11 @@ module.exports = {
             .setRequired(false)
         )
         .addStringOption(opt =>
+          opt.setName('sticker')
+            .setDescription('Server sticker ID or exact sticker name')
+            .setRequired(false)
+        )
+        .addStringOption(opt =>
           opt.setName('match')
             .setDescription('Match mode: contains(anywhere), exact(whole msg), starts_with(beginning)')
             .addChoices(
@@ -128,15 +159,14 @@ module.exports = {
       const trigger = interaction.options.getString('trigger', true);
       const reply = interaction.options.getString('reply') || '';
       const mediaUrl = interaction.options.getString('media_url') || '';
+      const stickerInput = interaction.options.getString('sticker') || '';
       const match = interaction.options.getString('match') || 'contains';
       const caseSensitive = interaction.options.getBoolean('case_sensitive') || false;
       const channel = interaction.options.getChannel('channel');
 
       const trimmedReply = reply.trim();
       const trimmedMediaUrl = mediaUrl.trim();
-      if (!trimmedReply && !trimmedMediaUrl) {
-        return interaction.editReply({ content: 'Provide at least one response type: `reply` text or `media_url`.' });
-      }
+      const trimmedStickerInput = stickerInput.trim();
 
       if (trimmedMediaUrl) {
         let parsed = null;
@@ -146,8 +176,26 @@ module.exports = {
         }
       }
 
+      let sticker = null;
+      if (trimmedStickerInput) {
+        sticker = await resolveGuildSticker(interaction.guild, trimmedStickerInput);
+        if (!sticker) {
+          return interaction.editReply({ content: 'Could not find that server sticker. Use a sticker ID or exact sticker name from this server.' });
+        }
+      }
+
+      if (!trimmedReply && !trimmedMediaUrl && !sticker) {
+        return interaction.editReply({ content: 'Provide at least one response type: `reply`, `media_url`, or `sticker`.' });
+      }
+
       const rule = store.addRule(guildId, {
-        trigger, reply: trimmedReply, mediaUrl: trimmedMediaUrl, match, caseSensitive, channelId: channel?.id || null,
+        trigger,
+        reply: trimmedReply,
+        mediaUrl: trimmedMediaUrl,
+        stickerId: sticker?.id || '',
+        match,
+        caseSensitive,
+        channelId: channel?.id || null,
       });
       // Enabling autorespond automatically if adding first rule
       try {
@@ -157,6 +205,7 @@ module.exports = {
       const responseLabel = [
         rule.reply ? `text '${rule.reply}'` : null,
         rule.mediaUrl ? `media ${rule.mediaUrl}` : null,
+        rule.stickerId ? `sticker ${sticker?.name || rule.stickerId}` : null,
       ].filter(Boolean).join(' + ');
       const addedLine = `Added rule #${rule.id}: when ${match}${caseSensitive ? ' (case)' : ''} '${trigger}'${rule.channelId ? ` in <#${rule.channelId}>` : ''} -> ${responseLabel}.`;
       const chunks = chunkLines([addedLine], 1850);
@@ -189,7 +238,8 @@ module.exports = {
         for (const r of cfg.rules) {
           const textPart = r.reply ? `'${String(r.reply).replace(/\n/g, ' ')}'` : null;
           const mediaPart = r.mediaUrl ? `media ${r.mediaUrl}` : null;
-          const output = [textPart, mediaPart].filter(Boolean).join(' + ') || '(empty response)';
+          const stickerPart = r.stickerId ? `sticker ${r.stickerId}` : null;
+          const output = [textPart, mediaPart, stickerPart].filter(Boolean).join(' + ') || '(empty response)';
           lines.push(`#${r.id}: [${r.match}${r.caseSensitive ? ', case' : ''}] '${r.trigger}' -> ${output}${r.channelId ? ` in <#${r.channelId}>` : ''}`);
         }
       }

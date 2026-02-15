@@ -37,6 +37,10 @@ function getGuildConfig(guildId) {
   if (typeof cfg.enabled !== 'boolean') cfg.enabled = false;
   if (!Array.isArray(cfg.rules)) cfg.rules = [];
   if (!cfg.nextId || typeof cfg.nextId !== 'number') cfg.nextId = 1;
+  for (const rule of cfg.rules) {
+    if (!rule || typeof rule !== 'object') continue;
+    if (typeof rule.stickerId !== 'string') rule.stickerId = '';
+  }
   return cfg;
 }
 
@@ -60,6 +64,7 @@ function addRule(guildId, rule) {
     trigger: String(rule.trigger || '').slice(0, 300),
     reply: String(rule.reply || '').slice(0, 2000),
     mediaUrl: String(rule.mediaUrl || '').slice(0, 1000),
+    stickerId: String(rule.stickerId || '').trim().slice(0, 64),
     match: (rule.match || 'contains'),
     caseSensitive: !!rule.caseSensitive,
     channelId: rule.channelId || null,
