@@ -54,7 +54,7 @@ function getGuild(data, guildId) {
 
 function normalizeConfig(config) {
   if (!config || typeof config !== 'object') return null;
-  const mode = config.mode === 'embed' ? 'embed' : 'normal';
+  const mode = (config.mode === 'embed' || config.mode === 'source') ? config.mode : 'normal';
   const content = typeof config.content === 'string' ? config.content : '';
   const delayMs = Number.isFinite(config.delayMs) && config.delayMs > 0 ? Math.floor(config.delayMs) : 5000;
   const stickyMessageId = typeof config.stickyMessageId === 'string' ? config.stickyMessageId : null;

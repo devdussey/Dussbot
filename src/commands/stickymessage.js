@@ -18,13 +18,20 @@ async function buildSnapshotFromSource(interaction, sourceMessageId, sourceChann
   try {
     const fetched = await sourceChannel.messages.fetch(sourceMessageId);
     const content = fetched.content?.trim() || '';
-    const embedDescription = fetched.embeds?.[0]?.data?.description?.trim() || '';
-    if (!content && !embedDescription) return { error: 'That source message has no text content to sticky.' };
-    const mode = fetched.embeds?.length ? 'embed' : 'normal';
-    const snapshot = mode === 'embed' ? (embedDescription || content) : content;
+    const hasEmbeds = Array.isArray(fetched.embeds) && fetched.embeds.length > 0;
+    const hasComponents = Array.isArray(fetched.components) && fetched.components.length > 0;
+    const hasAttachments = fetched.attachments?.size > 0;
+    if (!content && !hasEmbeds && !hasComponents && !hasAttachments) {
+      return { error: 'That source message is empty and cannot be stickied.' };
+    }
+    const preview =
+      content
+      || fetched.embeds?.[0]?.data?.description?.trim()
+      || fetched.embeds?.[0]?.data?.title?.trim()
+      || '(source message)';
     return {
-      mode,
-      content: snapshot,
+      mode: 'source',
+      content: preview,
       sourceMessageId: fetched.id,
       sourceChannelId: fetched.channelId,
     };
@@ -48,7 +55,8 @@ function collectMissingStickyPerms(channel, member, mode) {
   const missing = [];
   if (!perms?.has(PermissionsBitField.Flags.ViewChannel)) missing.push('ViewChannel');
   if (!perms?.has(PermissionsBitField.Flags.SendMessages)) missing.push('SendMessages');
-  if (mode === 'embed' && !perms?.has(PermissionsBitField.Flags.EmbedLinks)) missing.push('EmbedLinks');
+  if ((mode === 'embed' || mode === 'source') && !perms?.has(PermissionsBitField.Flags.EmbedLinks)) missing.push('EmbedLinks');
+  if (mode === 'source' && !perms?.has(PermissionsBitField.Flags.AttachFiles)) missing.push('AttachFiles');
   return missing;
 }
 
@@ -180,7 +188,7 @@ module.exports = {
       });
 
       return interaction.editReply({
-        content: `Sticky message configured for ${channel} (${mode}, ${delayMs / 1000}s delay).`,
+        content: `Sticky message configured for ${channel} (${mode === 'source' ? 'source clone' : mode}, ${delayMs / 1000}s delay).`,
       });
     }
 

@@ -35,6 +35,44 @@ function consumeStickyPostSuppression(guildId, channelId) {
   return true;
 }
 
+async function buildSourceClonePayload(guild, config, fallbackContent) {
+  if (!guild || !config?.sourceMessageId) {
+    return fallbackContent ? { content: fallbackContent } : null;
+  }
+
+  const sourceChannelId = config.sourceChannelId;
+  const sourceChannel = sourceChannelId
+    ? await guild.channels.fetch(sourceChannelId).catch(() => null)
+    : null;
+  if (!sourceChannel?.isTextBased?.()) {
+    return fallbackContent ? { content: fallbackContent } : null;
+  }
+
+  const sourceMessage = await sourceChannel.messages.fetch(config.sourceMessageId).catch(() => null);
+  if (!sourceMessage) {
+    return fallbackContent ? { content: fallbackContent } : null;
+  }
+
+  const payload = {};
+  if (sourceMessage.content) payload.content = sourceMessage.content;
+  if (Array.isArray(sourceMessage.embeds) && sourceMessage.embeds.length) {
+    payload.embeds = sourceMessage.embeds.map(embed => embed.toJSON());
+  }
+  if (Array.isArray(sourceMessage.components) && sourceMessage.components.length) {
+    payload.components = sourceMessage.components.map(component => component.toJSON());
+  }
+  if (sourceMessage.attachments?.size) {
+    payload.files = Array.from(sourceMessage.attachments.values())
+      .map(attachment => attachment.url)
+      .filter(Boolean);
+  }
+
+  if (!payload.content && !payload.embeds && !payload.components && !payload.files) {
+    return fallbackContent ? { content: fallbackContent } : null;
+  }
+  return payload;
+}
+
 async function postStickyMessage(message, config) {
   const { guild, channel } = message;
   if (!guild || !channel || !config) return;
@@ -66,17 +104,38 @@ async function postStickyMessage(message, config) {
     } catch (_) {}
   }
 
-  let sent;
-  // Prevent this freshly-sent sticky message from re-triggering the timer.
-  markStickyPostSuppression(guild.id, channel.id);
-  if (config.mode === 'embed' && perms.has(PermissionsBitField.Flags.EmbedLinks)) {
-    sent = await channel.send({ embeds: [new EmbedBuilder().setDescription(config.content)] });
+  let payload;
+  if (config.sourceMessageId) {
+    payload = await buildSourceClonePayload(guild, config, config.content || '');
+    if (!payload) {
+      console.warn(`Sticky message skipped: source clone payload empty in ${guild.id}/${channel.id}`);
+      return;
+    }
+    if (payload.embeds && !perms.has(PermissionsBitField.Flags.EmbedLinks)) {
+      delete payload.embeds;
+      console.warn(`Sticky source clone: missing EmbedLinks in ${guild.id}/${channel.id}, dropped embeds.`);
+    }
+    if (payload.files && !perms.has(PermissionsBitField.Flags.AttachFiles)) {
+      delete payload.files;
+      console.warn(`Sticky source clone: missing AttachFiles in ${guild.id}/${channel.id}, dropped attachments.`);
+    }
+    if (!payload.content && !payload.embeds && !payload.components && !payload.files) {
+      console.warn(`Sticky message skipped: no sendable source clone payload in ${guild.id}/${channel.id}`);
+      return;
+    }
+  } else if (config.mode === 'embed' && perms.has(PermissionsBitField.Flags.EmbedLinks)) {
+    payload = { embeds: [new EmbedBuilder().setDescription(config.content)] };
   } else {
     if (config.mode === 'embed' && !perms.has(PermissionsBitField.Flags.EmbedLinks)) {
       console.warn(`Sticky message fallback: missing EmbedLinks in ${guild.id}/${channel.id}, sending plain text.`);
     }
-    sent = await channel.send({ content: config.content });
+    payload = { content: config.content };
   }
+
+  let sent;
+  // Prevent this freshly-sent sticky message from re-triggering the timer.
+  markStickyPostSuppression(guild.id, channel.id);
+  sent = await channel.send(payload);
 
   await stickyStore.setStickyMessageId(guild.id, channel.id, sent.id);
 }
@@ -86,7 +145,7 @@ module.exports = {
   async execute(message) {
     if (!message.guild || !message.channel) return;
     const config = await stickyStore.getChannelConfig(message.guild.id, message.channel.id);
-    if (!config?.content) return;
+    if (!config?.content && !config?.sourceMessageId) return;
     if (!message.client?.user?.id) return;
 
     if (message.author?.bot) {
@@ -103,7 +162,7 @@ module.exports = {
     const timer = setTimeout(async () => {
       timers.delete(key);
       const latestConfig = await stickyStore.getChannelConfig(message.guild.id, message.channel.id);
-      if (!latestConfig?.content) return;
+      if (!latestConfig?.content && !latestConfig?.sourceMessageId) return;
       try {
         await postStickyMessage(message, latestConfig);
       } catch (err) {
