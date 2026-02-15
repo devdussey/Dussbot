@@ -68,7 +68,7 @@ async function sendRupeeAnnouncement(newState, userId, awarded, newBalance) {
   if (perms.has(PermissionFlagsBits.EmbedLinks)) {
     const embed = new EmbedBuilder()
       .setColor(resolveEmbedColour(guild.id, VOICE_RUPEE_EMBED_COLOR))
-      .setDescription(`${announcement}\n\nTo spend your ${formatCurrencyWord(guild.id, 2, { lowercase: true })}, type /rupeestore.`);
+      .setDescription(`${announcement}\n\nTo spend your ${formatCurrencyWord(guild.id, 2, { lowercase: true })}, use the store panel in the configured store channel.`);
     await announceChannel.send({ embeds: [embed] });
     return;
   }

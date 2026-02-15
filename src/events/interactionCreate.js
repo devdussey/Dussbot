@@ -312,7 +312,7 @@ const COMMAND_CATEGORY_MAP = {
     inventory: 'economy',
     economyconfig: 'economy',
     rupeeboard: 'economy',
-    rupeestore: 'economy',
+    storeconfig: 'economy',
     viewrupees: 'economy',
 
     // Games
@@ -386,6 +386,7 @@ const ADMIN_COMMANDS = new Set([
   'setdefaultcolour',
   'say',
   'stickymessage',
+  'storeconfig',
   'summarize',
   'transcribe',
   'transriptconfig',
@@ -394,9 +395,7 @@ const ADMIN_COMMANDS = new Set([
   'webhooks',
   'wordrush',
 ]);
-const ALWAYS_ENABLED_COMMANDS = new Set([
-  'rupeestore',
-]);
+const ALWAYS_ENABLED_COMMANDS = new Set([]);
 const MANAGE_GUILD_COMMANDS = new Set([
   'boosterroleconfig',
   'modconfig',
@@ -564,6 +563,16 @@ module.exports = {
 
         // Handle select menus
         if (interaction.isStringSelectMenu()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
+                try {
+                    const handled = await rupeeStoreCommand.handleStoreStringSelect(interaction);
+                    if (handled) return;
+                } catch (err) {
+                    console.error('Failed to handle store string select:', err);
+                    try { await interaction.reply({ content: 'Store action failed. Please try again.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith(`${helpCommand.HELP_CATEGORY_ID_PREFIX}:`)) {
                 const ownerId = interaction.customId.slice(`${helpCommand.HELP_CATEGORY_ID_PREFIX}:`.length).trim();
                 if (ownerId && interaction.user.id !== ownerId) {
@@ -1004,6 +1013,16 @@ module.exports = {
         }
 
         if (interaction.isUserSelectMenu()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
+                try {
+                    const handled = await rupeeStoreCommand.handleStoreUserSelect(interaction);
+                    if (handled) return;
+                } catch (err) {
+                    console.error('Failed to handle store user select:', err);
+                    try { await interaction.reply({ content: 'Store action failed. Please try again.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('sacrifice:nominate:')) {
                 if (!interaction.inGuild()) return;
 
@@ -1109,6 +1128,16 @@ module.exports = {
 
         // Handle Verify button
         if (interaction.isButton()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
+                try {
+                    const handled = await rupeeStoreCommand.handleStoreButton(interaction);
+                    if (handled) return;
+                } catch (err) {
+                    console.error('Failed to handle store button:', err);
+                    try { await interaction.reply({ content: 'Store action failed. Please try again.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('rr:mine:')) {
                 if (!interaction.inGuild()) return;
                 const parts = interaction.customId.split(':');
@@ -1221,16 +1250,6 @@ module.exports = {
                     await roleCleanManager.handleRoleCleanButton(interaction);
                 } catch (err) {
                     console.error('Failed to handle roleclean button:', err);
-                }
-                return;
-            }
-            if (interaction.customId === 'rupeestore:open') {
-                if (!interaction.inGuild()) return;
-                try {
-                    await rupeeStoreCommand.execute(interaction);
-                } catch (err) {
-                    console.error('Failed to open rupee store from panel button:', err);
-                    try { await interaction.reply({ content: 'Failed to open the store. Please try `/rupeestore`.', ephemeral: true }); } catch (_) {}
                 }
                 return;
             }
@@ -1376,6 +1395,16 @@ module.exports = {
 
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
+                try {
+                    const handled = await rupeeStoreCommand.handleStoreModalSubmit(interaction);
+                    if (handled) return;
+                } catch (err) {
+                    console.error('Failed to handle store modal submit:', err);
+                    try { await interaction.reply({ content: 'Store action failed. Please try again.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+            }
             if (typeof interaction.customId === 'string' && interaction.customId === botSettingsView.BOTSETTINGS_COLOUR_MODAL_ID) {
                 if (!interaction.inGuild()) return;
                 if (!canManageBotSettings(interaction)) {

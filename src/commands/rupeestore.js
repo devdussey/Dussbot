@@ -19,6 +19,7 @@ const rupeeCustomRoleStore = require('../utils/rupeeCustomRoleStore');
 const logSender = require('../utils/logSender');
 const { buildRupeeSpendEmbed } = require('../utils/rupeeLogEmbed');
 const smiteConfigStore = require('../utils/smiteConfigStore');
+const modLogStore = require('../utils/modLogStore');
 const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 const SHOP_ITEMS = [
@@ -26,56 +27,50 @@ const SHOP_ITEMS = [
     id: 'stfu',
     label: 'STFU',
     cost: 5,
-    description: 'Silence any user for 5 minutes.',
-    requireModeratorTarget: false,
-    moderatorOnly: false,
-    kind: 'timeout',
-  },
-  {
-    id: 'abuse_mod',
-    label: 'Abuse Mod',
-    cost: 10,
-    description: 'Silence a moderator for 5 minutes.',
-    requireModeratorTarget: true,
-    moderatorOnly: true,
+    description: 'Time out any non staff user for 5 minutes.',
     kind: 'timeout',
   },
   {
     id: 'muzzle',
     label: 'Muzzle',
     cost: 5,
-    description: 'Mute a user across all voice channels for 5 minutes.',
-    requireModeratorTarget: false,
-    moderatorOnly: false,
+    description: 'Mute a users voice permissions across the whole server for 5 minutes.',
     kind: 'muzzle',
   },
   {
+    id: 'abuse_mod',
+    label: 'Abuse Mod',
+    cost: 15,
+    description: 'Mute a mod as a non staff for 5 minutes.',
+    kind: 'timeout',
+  },
+  {
     id: 'nickname',
-    label: 'Nickname Change',
-    cost: 10,
-    description: 'Change your server nickname instantly.',
+    label: 'Nickname',
+    cost: 5,
+    description: 'Change your server nickname.',
     kind: 'nickname',
   },
   {
     id: 'nickname_member',
-    label: 'Nickname a Member',
-    cost: 20,
-    description: "Change another member's nickname instantly (bot role must sit above the target).",
+    label: 'Nickname Another Member',
+    cost: 10,
+    description: 'Change another members nickname. (Non Staff)',
     kind: 'nickname_member',
   },
   {
     id: 'custom_role_solid',
-    label: 'Custom Role — Solid',
+    label: 'Custom Role w/ Solid Colour',
     cost: 5,
-    description: 'Create or refresh a hoisted custom role with a solid colour above your roles.',
+    description: 'Please have the hex code of your desired colour ready.',
     kind: 'custom_role',
     mode: 'solid',
   },
   {
     id: 'custom_role_gradient',
-    label: 'Custom Role — Gradient',
+    label: 'Custom Role w/ Gradient',
     cost: 15,
-    description: 'Create or refresh a hoisted custom role with gradient colours (server must support role icons).',
+    description: 'Please have both your hex codes ready.',
     kind: 'custom_role',
     mode: 'gradient',
   },
@@ -253,7 +248,26 @@ function findItem(itemId, shopItems) {
   return shopItems.find(item => item.id === itemId);
 }
 
-async function applyTimeoutPurchase({ interaction, item, targetMember }) {
+async function getModeratorRoleId(guildId) {
+  try {
+    const id = await modLogStore.getModeratorRole(guildId);
+    return id ? String(id) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function hasModeratorRole(member, modRoleId) {
+  return Boolean(member && modRoleId && member.roles?.cache?.has(modRoleId));
+}
+
+function isStaffMember(member, modRoleId) {
+  if (!member) return false;
+  const isAdmin = member.permissions?.has(PermissionsBitField.Flags.Administrator);
+  return Boolean(isAdmin || hasModeratorRole(member, modRoleId));
+}
+
+async function applyTimeoutPurchase({ interaction, item, targetMember, modRoleId }) {
   const guild = interaction.guild;
   const actor = interaction.user;
   const me = guild.members.me;
@@ -274,11 +288,21 @@ async function applyTimeoutPurchase({ interaction, item, targetMember }) {
     return { error: 'This item cannot be used on administrators.' };
   }
 
-  const isModeratorTarget = targetMember.permissions.has(PermissionsBitField.Flags.ModerateMembers)
-    || targetMember.permissions.has(PermissionsBitField.Flags.ManageMessages);
+  if (item.id === 'stfu' && isStaffMember(targetMember, modRoleId)) {
+    return { error: 'STFU can only target non-staff users.' };
+  }
 
-  if (item.requireModeratorTarget && !isModeratorTarget) {
-    return { error: 'Abuse Mod can only be used on moderators.' };
+  if (item.id === 'abuse_mod') {
+    if (!modRoleId) {
+      return { error: 'No moderator role is configured. Run /modconfig first.' };
+    }
+    const actorMember = await guild.members.fetch(actor.id).catch(() => null);
+    if (isStaffMember(actorMember, modRoleId)) {
+      return { error: 'Abuse Mod can only be purchased by non-staff users.' };
+    }
+    if (!hasModeratorRole(targetMember, modRoleId)) {
+      return { error: 'Abuse Mod can only target members with the configured moderator role.' };
+    }
   }
 
   const remainingMs = immunityStore.getRemainingMs(guild.id, targetMember.id);
@@ -426,7 +450,7 @@ async function applyNicknamePurchase({ interaction, newNickname, cost }) {
   return { success: true, newBalance };
 }
 
-async function applyMemberNicknamePurchase({ interaction, targetMember, newNickname, cost }) {
+async function applyMemberNicknamePurchase({ interaction, targetMember, newNickname, cost, modRoleId }) {
   const guild = interaction.guild;
   const actor = interaction.user;
   const me = guild.members.me;
@@ -447,8 +471,8 @@ async function applyMemberNicknamePurchase({ interaction, targetMember, newNickn
     return { error: 'Pick someone else to rename using this item.' };
   }
 
-  if (targetMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return { error: 'This item cannot be used on administrators.' };
+  if (isStaffMember(targetMember, modRoleId)) {
+    return { error: 'Nickname Another Member can only target non-staff users.' };
   }
 
   if (!targetMember.manageable || me.roles.highest.comparePositionTo(targetMember.roles.highest) <= 0) {
@@ -605,499 +629,339 @@ async function applyCustomRolePurchase({ interaction, mode, colors, roleName, co
   return { success: true, newBalance, role };
 }
 
-async function getModerators(guild) {
+async function getModerators(guild, modRoleId) {
+  if (!guild || !modRoleId) return [];
   try {
-    const members = await guild.members.fetch();
-    return members.filter(m =>
-      !m.user.bot &&
-      !m.permissions.has(PermissionsBitField.Flags.Administrator) &&
-      (m.permissions.has(PermissionsBitField.Flags.ModerateMembers) || m.permissions.has(PermissionsBitField.Flags.ManageMessages))
-    ).toJSON();
+    let role = guild.roles.cache.get(modRoleId);
+    if (!role) {
+      role = await guild.roles.fetch(modRoleId).catch(() => null);
+    }
+    if (!role) return [];
+    await guild.members.fetch().catch(() => null);
+    return role.members.filter(member => !member.user.bot).toJSON();
   } catch (_) {
     return [];
   }
 }
 
+async function handleStorePurchaseResult(interaction, item, targetMember, result) {
+  if (result.blockedMs) {
+    await interaction.reply({
+      embeds: [makeEmbed(interaction.guildId).setTitle('Target is immune').setDescription(`${targetMember} cannot be targeted for ${formatMinutes(result.blockedMs)}.`)],
+      ephemeral: true,
+    });
+    return true;
+  }
+  if (result.error) {
+    await interaction.reply({ embeds: [makeEmbed(interaction.guildId).setTitle('Purchase failed').setDescription(result.error)], ephemeral: true });
+    return true;
+  }
+  const durationMs = item.kind === 'muzzle' ? MUZZLE_DURATION_MS : TIMEOUT_DURATION_MS;
+  await interaction.reply({
+    embeds: [makeEmbed(interaction.guildId).setTitle(`${item.label} applied`).setDescription(`${item.label} used on ${targetMember} for ${formatMinutes(durationMs)}.\nRemaining balance: ${formatCurrencyAmount(interaction.guildId, result.newBalance, { lowercase: true })}.`)],
+    ephemeral: true,
+  });
+  await logRupeeStorePurchase({
+    interaction,
+    itemLabel: item.label,
+    cost: item.cost,
+    target: targetMember,
+    balance: Number.isFinite(result.newBalance) ? result.newBalance : rupeeStore.getBalance(interaction.guildId, interaction.user.id),
+  });
+  return true;
+}
+
+function buildStoreItemEmbed(guildId, index, item) {
+  return makeEmbed(guildId)
+    .setTitle(`Item ${index}`)
+    .setDescription(`**${item.label}**\n${item.description}\n\nCost: ${formatCurrencyAmount(guildId, item.cost, { lowercase: true })}`);
+}
+
+function buildStoreItemMessages(guildId, shopItems) {
+  const byId = new Map(shopItems.map(item => [item.id, item]));
+  return [
+    {
+      embeds: [buildStoreItemEmbed(guildId, 1, byId.get('stfu'))],
+      components: [buildUserSelect('store:buy:stfu', false, 'Select a non-staff user')],
+    },
+    {
+      embeds: [buildStoreItemEmbed(guildId, 2, byId.get('muzzle'))],
+      components: [buildUserSelect('store:buy:muzzle', false, 'Select a user in voice')],
+    },
+    {
+      embeds: [buildStoreItemEmbed(guildId, 3, byId.get('abuse_mod'))],
+      components: [],
+    },
+    {
+      embeds: [buildStoreItemEmbed(guildId, 4, byId.get('nickname'))],
+      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:nickname').setLabel('Change Nickname').setStyle(ButtonStyle.Primary))],
+    },
+    {
+      embeds: [buildStoreItemEmbed(guildId, 5, byId.get('nickname_member'))],
+      components: [buildUserSelect('store:buy:nickname_member', false, 'Select a non-staff user')],
+    },
+    {
+      embeds: [buildStoreItemEmbed(guildId, 6, byId.get('custom_role_solid'))],
+      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:custom_role_solid').setLabel('Configure Solid Role').setStyle(ButtonStyle.Primary))],
+    },
+    {
+      embeds: [buildStoreItemEmbed(guildId, 7, byId.get('custom_role_gradient'))],
+      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:custom_role_gradient').setLabel('Configure Gradient Role').setStyle(ButtonStyle.Primary))],
+    },
+  ];
+}
+
+async function buildAbuseModMenu(guild, modRoleId) {
+  if (!modRoleId) {
+    return buildModeratorSelect('store:buy:abuse_mod', [], true);
+  }
+  const moderators = await getModerators(guild, modRoleId);
+  return buildModeratorSelect('store:buy:abuse_mod', moderators, false);
+}
+
+async function handleStoreButton(interaction) {
+  if (!interaction.customId.startsWith('store:openmodal:')) return false;
+  const itemId = interaction.customId.slice('store:openmodal:'.length);
+  const item = findItem(itemId, resolveShopItemsForGuild(interaction.guildId));
+  if (!item) {
+    await interaction.reply({ content: 'This item is unavailable.', ephemeral: true });
+    return true;
+  }
+
+  if (item.id === 'nickname') {
+    const modal = new ModalBuilder()
+      .setCustomId('store:modal:nickname')
+      .setTitle('Nickname')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('nickname').setLabel('New nickname').setStyle(TextInputStyle.Short).setMaxLength(32).setMinLength(1).setRequired(true),
+        ),
+      );
+    await interaction.showModal(modal);
+    return true;
+  }
+
+  if (item.kind === 'custom_role') {
+    const modal = new ModalBuilder()
+      .setCustomId(`store:modal:${item.id}`)
+      .setTitle(item.label.slice(0, 45))
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('role_name').setLabel('Role name (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(100),
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('color_primary').setLabel(item.mode === 'gradient' ? 'Primary colour (#RRGGBB)' : 'Colour (#RRGGBB)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(7).setPlaceholder('#FF00AA'),
+        ),
+        ...(item.mode === 'gradient'
+          ? [new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('color_secondary').setLabel('Secondary colour (#RRGGBB)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(7).setPlaceholder('#00FFC8'))]
+          : []),
+      );
+    await interaction.showModal(modal);
+    return true;
+  }
+
+  return false;
+}
+
+async function handleStoreUserSelect(interaction) {
+  if (!interaction.customId.startsWith('store:buy:')) return false;
+  const itemId = interaction.customId.slice('store:buy:'.length);
+  if (itemId === 'abuse_mod') return false;
+  const item = findItem(itemId, resolveShopItemsForGuild(interaction.guildId));
+  if (!item) {
+    await interaction.reply({ content: 'This item is unavailable.', ephemeral: true });
+    return true;
+  }
+  const targetId = interaction.values?.[0];
+  const targetMember = targetId ? await interaction.guild.members.fetch(targetId).catch(() => null) : null;
+  if (!targetMember) {
+    await interaction.reply({ content: 'Could not find that member in this server.', ephemeral: true });
+    return true;
+  }
+  const modRoleId = await getModeratorRoleId(interaction.guildId);
+
+  if (item.kind === 'timeout' || item.kind === 'muzzle') {
+    const applyFn = item.kind === 'timeout' ? applyTimeoutPurchase : applyMuzzlePurchase;
+    const result = await applyFn({ interaction, item, targetMember, modRoleId });
+    return handleStorePurchaseResult(interaction, item, targetMember, result);
+  }
+
+  if (item.id === 'nickname_member') {
+    if (isStaffMember(targetMember, modRoleId)) {
+      await interaction.reply({ content: 'Nickname Another Member can only target non-staff users.', ephemeral: true });
+      return true;
+    }
+    const modal = new ModalBuilder()
+      .setCustomId(`store:modal:nickname_member:${targetMember.id}`)
+      .setTitle('Nickname Another Member')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('nickname').setLabel(`New nickname for ${targetMember.displayName || targetMember.user.username}`.slice(0, 45)).setStyle(TextInputStyle.Short).setMaxLength(32).setMinLength(1).setRequired(true),
+        ),
+      );
+    await interaction.showModal(modal);
+    return true;
+  }
+
+  return false;
+}
+
+async function handleStoreStringSelect(interaction) {
+  if (interaction.customId !== 'store:buy:abuse_mod') return false;
+  const targetId = interaction.values?.[0];
+  if (!targetId || targetId === 'none') {
+    await interaction.reply({ content: 'No moderator is available to target right now.', ephemeral: true });
+    return true;
+  }
+  const item = findItem('abuse_mod', resolveShopItemsForGuild(interaction.guildId));
+  const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+  if (!item || !targetMember) {
+    await interaction.reply({ content: 'That moderator target is unavailable.', ephemeral: true });
+    return true;
+  }
+  const modRoleId = await getModeratorRoleId(interaction.guildId);
+  const result = await applyTimeoutPurchase({ interaction, item, targetMember, modRoleId });
+  return handleStorePurchaseResult(interaction, item, targetMember, result);
+}
+async function handleStoreModalSubmit(interaction) {
+  if (!interaction.customId.startsWith('store:modal:')) return false;
+  const shopItems = resolveShopItemsForGuild(interaction.guildId);
+
+  if (interaction.customId === 'store:modal:nickname') {
+    const item = findItem('nickname', shopItems);
+    const nicknameRaw = interaction.fields.getTextInputValue('nickname') || '';
+    const nickname = nicknameRaw.trim().slice(0, 32);
+    if (!nickname) {
+      await interaction.reply({ content: 'Please enter a valid nickname.', ephemeral: true });
+      return true;
+    }
+    const result = await applyNicknamePurchase({ interaction, newNickname: nickname, cost: item.cost });
+    if (result.error) {
+      await interaction.reply({ content: result.error, ephemeral: true });
+      return true;
+    }
+    await interaction.reply({ embeds: [makeEmbed(interaction.guildId).setTitle('Nickname updated').setDescription(`Your nickname is now **${escapeMarkdown(nickname)}**.\nRemaining balance: ${formatCurrencyAmount(interaction.guildId, result.newBalance, { lowercase: true })}.`)], ephemeral: true });
+    await logRupeeStorePurchase({ interaction, itemLabel: item.label, cost: item.cost, target: interaction.user, balance: result.newBalance });
+    return true;
+  }
+
+  if (interaction.customId.startsWith('store:modal:nickname_member:')) {
+    const targetId = interaction.customId.slice('store:modal:nickname_member:'.length);
+    const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+    const item = findItem('nickname_member', shopItems);
+    if (!targetMember || !item) {
+      await interaction.reply({ content: 'Could not find that target member.', ephemeral: true });
+      return true;
+    }
+    const nicknameRaw = interaction.fields.getTextInputValue('nickname') || '';
+    const nickname = nicknameRaw.trim().slice(0, 32);
+    if (!nickname) {
+      await interaction.reply({ content: 'Please enter a valid nickname.', ephemeral: true });
+      return true;
+    }
+    const modRoleId = await getModeratorRoleId(interaction.guildId);
+    const result = await applyMemberNicknamePurchase({ interaction, targetMember, newNickname: nickname, cost: item.cost, modRoleId });
+    if (result.error) {
+      await interaction.reply({ content: result.error, ephemeral: true });
+      return true;
+    }
+    await interaction.reply({ embeds: [makeEmbed(interaction.guildId).setTitle('Nickname updated').setDescription(`${targetMember} renamed to **${escapeMarkdown(nickname)}**.\nRemaining balance: ${formatCurrencyAmount(interaction.guildId, result.newBalance, { lowercase: true })}.`)], ephemeral: true });
+    await logRupeeStorePurchase({ interaction, itemLabel: item.label, cost: item.cost, target: targetMember, balance: result.newBalance });
+    return true;
+  }
+
+  if (interaction.customId === 'store:modal:custom_role_solid' || interaction.customId === 'store:modal:custom_role_gradient') {
+    const itemId = interaction.customId.replace('store:modal:', '');
+    const item = findItem(itemId, shopItems);
+    if (!item) {
+      await interaction.reply({ content: 'This item is unavailable.', ephemeral: true });
+      return true;
+    }
+    const nameInput = interaction.fields.getTextInputValue('role_name') || '';
+    const primaryRaw = interaction.fields.getTextInputValue('color_primary') || '';
+    const secondaryRaw = item.mode === 'gradient' ? interaction.fields.getTextInputValue('color_secondary') || '' : null;
+    const primary = normalizeHex6(primaryRaw);
+    const secondary = item.mode === 'gradient' ? normalizeHex6(secondaryRaw) : null;
+    if (!primary || (item.mode === 'gradient' && !secondary)) {
+      await interaction.reply({ content: 'Please provide valid hex colours like #A1B2C3.', ephemeral: true });
+      return true;
+    }
+    await interaction.deferReply({ ephemeral: true });
+    const result = await applyCustomRolePurchase({
+      interaction,
+      mode: item.mode,
+      colors: item.mode === 'gradient' ? [primary, secondary] : [primary],
+      roleName: nameInput,
+      cost: item.cost,
+    });
+    if (result.error) {
+      await interaction.editReply({ content: result.error });
+      return true;
+    }
+    await interaction.editReply({ content: `✅ ${item.label} applied.\nRemaining balance: ${formatCurrencyAmount(interaction.guildId, result.newBalance, { lowercase: true })}.` });
+    await logRupeeStorePurchase({ interaction, itemLabel: item.label, cost: item.cost, target: interaction.user, balance: result.newBalance });
+    return true;
+  }
+
+  return false;
+}
+
 module.exports = {
   SHOP_ITEMS,
+  handleStoreButton,
+  handleStoreUserSelect,
+  handleStoreStringSelect,
+  handleStoreModalSubmit,
   data: new SlashCommandBuilder()
-    .setName('rupeestore')
-    .setDescription('Browse and spend server currency on special items'),
+    .setName('storeconfig')
+    .setDescription('Post purchasable store item panels in the configured store channel')
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
-      const embed = makeEmbed(interaction.guildId)
-        .setTitle('Use this in a server')
-        .setDescription('The economy store can only be opened inside a server.');
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ content: 'Use this in a server.', ephemeral: true });
+      return;
+    }
+    const isAdmin = interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator);
+    const isGuildOwner = interaction.guild?.ownerId === interaction.user.id;
+    if (!isAdmin && !isGuildOwner) {
+      await interaction.reply({ content: 'Administrator permission is required to use this command.', ephemeral: true });
       return;
     }
 
-    const guildId = interaction.guildId;
-    const userId = interaction.user.id;
-    const balance = rupeeStore.getBalance(guildId, userId);
-    const blessingStatus = formatBlessingStatus(guildId, userId);
-    const getShopItems = () => resolveShopItemsForGuild(guildId);
+    const config = smiteConfigStore.getConfig(interaction.guildId);
+    const channelId = config.storePanelChannelId;
+    if (!channelId) {
+      await interaction.reply({ content: 'No store panel channel is configured. Set it first in `/economyconfig`.', ephemeral: true });
+      return;
+    }
 
-    const selectId = `rupeestore-select-${interaction.id}`;
-    const targetSelectBase = `rupeestore-target-${interaction.id}`;
+    const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased?.() || channel.type === ChannelType.GuildForum) {
+      await interaction.reply({ content: 'The configured store panel channel is invalid. Update it in `/economyconfig`.', ephemeral: true });
+      return;
+    }
 
-    const initialShopItems = getShopItems();
-    const embed = buildShopEmbed({ guildId, balance, blessingStatus, shopItems: initialShopItems });
-    const itemRow = buildItemSelect(selectId, initialShopItems, false);
-    const userRow = buildUserSelect(targetSelectBase, true);
+    const me = interaction.guild.members.me;
+    const perms = channel.permissionsFor(me);
+    if (!perms?.has(PermissionsBitField.Flags.SendMessages)) {
+      await interaction.reply({ content: `I cannot send messages in ${channel}.`, ephemeral: true });
+      return;
+    }
 
-    const reply = await interaction.reply({
-      embeds: [embed],
-      components: [itemRow, userRow],
-      ephemeral: true,
-    });
+    await interaction.deferReply({ ephemeral: true });
+    const shopItems = resolveShopItemsForGuild(interaction.guildId);
+    const payloads = buildStoreItemMessages(interaction.guildId, shopItems);
+    const modRoleId = await getModeratorRoleId(interaction.guildId);
+    payloads[2].components = [await buildAbuseModMenu(interaction.guild, modRoleId)];
 
-    const collector = reply.createMessageComponentCollector({ time: 5 * 60_000 });
-
-    collector.on('collect', async (componentInteraction) => {
-      if (componentInteraction.user.id !== interaction.user.id) {
-        await componentInteraction.reply({ content: 'This store session belongs to someone else.', ephemeral: true });
-        return;
-      }
-
-      if (componentInteraction.isStringSelectMenu() && componentInteraction.customId === selectId) {
-        const itemId = componentInteraction.values[0];
-        const shopItems = getShopItems();
-        const selectedItem = findItem(itemId, shopItems);
-        if (!selectedItem) {
-          await componentInteraction.reply({ content: 'That item is unavailable.', ephemeral: true });
-          return;
-        }
-
-        const freshBalance = rupeeStore.getBalance(guildId, interaction.user.id);
-        const freshBlessing = formatBlessingStatus(guildId, userId);
-        const updatedEmbed = buildShopEmbed({
-          guildId,
-          balance: freshBalance,
-          selectedItemId: itemId,
-          blessingStatus: freshBlessing,
-          shopItems,
-        });
-        const freshItemRow = buildItemSelect(selectId, shopItems, false);
-
-        if (selectedItem.kind === 'timeout' || selectedItem.kind === 'muzzle' || selectedItem.kind === 'nickname_member') {
-          if (selectedItem.kind === 'nickname_member') {
-            const enabledUserRow = buildUserSelect(`${targetSelectBase}:${itemId}`, false, 'Pick a member to rename');
-            await componentInteraction.update({
-              embeds: [updatedEmbed],
-              components: [freshItemRow, enabledUserRow],
-            });
-          } else if (selectedItem.moderatorOnly) {
-            const moderators = await getModerators(interaction.guild);
-            const modRow = buildModeratorSelect(`${targetSelectBase}:${itemId}`, moderators, false);
-            await componentInteraction.update({
-              embeds: [updatedEmbed],
-              components: [freshItemRow, modRow],
-            });
-          } else {
-            const placeholder = selectedItem.kind === 'muzzle'
-              ? 'Pick a target to muzzle'
-              : `Pick a target for ${selectedItem.label}`;
-            const enabledUserRow = buildUserSelect(`${targetSelectBase}:${itemId}`, false, placeholder);
-            await componentInteraction.update({
-              embeds: [updatedEmbed],
-              components: [freshItemRow, enabledUserRow],
-            });
-          }
-          return;
-        }
-
-        if (selectedItem.kind === 'nickname') {
-          const modalId = `rupeestore-nick-${interaction.id}`;
-          const modal = new ModalBuilder()
-            .setCustomId(modalId)
-            .setTitle('Nickname Change')
-            .addComponents(
-              new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                  .setCustomId('nickname')
-                  .setLabel('New nickname')
-                  .setStyle(TextInputStyle.Short)
-                  .setMaxLength(32)
-                  .setMinLength(1)
-                  .setPlaceholder('Type your new nickname')
-                  .setRequired(true),
-              ),
-            );
-
-          await componentInteraction.showModal(modal);
-
-          let submission;
-          try {
-            submission = await componentInteraction.awaitModalSubmit({
-              time: 120_000,
-              filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
-            });
-          } catch (_) {
-            return;
-          }
-
-          const nicknameRaw = submission.fields.getTextInputValue('nickname') || '';
-          const nickname = nicknameRaw.trim().slice(0, 32);
-          if (!nickname) {
-            await submission.reply({ content: 'Please enter a valid nickname.', ephemeral: true });
-            return;
-          }
-
-          const result = await applyNicknamePurchase({
-            interaction,
-            newNickname: nickname,
-            cost: selectedItem.cost,
-          });
-
-          if (result.error) {
-            await submission.reply({ content: result.error, ephemeral: true });
-            return;
-          }
-
-          const successEmbed = makeEmbed(guildId)
-            .setTitle('Nickname updated')
-            .setDescription(
-              `Your nickname has been changed to **${escapeMarkdown(nickname)}**.\n` +
-              `Remaining balance: ${formatCurrencyAmount(guildId, result.newBalance, { lowercase: true })}.`
-            );
-          await submission.reply({ embeds: [successEmbed], ephemeral: true });
-
-          await logRupeeStorePurchase({
-            interaction,
-            itemLabel: selectedItem.label,
-            cost: selectedItem.cost,
-            target: interaction.user,
-            balance: Number.isFinite(result.newBalance) ? result.newBalance : rupeeStore.getBalance(guildId, interaction.user.id),
-          });
-
-          const refreshedEmbed = buildShopEmbed({
-            guildId,
-            balance: rupeeStore.getBalance(guildId, interaction.user.id),
-            blessingStatus: formatBlessingStatus(guildId, userId),
-            shopItems: getShopItems(),
-          });
-          const resetUserRow = buildUserSelect(targetSelectBase, true);
-          await interaction.editReply({
-            embeds: [refreshedEmbed],
-            components: [freshItemRow, resetUserRow],
-          });
-          return;
-        }
-
-        if (selectedItem.kind === 'custom_role') {
-          const modalId = `rupeestore-role-${selectedItem.id}-${interaction.id}`;
-          const modal = new ModalBuilder()
-            .setCustomId(modalId)
-            .setTitle(selectedItem.label)
-            .addComponents(
-              new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                  .setCustomId('role_name')
-                  .setLabel('Role name (optional)')
-                  .setStyle(TextInputStyle.Short)
-                  .setRequired(false)
-                  .setMaxLength(100)
-                  .setPlaceholder("e.g. Aurora's Flair"),
-              ),
-              new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                  .setCustomId('color_primary')
-                  .setLabel(selectedItem.mode === 'gradient' ? 'Primary colour (#RRGGBB)' : 'Colour (#RRGGBB)')
-                  .setStyle(TextInputStyle.Short)
-                  .setRequired(true)
-                  .setMaxLength(7)
-                  .setPlaceholder('#FF00AA'),
-              ),
-              ...(selectedItem.mode === 'gradient'
-                ? [
-                    new ActionRowBuilder().addComponents(
-                      new TextInputBuilder()
-                        .setCustomId('color_secondary')
-                        .setLabel('Secondary colour (#RRGGBB)')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                        .setMaxLength(7)
-                        .setPlaceholder('#00FFC8'),
-                    ),
-                  ]
-                : []),
-            );
-
-          await componentInteraction.showModal(modal);
-
-          let submission;
-          try {
-            submission = await componentInteraction.awaitModalSubmit({
-              time: 180_000,
-              filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
-            });
-          } catch (_) {
-            return;
-          }
-
-          const nameInput = submission.fields.getTextInputValue('role_name') || '';
-          const primaryRaw = submission.fields.getTextInputValue('color_primary') || '';
-          const secondaryRaw = selectedItem.mode === 'gradient'
-            ? submission.fields.getTextInputValue('color_secondary') || ''
-            : null;
-
-          const primary = normalizeHex6(primaryRaw);
-          const secondary = selectedItem.mode === 'gradient' ? normalizeHex6(secondaryRaw) : null;
-
-          if (!primary || (selectedItem.mode === 'gradient' && !secondary)) {
-            await submission.reply({ content: 'Please provide valid hex colours like #A1B2C3.', ephemeral: true });
-            return;
-          }
-
-          await submission.deferReply({ ephemeral: true });
-
-          const result = await applyCustomRolePurchase({
-            interaction,
-            mode: selectedItem.mode,
-            colors: selectedItem.mode === 'gradient' ? [primary, secondary] : [primary],
-            roleName: nameInput,
-            cost: selectedItem.cost,
-          });
-
-          if (result.error) {
-            await submission.editReply({ content: result.error });
-            return;
-          }
-
-          const roleMention = result.role ? `<@&${result.role.id}>` : 'your custom role';
-          await submission.editReply({
-            content: `✅ ${selectedItem.label} applied to ${roleMention}.\nRemaining balance: ${formatCurrencyAmount(guildId, result.newBalance, { lowercase: true })}.`,
-          });
-
-          await logRupeeStorePurchase({
-            interaction,
-            itemLabel: selectedItem.label,
-            cost: selectedItem.cost,
-            target: interaction.user,
-            balance: Number.isFinite(result.newBalance) ? result.newBalance : rupeeStore.getBalance(guildId, interaction.user.id),
-          });
-
-          const refreshedEmbed = buildShopEmbed({
-            guildId,
-            balance: rupeeStore.getBalance(guildId, interaction.user.id),
-            blessingStatus: formatBlessingStatus(guildId, userId),
-            shopItems: getShopItems(),
-          });
-          const resetUserRow = buildUserSelect(targetSelectBase, true);
-          await interaction.editReply({
-            embeds: [refreshedEmbed],
-            components: [freshItemRow, resetUserRow],
-          });
-          return;
-        }
-
-        return;
-      }
-
-      if (componentInteraction.customId.startsWith(targetSelectBase)) {
-        const parts = componentInteraction.customId.split(':');
-        const itemId = parts[1];
-        const shopItems = getShopItems();
-        const selectedItem = findItem(itemId, shopItems);
-        if (!selectedItem) {
-          await componentInteraction.reply({ content: 'That item is no longer available.', ephemeral: true });
-          return;
-        }
-
-        if (selectedItem.kind !== 'timeout' && selectedItem.kind !== 'muzzle' && selectedItem.kind !== 'nickname_member') {
-          await componentInteraction.reply({ content: 'This item no longer requires a target.', ephemeral: true });
-          return;
-        }
-
-        let targetId = null;
-        if (componentInteraction.isUserSelectMenu()) {
-          targetId = componentInteraction.values?.[0];
-        } else if (componentInteraction.isStringSelectMenu()) {
-          targetId = componentInteraction.values?.[0];
-        }
-        if (!targetId || targetId === 'none') {
-          await componentInteraction.reply({ content: 'Please pick a valid target.', ephemeral: true });
-          return;
-        }
-
-        let targetMember;
-        try {
-          targetMember = await interaction.guild.members.fetch(targetId);
-        } catch (_) {
-          await componentInteraction.reply({ content: 'Could not find that member in this server.', ephemeral: true });
-          return;
-        }
-
-        if (selectedItem.kind === 'nickname_member') {
-          const modalId = `rupeestore-nickname-member-${interaction.id}-${targetMember.id}`;
-          const modal = new ModalBuilder()
-            .setCustomId(modalId)
-            .setTitle('Nickname a Member')
-            .addComponents(
-              new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                  .setCustomId('nickname')
-                  .setLabel(`New nickname for ${targetMember.displayName || targetMember.user.username}`)
-                  .setStyle(TextInputStyle.Short)
-                  .setMaxLength(32)
-                  .setMinLength(1)
-                  .setPlaceholder('Enter the nickname')
-                  .setRequired(true),
-              ),
-            );
-
-          await componentInteraction.showModal(modal);
-
-          let submission;
-          try {
-            submission = await componentInteraction.awaitModalSubmit({
-              time: 120_000,
-              filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
-            });
-          } catch (_) {
-            return;
-          }
-
-          const nicknameRaw = submission.fields.getTextInputValue('nickname') || '';
-          const nickname = nicknameRaw.trim().slice(0, 32);
-          if (!nickname) {
-            await submission.reply({ content: 'Please enter a valid nickname.', ephemeral: true });
-            return;
-          }
-
-          const result = await applyMemberNicknamePurchase({
-            interaction,
-            targetMember,
-            newNickname: nickname,
-            cost: selectedItem.cost,
-          });
-
-          if (result.error) {
-            await submission.reply({ content: result.error, ephemeral: true });
-            return;
-          }
-
-          const successEmbed = makeEmbed(guildId)
-            .setTitle('Nickname updated')
-            .setDescription(
-              `${targetMember} is now known as **${escapeMarkdown(nickname)}**.\n` +
-              `Remaining balance: ${formatCurrencyAmount(guildId, result.newBalance, { lowercase: true })}.`
-            );
-          await submission.reply({ embeds: [successEmbed], ephemeral: true });
-
-          await logRupeeStorePurchase({
-            interaction,
-            itemLabel: selectedItem.label,
-            cost: selectedItem.cost,
-            target: targetMember,
-            balance: Number.isFinite(result.newBalance) ? result.newBalance : rupeeStore.getBalance(guildId, interaction.user.id),
-          });
-
-          const refreshedEmbed = buildShopEmbed({
-            guildId,
-            balance: rupeeStore.getBalance(guildId, interaction.user.id),
-            blessingStatus: formatBlessingStatus(guildId, userId),
-            shopItems: getShopItems(),
-          });
-          const freshItemRow = buildItemSelect(selectId, getShopItems(), false);
-          const resetUserRow = buildUserSelect(targetSelectBase, true);
-          await interaction.editReply({
-            embeds: [refreshedEmbed],
-            components: [freshItemRow, resetUserRow],
-          });
-          return;
-        }
-
-        const applyFn = selectedItem.kind === 'timeout'
-          ? applyTimeoutPurchase
-          : applyMuzzlePurchase;
-        const result = await applyFn({
-          interaction,
-          item: selectedItem,
-          targetMember,
-        });
-
-        if (result.blockedMs) {
-          const blockVerb = selectedItem.kind === 'muzzle' ? 'can\'t be muzzled' : 'can\'t be silenced';
-          const embed = makeEmbed(guildId)
-            .setTitle('Target is immune')
-            .setDescription(
-              `${targetMember.displayName || targetMember.user.username} ${blockVerb} for ${formatMinutes(result.blockedMs)}.`
-            );
-          await componentInteraction.reply({ embeds: [embed], ephemeral: true });
-          return;
-        }
-
-        if (result.error) {
-          const embed = makeEmbed(guildId)
-            .setTitle('Purchase failed')
-            .setDescription(result.error);
-          await componentInteraction.reply({ embeds: [embed], ephemeral: true });
-          return;
-        }
-
-        const durationMs = selectedItem.kind === 'timeout' ? TIMEOUT_DURATION_MS : MUZZLE_DURATION_MS;
-        const successEmbed = makeEmbed(guildId)
-          .setTitle(`${selectedItem.label} applied`)
-          .setDescription(
-            `${selectedItem.label} used on ${targetMember} for ${formatMinutes(durationMs)}.\n` +
-            `Remaining balance: ${formatCurrencyAmount(guildId, result.newBalance, { lowercase: true })}.`
-          );
-        await componentInteraction.reply({ embeds: [successEmbed], ephemeral: true });
-
-        const isMuzzle = selectedItem.kind === 'muzzle';
-        const publicEmbed = makeEmbed(guildId)
-          .setTitle(isMuzzle ? 'Muzzle deployed' : `${selectedItem.label} deployed`)
-          .setDescription(
-            isMuzzle
-              ? `${interaction.user} has muzzled ${targetMember} for ${formatMinutes(durationMs)}.`
-              : `${interaction.user} used **${selectedItem.label}** on ${targetMember} for ${formatMinutes(durationMs)}.`
-          )
-          .setThumbnail(targetMember.displayAvatarURL({ extension: 'png', size: 256 }))
-          .setFooter({
-            text: isMuzzle
-              ? 'Target is immune for 10 minutes after the muzzle ends.'
-              : 'Targets gain 10 minutes of immunity after their timeout ends.',
-          });
-
-        await interaction.channel?.send({
-          embeds: [publicEmbed],
-          allowedMentions: { users: [interaction.user.id, targetMember.id] },
-        }).catch(() => {});
-
-        const freshBalance = rupeeStore.getBalance(guildId, interaction.user.id);
-        const freshBlessing = formatBlessingStatus(guildId, userId);
-        await logRupeeStorePurchase({
-          interaction,
-          itemLabel: selectedItem.label,
-          cost: selectedItem.cost,
-          target: targetMember,
-          balance: freshBalance,
-        });
-        const refreshedEmbed = buildShopEmbed({
-          guildId,
-          balance: freshBalance,
-          blessingStatus: freshBlessing,
-          shopItems: getShopItems(),
-        });
-        const freshItemRow = buildItemSelect(selectId, getShopItems(), false);
-        const resetUserRow = buildUserSelect(targetSelectBase, true);
-
-        await interaction.editReply({
-          embeds: [refreshedEmbed],
-          components: [freshItemRow, resetUserRow],
-        });
-      }
-    });
-
-    collector.on('end', async () => {
-      try {
-        await interaction.editReply({
-          components: [],
-        });
-      } catch (_) {}
-    });
+    let sent = 0;
+    for (const payload of payloads) {
+      // eslint-disable-next-line no-await-in-loop
+      await channel.send(payload);
+      sent += 1;
+    }
+    await interaction.editReply({ content: `Posted ${sent} store item panel messages in ${channel}.` });
   },
 };

@@ -18,7 +18,6 @@ const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('.
 
 const HORSE_RACE_WIN_RUPEES = 1;
 const SESSION_TIMEOUT_MS = 10 * 60_000;
-const RUPEE_STORE_OPEN_BUTTON_ID = 'rupeestore:open';
 const STORE_ITEM_LOOKUP = new Map((SHOP_ITEMS || []).map(item => [String(item.id), item]));
 
 function parseRoleId(raw) {
@@ -178,27 +177,6 @@ function buildButtons(baseId, enabled, disabled = false) {
         .setDisabled(disabled),
     ),
   ];
-}
-
-function buildStorePanelPayload(guildId) {
-  const currencyName = getCurrencyName(guildId);
-  const embed = new EmbedBuilder()
-    .setTitle(`${currencyName} Store`)
-    .setDescription(
-      `Press the button below to open the ${formatCurrencyWord(guildId, 1, { lowercase: true })} store.\n` +
-      'Purchases will succeed or fail automatically based on your balance and store rules.'
-    )
-    .setColor(resolveEmbedColour(guildId, 0x00f0ff))
-    .setTimestamp();
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(RUPEE_STORE_OPEN_BUTTON_ID)
-      .setLabel('Open Store')
-      .setStyle(ButtonStyle.Success),
-  );
-
-  return { embeds: [embed], components: [row] };
 }
 
 module.exports = {
@@ -598,17 +576,10 @@ module.exports = {
           return;
         }
 
-        try {
-          await channel.send(buildStorePanelPayload(interaction.guildId));
-        } catch (err) {
-          await submission.reply({ content: `Failed to post the store panel in ${channel}: ${err.message || err}`, ephemeral: true });
-          return;
-        }
-
         await smiteConfigStore.setStorePanelChannelId(interaction.guildId, channel.id);
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: `${currencyName} store panel channel set to ${channel} and a panel was posted.`, ephemeral: true });
+        await submission.reply({ content: `${currencyName} store panel channel set to ${channel}. Run /storeconfig to publish store item embeds.`, ephemeral: true });
         return;
       }
 

@@ -73,7 +73,7 @@ module.exports = {
         ? `a ${formatCurrencyWord(message.guild.id, 1, { lowercase: true })}`
         : formatCurrencyAmount(message.guild.id, result.awarded, { lowercase: true });
       const earnedText = `${message.author} has earned ${amountText}! They now have ${formatCurrencyAmount(message.guild.id, newBalance, { lowercase: true })}!`;
-      const announcement = `${earnedText}\n\nTo spend your ${formatCurrencyWord(message.guild.id, 2, { lowercase: true })}, type /rupeestore.`;
+      const announcement = `${earnedText}\n\nTo spend your ${formatCurrencyWord(message.guild.id, 2, { lowercase: true })}, use the store panel in the configured store channel.`;
       try {
         const logEmbed = buildRupeeEventEmbed({
           guildId: message.guild.id,

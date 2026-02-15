@@ -6,10 +6,10 @@ const DEFAULT_VOICE_MINUTES_PER_RUPEE = 15;
 const DEFAULT_CURRENCY_NAME = 'Rupee';
 const DEFAULT_STORE_ITEM_COSTS = Object.freeze({
   stfu: 5,
-  abuse_mod: 10,
   muzzle: 5,
-  nickname: 10,
-  nickname_member: 20,
+  abuse_mod: 15,
+  nickname: 5,
+  nickname_member: 10,
   custom_role_solid: 5,
   custom_role_gradient: 15,
 });

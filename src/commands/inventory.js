@@ -64,7 +64,7 @@ function buildInventoryEmbed({
         name: `💎 ${currencyPlural}`,
         value: `**Owned:** ${rupeeBalance}\n**Cost:** ${formatCoins(
           rupeeCost
-        )} coins each\n${currencyPlural} unlock the powerful /analysis command, can be granted by admins using /giverupee, and are spent in /rupeestore.`,
+        )} coins each\n${currencyPlural} unlock the powerful /analysis command, can be granted by admins using /giverupee, and are spent in the configured store panel channel.`,
       }
     );
 
@@ -77,7 +77,7 @@ function buildInventoryEmbed({
 
   embed.addFields({
     name: `🏪 ${currencySingular} Shop`,
-    value: 'Visit `/rupeestore` to buy **Nickname Change** (10), **Custom Role — Solid** (5), **Custom Role — Gradient** (15), **STFU** (5), **Abuse Mod** (10).',
+    value: 'Use the configured store panel channel to buy **STFU** (5), **Muzzle** (5), **Abuse Mod** (15), **Nickname** (5), **Nickname Another Member** (10), **Custom Role w/ Solid Colour** (5), and **Custom Role w/ Gradient** (15).',
   });
 
   const avatarUrl = typeof user.displayAvatarURL === 'function' ? user.displayAvatarURL({ forceStatic: true }) : null;
