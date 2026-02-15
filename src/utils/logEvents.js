@@ -294,17 +294,17 @@ const LOG_KEYS = {
     category: 'Economy',
   },
   rupee_earned: {
-    label: 'Rupees Earned',
+    label: 'Currency Earned',
     category: 'Economy',
     fallbackKey: 'economy',
   },
   rupee_given: {
-    label: 'Rupees Given',
+    label: 'Currency Given',
     category: 'Economy',
     fallbackKey: 'economy',
   },
   rupee_spend: {
-    label: 'Rupees Spent',
+    label: 'Currency Spent',
     category: 'Economy',
     fallbackKey: 'economy',
   },

@@ -19,6 +19,7 @@ const rupeeCustomRoleStore = require('../utils/rupeeCustomRoleStore');
 const logSender = require('../utils/logSender');
 const { buildRupeeSpendEmbed } = require('../utils/rupeeLogEmbed');
 const smiteConfigStore = require('../utils/smiteConfigStore');
+const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 const SHOP_ITEMS = [
   {
@@ -97,7 +98,7 @@ function formatMinutes(ms) {
 
 function formatBlessingStatus(guildId, userId) {
   const status = coinStore.getPrayStatus(guildId, userId);
-  if (status.canPray) return '✅ Ready — use `/blessing` to claim 1 rupee.';
+  if (status.canPray) return `✅ Ready — use \`/blessing\` to claim ${formatCurrencyAmount(guildId, 1, { lowercase: true })}.`;
   const mins = Math.ceil(status.cooldownMs / 60_000);
   return `⌛ Available in ${mins} minute${mins === 1 ? '' : 's'}.`;
 }
@@ -135,18 +136,19 @@ function resolveShopItemsForGuild(guildId) {
 }
 
 function buildShopEmbed({ guildId, balance, selectedItemId = null, blessingStatus, shopItems }) {
+  const currencyName = getCurrencyName(guildId);
   const embed = makeEmbed(guildId)
-    .setTitle('🏪 Rupee Store')
+    .setTitle(`🏪 ${currencyName} Store`)
     .setDescription(
-      'Spend your rupees on moderation toys and cosmetic perks. Choose an item to see what it does, then follow the prompts.\n' +
-      `**Your balance:** ${balance} rupee${balance === 1 ? '' : 's'}.`
+      `Spend your ${formatCurrencyWord(guildId, 2, { lowercase: true })} on moderation toys and cosmetic perks. Choose an item to see what it does, then follow the prompts.\n` +
+      `**Your balance:** ${formatCurrencyAmount(guildId, balance, { lowercase: true })}.`
     )
     .addFields({ name: 'Blessing status', value: blessingStatus });
 
   shopItems.forEach(item => {
     const prefix = item.id === selectedItemId ? '👉 ' : '';
     embed.addFields({
-      name: `${prefix}${item.label} — ${item.cost} rupee${item.cost === 1 ? '' : 's'}`,
+      name: `${prefix}${item.label} — ${formatCurrencyAmount(guildId, item.cost, { lowercase: true })}`,
       value: item.description,
       inline: false,
     });
@@ -208,7 +210,7 @@ function buildItemSelect(customId, shopItems, disabled = false) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(customId)
-      .setPlaceholder('Choose a rupee item to purchase')
+      .setPlaceholder('Choose an item to purchase')
       .setDisabled(disabled)
       .addOptions(
         shopItems.map(item => ({
@@ -292,7 +294,7 @@ async function applyTimeoutPurchase({ interaction, item, targetMember }) {
   const paid = await rupeeStore.spendTokens(guild.id, actor.id, item.cost);
   if (!paid) {
     const balance = rupeeStore.getBalance(guild.id, actor.id);
-    return { error: `You need ${item.cost} rupee${item.cost === 1 ? '' : 's'} to buy ${item.label}. Balance: ${balance}.` };
+    return { error: `You need ${formatCurrencyAmount(guild.id, item.cost, { lowercase: true })} to buy ${item.label}. Balance: ${formatCurrencyAmount(guild.id, balance, { lowercase: true })}.` };
   }
 
   const reason = `${item.label} purchased by ${actor.tag} (${actor.id})`;
@@ -301,7 +303,7 @@ async function applyTimeoutPurchase({ interaction, item, targetMember }) {
     await targetMember.timeout(TIMEOUT_DURATION_MS, reason);
   } catch (err) {
     await rupeeStore.addTokens(guild.id, actor.id, item.cost);
-    return { error: 'Failed to apply the timeout. Your rupees were refunded.' };
+    return { error: `Failed to apply the timeout. Your ${formatCurrencyWord(guild.id, 2, { lowercase: true })} were refunded.` };
   }
 
   await immunityStore.recordSilence(guild.id, targetMember.id, TIMEOUT_DURATION_MS, IMMUNITY_BUFFER_MS);
@@ -348,7 +350,7 @@ async function applyMuzzlePurchase({ interaction, item, targetMember }) {
   const paid = await rupeeStore.spendTokens(guild.id, actor.id, item.cost);
   if (!paid) {
     const balance = rupeeStore.getBalance(guild.id, actor.id);
-    return { error: `You need ${item.cost} rupee${item.cost === 1 ? '' : 's'} to buy ${item.label}. Balance: ${balance}.` };
+    return { error: `You need ${formatCurrencyAmount(guild.id, item.cost, { lowercase: true })} to buy ${item.label}. Balance: ${formatCurrencyAmount(guild.id, balance, { lowercase: true })}.` };
   }
 
   const reason = `Muzzle purchased by ${actor.tag} (${actor.id})`;
@@ -356,7 +358,7 @@ async function applyMuzzlePurchase({ interaction, item, targetMember }) {
     await targetMember.voice.setMute(true, reason);
   } catch (err) {
     await rupeeStore.addTokens(guild.id, actor.id, item.cost);
-    return { error: 'Failed to apply the muzzle. Your rupees were refunded.' };
+    return { error: `Failed to apply the muzzle. Your ${formatCurrencyWord(guild.id, 2, { lowercase: true })} were refunded.` };
   }
 
   scheduleMuzzleLift(interaction.client, guild.id, targetMember.id, MUZZLE_DURATION_MS, reason);
@@ -409,7 +411,7 @@ async function applyNicknamePurchase({ interaction, newNickname, cost }) {
   const paid = await rupeeStore.spendTokens(guild.id, actor.id, cost);
   if (!paid) {
     const balance = rupeeStore.getBalance(guild.id, actor.id);
-    return { error: `You need ${cost} rupees for Nickname Change. Balance: ${balance}.` };
+    return { error: `You need ${formatCurrencyAmount(guild.id, cost, { lowercase: true })} for Nickname Change. Balance: ${formatCurrencyAmount(guild.id, balance, { lowercase: true })}.` };
   }
 
   const reason = `Nickname Change purchased by ${actor.tag} (${actor.id})`;
@@ -456,7 +458,7 @@ async function applyMemberNicknamePurchase({ interaction, targetMember, newNickn
   const paid = await rupeeStore.spendTokens(guild.id, actor.id, cost);
   if (!paid) {
     const balance = rupeeStore.getBalance(guild.id, actor.id);
-    return { error: `You need ${cost} rupees to rename a member. Balance: ${balance}.` };
+    return { error: `You need ${formatCurrencyAmount(guild.id, cost, { lowercase: true })} to rename a member. Balance: ${formatCurrencyAmount(guild.id, balance, { lowercase: true })}.` };
   }
 
   const reason = `Nickname a Member purchased by ${actor.tag} (${actor.id}) for ${targetMember.id}`;
@@ -501,7 +503,7 @@ async function applyCustomRolePurchase({ interaction, mode, colors, roleName, co
   const paid = await rupeeStore.spendTokens(guild.id, actor.id, cost);
   if (!paid) {
     const balance = rupeeStore.getBalance(guild.id, actor.id);
-    return { error: `You need ${cost} rupees for this custom role. Balance: ${balance}.` };
+    return { error: `You need ${formatCurrencyAmount(guild.id, cost, { lowercase: true })} for this custom role. Balance: ${formatCurrencyAmount(guild.id, balance, { lowercase: true })}.` };
   }
 
   const desiredPosition = computeDesiredRolePosition(me, member);
@@ -620,13 +622,13 @@ module.exports = {
   SHOP_ITEMS,
   data: new SlashCommandBuilder()
     .setName('rupeestore')
-    .setDescription('Browse and spend rupees on special items'),
+    .setDescription('Browse and spend server currency on special items'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
       const embed = makeEmbed(interaction.guildId)
         .setTitle('Use this in a server')
-        .setDescription('The Rupee Store can only be opened inside a server.');
+        .setDescription('The economy store can only be opened inside a server.');
       await interaction.reply({ embeds: [embed], ephemeral: true });
       return;
     }
@@ -758,7 +760,7 @@ module.exports = {
             .setTitle('Nickname updated')
             .setDescription(
               `Your nickname has been changed to **${escapeMarkdown(nickname)}**.\n` +
-              `Remaining balance: ${result.newBalance} rupee${result.newBalance === 1 ? '' : 's'}.`
+              `Remaining balance: ${formatCurrencyAmount(guildId, result.newBalance, { lowercase: true })}.`
             );
           await submission.reply({ embeds: [successEmbed], ephemeral: true });
 
@@ -866,7 +868,7 @@ module.exports = {
 
           const roleMention = result.role ? `<@&${result.role.id}>` : 'your custom role';
           await submission.editReply({
-            content: `✅ ${selectedItem.label} applied to ${roleMention}.\nRemaining balance: ${result.newBalance} rupee${result.newBalance === 1 ? '' : 's'}.`,
+            content: `✅ ${selectedItem.label} applied to ${roleMention}.\nRemaining balance: ${formatCurrencyAmount(guildId, result.newBalance, { lowercase: true })}.`,
           });
 
           await logRupeeStorePurchase({
@@ -981,7 +983,7 @@ module.exports = {
             .setTitle('Nickname updated')
             .setDescription(
               `${targetMember} is now known as **${escapeMarkdown(nickname)}**.\n` +
-              `Remaining balance: ${result.newBalance} rupee${result.newBalance === 1 ? '' : 's'}.`
+              `Remaining balance: ${formatCurrencyAmount(guildId, result.newBalance, { lowercase: true })}.`
             );
           await submission.reply({ embeds: [successEmbed], ephemeral: true });
 
@@ -1041,7 +1043,7 @@ module.exports = {
           .setTitle(`${selectedItem.label} applied`)
           .setDescription(
             `${selectedItem.label} used on ${targetMember} for ${formatMinutes(durationMs)}.\n` +
-            `Remaining balance: ${result.newBalance} rupee${result.newBalance === 1 ? '' : 's'}.`
+            `Remaining balance: ${formatCurrencyAmount(guildId, result.newBalance, { lowercase: true })}.`
           );
         await componentInteraction.reply({ embeds: [successEmbed], ephemeral: true });
 

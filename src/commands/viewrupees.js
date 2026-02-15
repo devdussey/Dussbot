@@ -8,23 +8,24 @@ const {
 } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 function buildEmbed(guildId, entries, page) {
   const embed = new EmbedBuilder()
     .setColor(resolveEmbedColour(guildId, 0x00f0ff))
-    .setTitle('Rupee Balances')
-    .setDescription(`Users with rupees: **${entries.length}**`);
+    .setTitle(`${getCurrencyName(guildId)} Balances`)
+    .setDescription(`Users with ${formatCurrencyWord(guildId, 2, { lowercase: true })}: **${entries.length}**`);
 
   const start = page * 20;
   const slice = entries.slice(start, start + 20);
   const lines = slice.map((entry, idx) => {
     const rank = start + idx + 1;
-    return `${rank}. <@${entry.userId}> — **${entry.tokens}** rupee${entry.tokens === 1 ? '' : 's'}`;
+    return `${rank}. <@${entry.userId}> — **${formatCurrencyAmount(guildId, entry.tokens, { lowercase: true })}**`;
   });
 
   embed.addFields({
     name: 'Leaderboard',
-    value: lines.length ? lines.join('\n') : '_No rupees yet._',
+    value: lines.length ? lines.join('\n') : `_No ${formatCurrencyWord(guildId, 2, { lowercase: true })} yet._`,
   });
 
   return embed;
@@ -42,7 +43,7 @@ function buildPagerComponents(total) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('viewrupees')
-    .setDescription('View rupee balances for this server')
+    .setDescription('View currency balances for this server')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
   async execute(interaction) {

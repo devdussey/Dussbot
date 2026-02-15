@@ -14,6 +14,7 @@ const smiteConfigStore = require('../utils/smiteConfigStore');
 const logChannelTypeStore = require('../utils/logChannelTypeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { SHOP_ITEMS } = require('./rupeestore');
+const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 const HORSE_RACE_WIN_RUPEES = 1;
 const SESSION_TIMEOUT_MS = 10 * 60_000;
@@ -75,7 +76,7 @@ function formatImmuneRoles(roleIds) {
   return roleIds.map(id => `<@&${id}>`).join(', ');
 }
 
-function formatStoreConfig(storeItemCosts) {
+function formatStoreConfig(guildId, storeItemCosts) {
   const safeCosts = storeItemCosts && typeof storeItemCosts === 'object' ? storeItemCosts : {};
   if (!Array.isArray(SHOP_ITEMS) || SHOP_ITEMS.length === 0) return 'No store items found.';
   return SHOP_ITEMS.map((item, idx) => {
@@ -83,11 +84,17 @@ function formatStoreConfig(storeItemCosts) {
     const hasOverride = Number.isFinite(override) && Math.floor(override) >= 1;
     const effectiveCost = hasOverride ? Math.floor(override) : item.cost;
     const suffix = hasOverride ? ' (custom)' : '';
-    return `\`${idx + 1}.\` ${item.label} (\`${item.id}\`) = **${effectiveCost}** rupee${effectiveCost === 1 ? '' : 's'}${suffix}`;
+    return `\`${idx + 1}.\` ${item.label} (\`${item.id}\`) = **${formatCurrencyAmount(guildId, effectiveCost, { lowercase: true })}**${suffix}`;
   }).join('\n');
 }
 
+function trimModalTitle(value) {
+  const safe = String(value || '').trim() || 'Economy';
+  return safe.slice(0, 45);
+}
+
 function buildEmbed(guild, config, rupeeLogChannelId) {
+  const currencyName = getCurrencyName(guild?.id);
   const messageRate = Number(config.messageThreshold) || smiteConfigStore.DEFAULT_MESSAGE_THRESHOLD;
   const voiceRate = Number(config.voiceMinutesPerRupee) || smiteConfigStore.DEFAULT_VOICE_MINUTES_PER_RUPEE;
   const announceDisplay = config.announceChannelId ? `<#${config.announceChannelId}>` : 'Not Configured';
@@ -95,24 +102,25 @@ function buildEmbed(guild, config, rupeeLogChannelId) {
   const enabledText = config.enabled ? 'Enabled' : 'Disabled';
 
   return new EmbedBuilder()
-    .setTitle('Rupee Configuration')
-    .setDescription(`Current Rupee settings for **${guild?.name || 'this server'}**.`)
+    .setTitle('Economy Configuration')
+    .setDescription(`Current economy settings for **${guild?.name || 'this server'}**.`)
     .setColor(resolveEmbedColour(guild?.id, 0x00f0ff))
     .addFields(
       { name: 'Status', value: `**${enabledText}**`, inline: false },
+      { name: 'Currency Name', value: `**${currencyName}**`, inline: false },
       {
         name: 'Earning Rates',
         value: [
-          `**${messageRate}** messages = **1 Rupee**`,
-          `**${voiceRate}** minute${voiceRate === 1 ? '' : 's'} in voice chat = **1 Rupee**`,
-          `Horse Race Win = **${HORSE_RACE_WIN_RUPEES} Rupee${HORSE_RACE_WIN_RUPEES === 1 ? '' : 's'}**`,
+          `**${messageRate}** messages = **${formatCurrencyAmount(guild?.id, 1)}**`,
+          `**${voiceRate}** minute${voiceRate === 1 ? '' : 's'} in voice chat = **${formatCurrencyAmount(guild?.id, 1)}**`,
+          `Horse Race Win = **${formatCurrencyAmount(guild?.id, HORSE_RACE_WIN_RUPEES)}**`,
         ].join('\n'),
         inline: false,
       },
       { name: 'Immunity Role', value: formatImmuneRoles(config.immuneRoleIds), inline: false },
-      { name: 'Rupee Announce Channel', value: announceDisplay, inline: false },
-      { name: 'Rupee Log Channel', value: logDisplay, inline: false },
-      { name: 'Store Config', value: formatStoreConfig(config.storeItemCosts), inline: false },
+      { name: `${currencyName} Announce Channel`, value: announceDisplay, inline: false },
+      { name: `${currencyName} Log Channel`, value: logDisplay, inline: false },
+      { name: 'Store Config', value: formatStoreConfig(guild?.id, config.storeItemCosts), inline: false },
     )
     .setFooter({ text: 'Use the buttons below to update this server only.' })
     .setTimestamp(new Date());
@@ -120,7 +128,7 @@ function buildEmbed(guild, config, rupeeLogChannelId) {
 
 function buildButtons(baseId, enabled, disabled = false) {
   const toggleStyle = enabled ? ButtonStyle.Danger : ButtonStyle.Success;
-  const toggleLabel = enabled ? 'Disable Rupees' : 'Enable Rupees';
+  const toggleLabel = enabled ? 'Disable Economy Rewards' : 'Enable Economy Rewards';
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -151,6 +159,11 @@ function buildButtons(baseId, enabled, disabled = false) {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
+        .setCustomId(`${baseId}:currency`)
+        .setLabel('Set Currency Name')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
         .setCustomId(`${baseId}:store`)
         .setLabel('Edit Store Prices')
         .setStyle(ButtonStyle.Primary)
@@ -161,14 +174,14 @@ function buildButtons(baseId, enabled, disabled = false) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('rupeeconfig')
-    .setDescription('Configure Rupee system settings for this server')
+    .setName('economyconfig')
+    .setDescription('Configure economy settings for this server')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
     .addBooleanOption(opt =>
       opt
         .setName('enabled')
-        .setDescription('Turn Rupee rewards on or off before opening the config view')
+        .setDescription('Turn economy rewards on or off before opening the config view')
         .setRequired(false),
     ),
 
@@ -183,10 +196,10 @@ module.exports = {
     const isAdmin = interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator);
     const isGuildOwner = interaction.guild?.ownerId === interaction.user.id;
     if (!canManageGuild && !isAdmin && !isGuildOwner) {
-      return interaction.editReply({ content: 'You need Manage Server, Administrator, or server owner access to configure Rupees.' });
+      return interaction.editReply({ content: 'You need Manage Server, Administrator, or server owner access to configure the economy.' });
     }
 
-    const baseId = `rupeeconfig:${interaction.id}`;
+    const baseId = `economyconfig:${interaction.id}`;
     const initialEnabled = interaction.options.getBoolean('enabled');
     if (initialEnabled !== null) {
       await smiteConfigStore.setEnabled(interaction.guildId, initialEnabled);
@@ -227,12 +240,12 @@ module.exports = {
         const modalId = `${baseId}:modal:rates`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
-          .setTitle('Edit Rupee Earning Rates')
+          .setTitle('Edit Economy Earning Rates')
           .addComponents(
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('message_threshold')
-                .setLabel('Messages per 1 Rupee')
+                .setLabel('Messages per 1 Currency')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
                 .setValue(String(current.messageThreshold || smiteConfigStore.DEFAULT_MESSAGE_THRESHOLD)),
@@ -240,7 +253,7 @@ module.exports = {
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('voice_minutes')
-                .setLabel('Voice minutes per 1 Rupee')
+                .setLabel('Voice minutes per 1 Currency')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
                 .setValue(String(current.voiceMinutesPerRupee || smiteConfigStore.DEFAULT_VOICE_MINUTES_PER_RUPEE)),
@@ -275,7 +288,7 @@ module.exports = {
         });
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: 'Rupee earning rates updated for this server.', ephemeral: true });
+        await submission.reply({ content: 'Economy earning rates updated for this server.', ephemeral: true });
         return;
       }
 
@@ -348,10 +361,11 @@ module.exports = {
       }
 
       if (componentInteraction.customId === `${baseId}:announce`) {
+        const currencyName = getCurrencyName(interaction.guildId);
         const modalId = `${baseId}:modal:announce`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
-          .setTitle('Set Rupee Announce Channel')
+          .setTitle(trimModalTitle(`Set ${currencyName} Announce Channel`))
           .addComponents(
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
@@ -385,7 +399,7 @@ module.exports = {
           await smiteConfigStore.setAnnounceChannelId(interaction.guildId, null);
           const nextView = await render();
           await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-          await submission.reply({ content: 'Rupee announce channel cleared.', ephemeral: true });
+          await submission.reply({ content: `${currencyName} announce channel cleared.`, ephemeral: true });
           return;
         }
 
@@ -411,15 +425,16 @@ module.exports = {
         await smiteConfigStore.setAnnounceChannelId(interaction.guildId, channel.id);
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: `Rupee announce channel set to ${channel}.`, ephemeral: true });
+        await submission.reply({ content: `${currencyName} announce channel set to ${channel}.`, ephemeral: true });
         return;
       }
 
       if (componentInteraction.customId === `${baseId}:log`) {
+        const currencyName = getCurrencyName(interaction.guildId);
         const modalId = `${baseId}:modal:log`;
         const modal = new ModalBuilder()
           .setCustomId(modalId)
-          .setTitle('Set Rupee Log Channel')
+          .setTitle(trimModalTitle(`Set ${currencyName} Log Channel`))
           .addComponents(
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
@@ -453,7 +468,7 @@ module.exports = {
           await logChannelTypeStore.setChannel(interaction.guildId, 'economy', null);
           const nextView = await render();
           await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-          await submission.reply({ content: 'Rupee log channel cleared.', ephemeral: true });
+          await submission.reply({ content: `${currencyName} log channel cleared.`, ephemeral: true });
           return;
         }
 
@@ -481,7 +496,54 @@ module.exports = {
 
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await submission.reply({ content: `Rupee log channel set to ${channel}.`, ephemeral: true });
+        await submission.reply({ content: `${currencyName} log channel set to ${channel}.`, ephemeral: true });
+        return;
+      }
+
+      if (componentInteraction.customId === `${baseId}:currency`) {
+        const modalId = `${baseId}:modal:currency`;
+        const current = getCurrencyName(interaction.guildId);
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Set Currency Name')
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('currency_name')
+                .setLabel('Currency name')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setMaxLength(32)
+                .setPlaceholder('e.g. Rupee, Gem, Token')
+                .setValue(current),
+            ),
+          );
+
+        await componentInteraction.showModal(modal);
+
+        let submission;
+        try {
+          submission = await componentInteraction.awaitModalSubmit({
+            time: 180_000,
+            filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+          });
+        } catch (_) {
+          return;
+        }
+
+        const rawName = (submission.fields.getTextInputValue('currency_name') || '').trim();
+        if (!rawName) {
+          await submission.reply({ content: 'Currency name cannot be empty.', ephemeral: true });
+          return;
+        }
+
+        await smiteConfigStore.setCurrencyName(interaction.guildId, rawName);
+        const nextView = await render();
+        await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+        await submission.reply({
+          content: `Currency name updated to **${formatCurrencyWord(interaction.guildId, 1)}**.`,
+          ephemeral: true,
+        });
         return;
       }
 
@@ -502,7 +564,7 @@ module.exports = {
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('store_item_cost')
-                .setLabel('Rupee cost (or "default" to reset)')
+                .setLabel('Currency cost (or "default" to reset)')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
                 .setPlaceholder('e.g. 7 or default'),
@@ -559,7 +621,7 @@ module.exports = {
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
         await submission.reply({
-          content: `${item?.label || storeItemId} now costs ${parsedCost} rupee${parsedCost === 1 ? '' : 's'} in this server.`,
+          content: `${item?.label || storeItemId} now costs ${formatCurrencyAmount(interaction.guildId, parsedCost, { lowercase: true })} in this server.`,
           ephemeral: true,
         });
       }

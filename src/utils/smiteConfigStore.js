@@ -3,6 +3,7 @@ const { ensureFileSync, writeJson, readJsonSync } = require('./dataDir');
 const STORE_FILE = 'smite_config.json';
 const DEFAULT_MESSAGE_THRESHOLD = 500;
 const DEFAULT_VOICE_MINUTES_PER_RUPEE = 15;
+const DEFAULT_CURRENCY_NAME = 'Rupee';
 const DEFAULT_STORE_ITEM_COSTS = Object.freeze({
   stfu: 5,
   abuse_mod: 10,
@@ -36,6 +37,14 @@ function normaliseOptionalId(value) {
   if (value === null || typeof value === 'undefined') return null;
   const id = String(value).trim();
   return id ? id : null;
+}
+
+function normaliseCurrencyName(value, fallback = DEFAULT_CURRENCY_NAME) {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  const collapsed = raw.replace(/\s+/g, ' ');
+  if (!collapsed) return fallback;
+  return collapsed.slice(0, 32);
 }
 
 function normaliseStoreItemCosts(value) {
@@ -86,6 +95,7 @@ function getGuildRecord(guildId) {
       immuneRoleIds: [],
       messageThreshold: DEFAULT_MESSAGE_THRESHOLD,
       voiceMinutesPerRupee: DEFAULT_VOICE_MINUTES_PER_RUPEE,
+      currencyName: DEFAULT_CURRENCY_NAME,
       announceChannelId: null,
       storeItemCosts: {},
     };
@@ -96,6 +106,7 @@ function getGuildRecord(guildId) {
   guild.immuneRoleIds = normaliseRoleIds(guild.immuneRoleIds);
   guild.messageThreshold = normalisePositiveInt(guild.messageThreshold, DEFAULT_MESSAGE_THRESHOLD);
   guild.voiceMinutesPerRupee = normalisePositiveInt(guild.voiceMinutesPerRupee, DEFAULT_VOICE_MINUTES_PER_RUPEE);
+  guild.currencyName = normaliseCurrencyName(guild.currencyName, DEFAULT_CURRENCY_NAME);
   guild.announceChannelId = normaliseOptionalId(guild.announceChannelId);
   guild.storeItemCosts = normaliseStoreItemCosts(guild.storeItemCosts);
   return guild;
@@ -109,6 +120,7 @@ function getConfig(guildId) {
       immuneRoleIds: [],
       messageThreshold: DEFAULT_MESSAGE_THRESHOLD,
       voiceMinutesPerRupee: DEFAULT_VOICE_MINUTES_PER_RUPEE,
+      currencyName: DEFAULT_CURRENCY_NAME,
       announceChannelId: null,
       storeItemCosts: {},
     };
@@ -120,6 +132,7 @@ function getConfig(guildId) {
     immuneRoleIds: guild.immuneRoleIds || [],
     messageThreshold: guild.messageThreshold,
     voiceMinutesPerRupee: guild.voiceMinutesPerRupee,
+    currencyName: normaliseCurrencyName(guild.currencyName, DEFAULT_CURRENCY_NAME),
     announceChannelId: guild.announceChannelId,
     storeItemCosts: normaliseStoreItemCosts(guild.storeItemCosts),
   };
@@ -143,6 +156,10 @@ function getVoiceMinutesPerRupee(guildId) {
 
 function getAnnounceChannelId(guildId) {
   return getConfig(guildId).announceChannelId;
+}
+
+function getCurrencyName(guildId) {
+  return getConfig(guildId).currencyName;
 }
 
 function getStoreItemCosts(guildId) {
@@ -213,6 +230,19 @@ async function setAnnounceChannelId(guildId, channelId) {
   return getConfig(guildId);
 }
 
+async function setCurrencyName(guildId, currencyName) {
+  if (!guildId) return getConfig(guildId);
+  const store = loadStore();
+  const current = getGuildRecord(guildId);
+  store.guilds[guildId] = {
+    ...current,
+    currencyName: normaliseCurrencyName(currencyName, DEFAULT_CURRENCY_NAME),
+    updatedAt: new Date().toISOString(),
+  };
+  await saveStore();
+  return getConfig(guildId);
+}
+
 async function setStoreItemCost(guildId, itemId, cost) {
   if (!guildId || !itemId || !Object.prototype.hasOwnProperty.call(DEFAULT_STORE_ITEM_COSTS, itemId)) {
     return getConfig(guildId);
@@ -270,6 +300,7 @@ function clearCache() {
 module.exports = {
   DEFAULT_MESSAGE_THRESHOLD,
   DEFAULT_VOICE_MINUTES_PER_RUPEE,
+  DEFAULT_CURRENCY_NAME,
   DEFAULT_STORE_ITEM_COSTS,
   getConfig,
   isEnabled,
@@ -277,11 +308,13 @@ module.exports = {
   getMessageThreshold,
   getVoiceMinutesPerRupee,
   getAnnounceChannelId,
+  getCurrencyName,
   getStoreItemCosts,
   setEnabled,
   setImmuneRoleIds,
   setEarningRates,
   setAnnounceChannelId,
+  setCurrencyName,
   setStoreItemCost,
   setStoreItemCosts,
   addImmuneRole,

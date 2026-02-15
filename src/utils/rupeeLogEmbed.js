@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const { resolveEmbedColour } = require('./guildColourStore');
+const { getCurrencyName, getCurrencyPlural, formatCurrencyAmount } = require('./currencyName');
 
 function formatEntityLabel(value) {
   if (!value) return 'Unknown';
@@ -41,20 +42,18 @@ function normaliseAmount(value) {
   return Math.max(0, Math.floor(num));
 }
 
-function pluraliseRupee(amount) {
-  return amount === 1 ? 'Rupee' : 'Rupees';
+function getTitleForEvent(guildId, eventType) {
+  const singular = getCurrencyName(guildId);
+  const plural = getCurrencyPlural(singular);
+  if (eventType === 'earned') return `${plural} Earned`;
+  if (eventType === 'given') return `${plural} Given`;
+  return `${plural} Spent`;
 }
 
-function getTitleForEvent(eventType) {
-  if (eventType === 'earned') return 'Rupees Earned';
-  if (eventType === 'given') return 'Rupees Given';
-  return 'Rupees Spent';
-}
-
-function buildDefaultDescription({ eventType, actor, target, amount, method, itemLabel }) {
+function buildDefaultDescription({ guildId, eventType, actor, target, amount, method, itemLabel }) {
   const actorMention = formatEntityMention(actor);
   const targetMention = formatEntityMention(target);
-  const amountText = `${amount} ${pluraliseRupee(amount)}`;
+  const amountText = formatCurrencyAmount(guildId, amount);
   if (eventType === 'earned') {
     return `${actorMention} has earned ${amountText} from ${method || 'an unknown method'}.`;
   }
@@ -83,8 +82,9 @@ function buildRupeeEventEmbed({
   const safeAmount = normaliseAmount(amount);
   const actorLabel = formatEntityLabel(actor);
   const targetLabel = target ? formatEntityLabel(target) : 'N/A';
-  const title = getTitleForEvent(eventType);
+  const title = getTitleForEvent(guildId, eventType);
   const body = (description || buildDefaultDescription({
+    guildId,
     eventType,
     actor,
     target,
@@ -94,7 +94,7 @@ function buildRupeeEventEmbed({
   })).slice(0, 3000);
 
   const balanceValue = Number.isFinite(Number(balance))
-    ? `${normaliseAmount(balance)} ${pluraliseRupee(normaliseAmount(balance))}`
+    ? formatCurrencyAmount(guildId, normaliseAmount(balance))
     : 'N/A';
 
   const embed = new EmbedBuilder()
@@ -106,7 +106,7 @@ function buildRupeeEventEmbed({
     .addFields(
       { name: 'Triggered By', value: actorLabel, inline: true },
       { name: 'Target', value: targetLabel, inline: true },
-      { name: 'Amount', value: `${safeAmount} ${pluraliseRupee(safeAmount)}`, inline: true },
+      { name: 'Amount', value: formatCurrencyAmount(guildId, safeAmount), inline: true },
     );
 
   if (method) {
@@ -153,7 +153,7 @@ function buildRupeeSpendEmbed({
     balance,
     itemLabel,
     description,
-    method: 'Rupee Store',
+    method: 'Economy Store',
     extraFields,
   });
 }

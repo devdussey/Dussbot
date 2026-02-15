@@ -12,6 +12,7 @@ const {
 const { recordRace } = require('../utils/horseRaceStore');
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 const TRACK_SLOTS = 18;
 const TICK_DELAY_MS = 5_000;
@@ -76,11 +77,11 @@ function summarizeBets(bets) {
   };
 }
 
-function renderBettingSummary(horses, betTotals, totalBets) {
+function renderBettingSummary(guildId, horses, betTotals, totalBets) {
   if (!horses.length) return '_No racers yet._';
   const headline = totalBets > 0
-    ? `**Bets — ${totalBets} rupee${totalBets === 1 ? '' : 's'} in play**`
-    : '**Bets — No rupees in play yet**';
+    ? `**Bets — ${formatCurrencyAmount(guildId, totalBets, { lowercase: true })} in play**`
+    : `**Bets — No ${formatCurrencyWord(guildId, 2, { lowercase: true })} in play yet**`;
 
   const lines = horses.map((horse, index) => {
     const count = betTotals.get(horse.id) || 0;
@@ -93,7 +94,7 @@ function renderBettingSummary(horses, betTotals, totalBets) {
   return `${headline}\n${lines.join('\n')}`;
 }
 
-function formatLobbyContent(waiting) {
+function formatLobbyContent(guildId, waiting) {
   return [
     '🏇 Horse Race Lobby',
     waiting.description,
@@ -103,7 +104,7 @@ function formatLobbyContent(waiting) {
     'Bets',
     waiting.betting,
     '',
-    `Entry cost: ${ENTRY_COST} rupee • Bets cost: ${BET_COST} rupee each`,
+    `Entry cost: ${formatCurrencyAmount(guildId, ENTRY_COST, { lowercase: true })} • Bets cost: ${formatCurrencyAmount(guildId, BET_COST, { lowercase: true })} each`,
   ].join('\n');
 }
 
@@ -131,7 +132,7 @@ function formatCancelledContent(refundNote) {
   ].join('\n');
 }
 
-function renderWaitingState(horses, joinDeadline, betTotals, totalBets) {
+function renderWaitingState(guildId, horses, joinDeadline, betTotals, totalBets) {
   const now = Date.now();
   const secondsLeft = Math.max(0, Math.ceil((joinDeadline - now) / 1000));
   const description = horses.length
@@ -147,8 +148,8 @@ function renderWaitingState(horses, joinDeadline, betTotals, totalBets) {
 
   return {
     description,
-    countdown: `Race starts in ${secondsLeft}s (need ${MIN_PLAYERS}+ racers). Entry fee: ${ENTRY_COST} rupee.`,
-    betting: renderBettingSummary(horses, betTotals, totalBets),
+    countdown: `Race starts in ${secondsLeft}s (need ${MIN_PLAYERS}+ racers). Entry fee: ${formatCurrencyAmount(guildId, ENTRY_COST, { lowercase: true })}.`,
+    betting: renderBettingSummary(guildId, horses, betTotals, totalBets),
   };
 }
 
@@ -229,10 +230,10 @@ module.exports = {
     if (!paid) {
       const balance = rupeeStore.getBalance(guildId, interaction.user.id);
       const embed = makeEmbed(guildId)
-        .setTitle('Not enough Rupees')
+        .setTitle(`Not enough ${formatCurrencyWord(guildId, 2)}`)
         .setDescription(
-          `You need ${ENTRY_COST} rupee${ENTRY_COST === 1 ? '' : 's'} to start a horse race.\n` +
-          `Current balance: ${balance}.`
+          `You need ${formatCurrencyAmount(guildId, ENTRY_COST, { lowercase: true })} to start a horse race.\n` +
+          `Current balance: ${formatCurrencyAmount(guildId, balance, { lowercase: true })}.`
         );
       await interaction.reply({ embeds: [embed], ephemeral: true });
       return;
@@ -258,8 +259,8 @@ module.exports = {
         const { betTotals, totalBets } = summarizeBets(bets);
         let content = '';
         if (stage === 'waiting') {
-          const waiting = renderWaitingState(horses, joinDeadline, betTotals, totalBets);
-          content = formatLobbyContent(waiting);
+          const waitingWithCurrency = renderWaitingState(guildId, horses, joinDeadline, betTotals, totalBets);
+          content = formatLobbyContent(guildId, waitingWithCurrency);
         } else if (stage === 'cancelled') {
           const refunds = [];
           if (entryPayments.size > 0) refunds.push('entry fees');
@@ -271,7 +272,7 @@ module.exports = {
           if (stage === 'finished' && finalSummaryContent) {
             content = finalSummaryContent;
           } else {
-            const betSummary = renderBettingSummary(horses, betTotals, totalBets);
+            const betSummary = renderBettingSummary(guildId, horses, betTotals, totalBets);
             content = formatRunningContent(raceLines, betSummary, currentTick);
           }
         }
@@ -318,9 +319,9 @@ module.exports = {
         if (!(await rupeeStore.spendTokens(guildId, componentInteraction.user.id, ENTRY_COST))) {
           const balance = rupeeStore.getBalance(guildId, componentInteraction.user.id);
           const embed = makeEmbed(guildId)
-            .setTitle('Not enough Rupees')
+            .setTitle(`Not enough ${formatCurrencyWord(guildId, 2)}`)
             .setDescription(
-              `Joining a race costs ${ENTRY_COST} rupee. You have ${balance}.\nEarn more and try again!`
+              `Joining a race costs ${formatCurrencyAmount(guildId, ENTRY_COST, { lowercase: true })}. You have ${formatCurrencyAmount(guildId, balance, { lowercase: true })}.\nEarn more and try again!`
             );
           await componentInteraction.reply({ embeds: [embed], ephemeral: true });
           return;
@@ -334,7 +335,7 @@ module.exports = {
         });
         const joinEmbed = makeEmbed(guildId)
           .setTitle('You joined the race!')
-          .setDescription(`A rupee has been deducted. Good luck, ${componentInteraction.user.displayName || componentInteraction.user.username}!`);
+          .setDescription(`${formatCurrencyAmount(guildId, 1)} has been deducted. Good luck, ${componentInteraction.user.displayName || componentInteraction.user.username}!`);
         await componentInteraction.reply({ embeds: [joinEmbed], ephemeral: true });
         await buildAndSend();
       } else if (componentInteraction.customId === betButtonId) {
@@ -386,10 +387,10 @@ module.exports = {
             if (!paid) {
               const balance = rupeeStore.getBalance(guildId, submission.user.id);
               const embed = makeEmbed(guildId)
-                .setTitle('Not enough Rupees')
+                .setTitle(`Not enough ${formatCurrencyWord(guildId, 2)}`)
                 .setDescription(
-                  `Placing a bet costs ${BET_COST} rupee. Your balance is ${balance}.\n` +
-                  'Earn another rupee and try again.'
+                  `Placing a bet costs ${formatCurrencyAmount(guildId, BET_COST, { lowercase: true })}. Your balance is ${formatCurrencyAmount(guildId, balance, { lowercase: true })}.\n` +
+                  `Earn another ${formatCurrencyWord(guildId, 1, { lowercase: true })} and try again.`
                 );
               await submission.reply({ embeds: [embed], ephemeral: true });
               return;
@@ -401,8 +402,8 @@ module.exports = {
           const embed = makeEmbed(guildId)
             .setTitle('Bet placed')
             .setDescription(
-              `You placed 1 rupee on **${escapeMarkdown(targetHorse.shortName || targetHorse.name)}**.\n` +
-              'If they win, you gain +1 rupee profit and get your bet back.'
+              `You placed ${formatCurrencyAmount(guildId, 1, { lowercase: true })} on **${escapeMarkdown(targetHorse.shortName || targetHorse.name)}**.\n` +
+              `If they win, you gain +${formatCurrencyAmount(guildId, 1, { lowercase: true })} profit and get your bet back.`
             );
           await submission.reply({ embeds: [embed], ephemeral: true });
           await buildAndSend();
@@ -476,7 +477,7 @@ module.exports = {
       try {
         const { betTotals, totalBets } = summarizeBets(bets);
         const raceLines = renderRaceLines(horses, betTotals);
-        const betSummary = renderBettingSummary(horses, betTotals, totalBets);
+        const betSummary = renderBettingSummary(guildId, horses, betTotals, totalBets);
         const content = formatRunningContent(raceLines, betSummary, currentTick);
         await interaction.followUp({ content, allowedMentions: { parse: [] } });
       } catch (err) {
@@ -524,9 +525,9 @@ module.exports = {
       const isWinner = bet.horseId === winningHorse.id;
       if (isWinner) {
         await rupeeStore.addTokens(guildId, userId, 2); // 1 profit + 1 refunded
-        winners.push(`- <@${userId}> won and earned +1 rupee (bet refunded).`);
+        winners.push(`- <@${userId}> won and earned +${formatCurrencyAmount(guildId, 1, { lowercase: true })} (bet refunded).`);
       } else {
-        losers.push(`- <@${userId}> lost their 1 rupee bet.`);
+        losers.push(`- <@${userId}> lost their ${formatCurrencyAmount(guildId, 1, { lowercase: true })} bet.`);
       }
     }
 
@@ -546,7 +547,7 @@ module.exports = {
       if (reward > 0) {
         await rupeeStore.addTokens(guildId, horse.userId, reward);
       }
-      const rewardText = reward > 0 ? ` (+${reward} rupee${reward === 1 ? '' : 's'})` : '';
+      const rewardText = reward > 0 ? ` (+${formatCurrencyAmount(guildId, reward, { lowercase: true })})` : '';
       playerSummaryLines.push(
         `- **${escapeMarkdown(horse.shortName || horse.name)}** ${placementLabel}${rewardText} — 🥇 ${stats.first ?? 0} · 🥈 ${stats.second ?? 0} · 🥉 ${stats.third ?? 0} (Races: ${stats.races ?? 0})`,
       );

@@ -8,6 +8,7 @@ const {
 } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 async function resolvePageEntries(guild, entries) {
   if (!Array.isArray(entries) || !entries.length) return [];
@@ -28,10 +29,6 @@ async function resolvePageEntries(guild, entries) {
   return resolved.filter(Boolean);
 }
 
-function pluralize(count, singular) {
-  return Number(count) === 1 ? singular : `${singular}s`;
-}
-
 async function buildLeaderboardEmbed({ guild, guildId, entries, pageIndex, perPage }) {
   const totalUsers = entries.length;
   const totalPages = Math.max(1, Math.ceil(totalUsers / perPage));
@@ -42,17 +39,17 @@ async function buildLeaderboardEmbed({ guild, guildId, entries, pageIndex, perPa
 
   const embed = new EmbedBuilder()
     .setColor(resolveEmbedColour(guildId, 0x2ecc71))
-    .setTitle('💎 Rupee Leaderboard')
+    .setTitle(`💎 ${getCurrencyName(guildId)} Leaderboard`)
     .setDescription(
       totalUsers
-        ? `Top rupee holders in this server.\nPage **${safePage + 1}/${totalPages}**`
-        : 'No users have any rupees yet.'
+        ? `Top ${formatCurrencyWord(guildId, 2, { lowercase: true })} holders in this server.\nPage **${safePage + 1}/${totalPages}**`
+        : `No users have any ${formatCurrencyWord(guildId, 2, { lowercase: true })} yet.`
     );
 
   if (slice.length) {
     const lines = slice.map((e, idx) => {
       const rank = start + idx + 1;
-      return `${rank}. <@${e.userId}> — **${e.tokens}** ${pluralize(e.tokens, 'rupee')}`;
+      return `${rank}. <@${e.userId}> — **${formatCurrencyAmount(guildId, e.tokens, { lowercase: true })}**`;
     });
     embed.addFields({ name: 'Leaderboard', value: lines.join('\n').slice(0, 1024) });
   }
@@ -80,7 +77,7 @@ function buildPagerRow({ pageIndex, totalPages, prevId, nextId }) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('rupeeboard')
-    .setDescription('View the rupee leaderboard')
+    .setDescription('View the currency leaderboard')
     .setDMPermission(false),
 
   async execute(interaction) {

@@ -9,6 +9,7 @@ const {
   MS_PER_MINUTE,
 } = require('../utils/economyConfig');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
+const { formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 const VOICE_RUPEE_EMBED_COLOR = 0x00f0ff;
 const sessions = new Map();
@@ -59,13 +60,15 @@ async function sendRupeeAnnouncement(newState, userId, awarded, newBalance) {
   const perms = announceChannel.permissionsFor?.(me);
   if (!perms?.has(PermissionFlagsBits.ViewChannel) || !perms?.has(PermissionFlagsBits.SendMessages)) return;
 
-  const amountText = awarded === 1 ? 'a rupee' : `${awarded} rupees`;
-  const announcement = `<@${userId}> earned ${amountText} from voice activity and now has ${newBalance} rupee${newBalance === 1 ? '' : 's'}!`;
+  const amountText = awarded === 1
+    ? `a ${formatCurrencyWord(guild.id, 1, { lowercase: true })}`
+    : formatCurrencyAmount(guild.id, awarded, { lowercase: true });
+  const announcement = `<@${userId}> earned ${amountText} from voice activity and now has ${formatCurrencyAmount(guild.id, newBalance, { lowercase: true })}!`;
 
   if (perms.has(PermissionFlagsBits.EmbedLinks)) {
     const embed = new EmbedBuilder()
       .setColor(resolveEmbedColour(guild.id, VOICE_RUPEE_EMBED_COLOR))
-      .setDescription(`${announcement}\n\nTo spend your rupees, type /rupeestore.`);
+      .setDescription(`${announcement}\n\nTo spend your ${formatCurrencyWord(guild.id, 2, { lowercase: true })}, type /rupeestore.`);
     await announceChannel.send({ embeds: [embed] });
     return;
   }
@@ -107,7 +110,7 @@ async function awardRupees(newState, guildId, userId, session, deltaMs) {
       client: newState?.client,
     });
   } catch (err) {
-    console.error('Failed to send voice rupee earn log:', err);
+    console.error('Failed to send voice economy earn log:', err);
   }
 
   try {

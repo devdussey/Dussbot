@@ -8,6 +8,7 @@ const {
 const wordRushStatsStore = require('./wordRushStatsStore');
 const rupeeStore = require('./rupeeStore');
 const { resolveEmbedColour } = require('./guildColourStore');
+const { formatCurrencyAmount } = require('./currencyName');
 const {
   pickPlayableLetters,
   formatLetters,
@@ -463,8 +464,8 @@ async function runWordRushGame(game) {
   if (game.stopReason === 'winner' && game.winnerId) {
     const newBalance = await rupeeStore.addTokens(game.guildId, game.winnerId, 1).catch(() => null);
     const rupeeLine = Number.isFinite(newBalance)
-      ? `Winner earned **1 Rupee**. New balance: **${newBalance}**.`
-      : 'Winner earned **1 Rupee**.';
+      ? `Winner earned **${formatCurrencyAmount(game.guildId, 1)}**. New balance: **${formatCurrencyAmount(game.guildId, newBalance)}**.`
+      : `Winner earned **${formatCurrencyAmount(game.guildId, 1)}**.`;
 
     await lobbyMessage.edit({
       embeds: [

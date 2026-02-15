@@ -5,6 +5,7 @@ const tokenStore = require('../utils/messageTokenStore');
 const smiteConfigStore = require('../utils/smiteConfigStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { getRupeeCost } = require('../utils/economyConfig');
+const { formatCurrencyAmount, formatCurrencyWord, getCurrencyPlural } = require('../utils/currencyName');
 
 function formatCoins(value) {
   return Number(value).toLocaleString(undefined, {
@@ -33,6 +34,8 @@ function buildInventoryEmbed({
   rupeeCost,
   prayStatus,
 }) {
+  const currencySingular = formatCurrencyWord(guildId, 1);
+  const currencyPlural = getCurrencyPlural(currencySingular);
   const username = user && typeof user.username === 'string' && user.username.trim().length
     ? user.username
     : null;
@@ -58,22 +61,22 @@ function buildInventoryEmbed({
         value: `**Owned:** ${tokenStore.getBalance(guildId, user?.id)}\n**Cost:** 200 coins each\nSmite rewards are currently **${smiteConfigStore.isEnabled(guildId) ? 'enabled' : 'disabled'}**.`,
       },
       {
-        name: '💎 Rupees',
+        name: `💎 ${currencyPlural}`,
         value: `**Owned:** ${rupeeBalance}\n**Cost:** ${formatCoins(
           rupeeCost
-        )} coins each\nRupees unlock the powerful /analysis command, can be granted by admins using /giverupee, and are spent in /rupeestore.`,
+        )} coins each\n${currencyPlural} unlock the powerful /analysis command, can be granted by admins using /giverupee, and are spent in /rupeestore.`,
       }
     );
 
   embed.addFields({
     name: '🙏 Blessing',
     value: prayStatus.canPray
-      ? 'Ready! Use /blessing to receive 1 rupee.'
+      ? `Ready! Use /blessing to receive ${formatCurrencyAmount(guildId, 1, { lowercase: true })}.`
       : `Already blessed. You can pray again in ${formatDuration(prayStatus.cooldownMs)}.`,
   });
 
   embed.addFields({
-    name: '🏪 Rupee Shop',
+    name: `🏪 ${currencySingular} Shop`,
     value: 'Visit `/rupeestore` to buy **Nickname Change** (10), **Custom Role — Solid** (5), **Custom Role — Gradient** (15), **STFU** (5), **Abuse Mod** (10).',
   });
 
@@ -90,7 +93,7 @@ function buildInventoryEmbed({
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('inventory')
-    .setDescription('Check your Rupees'),
+    .setDescription('Check your economy inventory'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {

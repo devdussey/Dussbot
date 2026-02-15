@@ -3,21 +3,22 @@ const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
 const logSender = require('../utils/logSender');
+const { formatCurrencyAmount, formatCurrencyWord, getCurrencyPlural } = require('../utils/currencyName');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('giverupee')
-    .setDescription('Admins: grant Rupees to a user')
+    .setDescription('Admins: grant economy currency to a user')
     .addUserOption(opt =>
       opt
         .setName('user')
-        .setDescription('Member to receive Rupees')
+        .setDescription('Member to receive currency')
         .setRequired(true)
     )
     .addIntegerOption(opt =>
       opt
         .setName('amount')
-        .setDescription('How many Rupees to grant (default 1)')
+        .setDescription('How much currency to grant (default 1)')
         .setMinValue(1)
     )
     .addStringOption(opt =>
@@ -44,16 +45,17 @@ module.exports = {
     const reason = (interaction.options.getString('reason') || '').trim();
 
     const total = await rupeeStore.addTokens(interaction.guildId, target.id, amount);
+    const currencyPlural = getCurrencyPlural(formatCurrencyWord(interaction.guildId, 1));
 
-    const balanceLine = `They now have ${total} rupee${total === 1 ? '' : 's'}.`;
+    const balanceLine = `They now have ${formatCurrencyAmount(interaction.guildId, total, { lowercase: true })}.`;
     const reasonLine = reason ? `Reason: ${reason}` : '';
 
     const embed = new EmbedBuilder()
       .setColor(resolveEmbedColour(interaction.guildId, 0x00f0ff))
-      .setTitle('Rupees granted')
-      .setDescription(`<@${interaction.user.id}> has given <@${target.id}> ${amount} rupee${amount === 1 ? '' : 's'}.`)
+      .setTitle(`${currencyPlural} Granted`)
+      .setDescription(`<@${interaction.user.id}> has given <@${target.id}> ${formatCurrencyAmount(interaction.guildId, amount, { lowercase: true })}.`)
       .addFields(
-        { name: 'Amount awarded', value: `${amount} rupee${amount === 1 ? '' : 's'}`, inline: true },
+        { name: 'Amount awarded', value: formatCurrencyAmount(interaction.guildId, amount), inline: true },
         { name: 'New balance', value: balanceLine.replace('They now have ', '').replace('.', ''), inline: true },
       )
       .setTimestamp();

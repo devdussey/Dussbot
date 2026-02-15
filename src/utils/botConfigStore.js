@@ -8,7 +8,7 @@ const CATEGORY_DEFINITIONS = [
   { key: 'ai', label: 'AI', description: 'AI chat, analysis, summarize, and transcription.' },
   { key: 'games', label: 'Games', description: 'Games and community engagement commands.' },
   { key: 'admin', label: 'Admin / Owner', description: 'Administrative and owner-only utilities.' },
-  { key: 'economy', label: 'Economy', description: 'Currency, rupee, and economy commands.' },
+  { key: 'economy', label: 'Economy', description: 'Currency and economy commands.' },
   { key: 'automations', label: 'Automations', description: 'Automations such as automessage, autorespond, and autoroles.' },
   { key: 'images', label: 'Images', description: 'Image utilities such as enlarge, removebg, and resize.' },
   { key: 'utility', label: 'Utility', description: 'Utility and general helper commands.' },

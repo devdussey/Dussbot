@@ -6,6 +6,7 @@ const { getRupeeCost } = require('../utils/economyConfig');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { isOwner } = require('../utils/ownerIds');
 const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('../utils/botConfigStore');
+const { formatCurrencyWord, getCurrencyPlural } = require('../utils/currencyName');
 
 const fetch = globalThis.fetch;
 
@@ -172,7 +173,7 @@ function buildEmbed(interaction, analysis, count, subjectUser) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('analysis')
-    .setDescription('Spend a Rupee to analyse your recent messages')
+    .setDescription('Spend 1 currency to analyse your recent messages')
     .addStringOption((option) => option
       .setName('persona')
       .setDescription('Choose the analysis persona to apply')
@@ -236,6 +237,8 @@ module.exports = {
     const subjectLabel = subjectUser?.tag || subjectUser?.username || subjectUser?.globalName || subjectUser?.id || 'the user';
     const guildId = interaction.guildId;
     const userId = interaction.user.id;
+    const currencySingular = formatCurrencyWord(guildId, 1);
+    const currencyPlural = getCurrencyPlural(currencySingular);
     let balance = rupeeStore.getBalance(guildId, userId);
     const rupeeCost = getRupeeCost();
     let coinsSpent = false;
@@ -259,7 +262,7 @@ module.exports = {
         : 'coins';
       const balanceText = `${Number(coinsAvailable).toLocaleString(undefined, { maximumFractionDigits: 2 })} coin${coinsAvailable === 1 ? '' : 's'}`;
       return interaction.editReply({
-        content: `You do not have any Rupees. You need ${costText} to buy one. Current balance: ${balanceText}. Ask an admin to use /giverupee if needed.`,
+        content: `You do not have any ${currencyPlural}. You need ${costText} to buy one. Current balance: ${balanceText}. Ask an admin to use /giverupee if needed.`,
       });
     }
 
@@ -283,7 +286,7 @@ module.exports = {
       if (coinsSpent && rupeeCost > 0) {
         await coinStore.addCoins(guildId, userId, rupeeCost);
       }
-      return interaction.editReply({ content: 'You no longer have a Rupee to spend.' });
+      return interaction.editReply({ content: `You no longer have a ${currencySingular} to spend.` });
     }
 
     const { text: formatted, usedCount } = formatMessages(logs, persona.messageLimit);

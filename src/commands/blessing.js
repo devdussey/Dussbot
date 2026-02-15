@@ -3,6 +3,7 @@ const coinStore = require('../utils/coinStore');
 const rupeeStore = require('../utils/rupeeStore');
 const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
 const logSender = require('../utils/logSender');
+const { formatCurrencyAmount } = require('../utils/currencyName');
 
 const DAILY_RUPEE = 1;
 
@@ -21,7 +22,7 @@ function formatDuration(ms) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('blessing')
-    .setDescription('Receive a daily blessing worth 1 rupee'),
+    .setDescription('Receive a daily blessing worth 1 currency'),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -69,6 +70,8 @@ module.exports = {
       console.error('Failed to send blessing rupee log:', err);
     }
 
-    return interaction.editReply({ content: `✨ You receive a blessing and gain 1 rupee! New balance: ${newBalance}.` });
+    return interaction.editReply({
+      content: `✨ You receive a blessing and gain ${formatCurrencyAmount(guildId, DAILY_RUPEE, { lowercase: true })}! New balance: ${formatCurrencyAmount(guildId, newBalance, { lowercase: true })}.`,
+    });
   },
 };

@@ -49,7 +49,7 @@ const LOG_GROUPS = Object.freeze([
   },
   {
     id: 'rupee',
-    label: 'Rupee Events',
+    label: 'Currency Events',
     keys: ['rupee_spend', 'rupee_earned', 'rupee_given'],
   },
   {

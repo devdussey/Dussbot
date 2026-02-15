@@ -3,15 +3,16 @@ const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
 const logSender = require('../utils/logSender');
+const { formatCurrencyAmount, getCurrencyPlural, formatCurrencyWord } = require('../utils/currencyName');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('massblessing')
-    .setDescription('Admins: grant every user a chosen number of rupees')
+    .setDescription('Admins: grant every user a chosen amount of currency')
     .addIntegerOption(opt =>
       opt
         .setName('amount')
-        .setDescription('How many rupees each user should receive (default 1)')
+        .setDescription('How much currency each user should receive (default 1)')
         .setMinValue(1)
     )
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
@@ -30,6 +31,7 @@ module.exports = {
     await interaction.deferReply({ ephemeral: true });
     const amountInput = interaction.options.getInteger('amount');
     const amount = Number.isFinite(amountInput) ? amountInput : 1;
+    const currencyPlural = getCurrencyPlural(formatCurrencyWord(interaction.guildId, 1));
 
     let awarded = 0;
     try {
@@ -48,7 +50,7 @@ module.exports = {
       .setColor(resolveEmbedColour(interaction.guildId, 0x00f0ff))
       .setTitle('✨ Mass Blessing')
       .setDescription(
-        `Every non-bot user has received ${amount} rupee${amount === 1 ? '' : 's'}.\n` +
+        `Every non-bot user has received ${formatCurrencyAmount(interaction.guildId, amount, { lowercase: true })}.\n` +
         `Total users blessed: ${awarded}.`
       )
       .setFooter({ text: 'Cooldowns are not affected by mass blessings.' });
@@ -64,10 +66,10 @@ module.exports = {
         amount,
         balance: null,
         method: '/massblessing',
-        description: `<@${interaction.user.id}> has given ${amount} rupee${amount === 1 ? '' : 's'} to ${awarded} users via /massblessing.`,
+        description: `<@${interaction.user.id}> has given ${formatCurrencyAmount(interaction.guildId, amount, { lowercase: true })} to ${awarded} users via /massblessing.`,
         extraFields: [
           { name: 'Users Blessed', value: String(awarded), inline: true },
-          { name: 'Total Rupees Granted', value: String(awarded * amount), inline: true },
+          { name: `Total ${currencyPlural} Granted`, value: formatCurrencyAmount(interaction.guildId, awarded * amount), inline: true },
         ],
       });
       await logSender.sendLog({

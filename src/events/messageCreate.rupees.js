@@ -6,6 +6,7 @@ const { resolveEmbedColour } = require('../utils/guildColourStore');
 const messageCountStore = require('../utils/messageCountStore');
 const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
 const logSender = require('../utils/logSender');
+const { formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 async function resolveAnnouncementChannel(guild, configuredChannelId, fallbackChannel) {
   if (!guild) return null;
@@ -68,9 +69,11 @@ module.exports = {
       if (!result?.awarded || result.awarded <= 0) return;
 
       const newBalance = Number.isFinite(result.tokens) ? result.tokens : rupeeStore.getBalance(message.guild.id, message.author.id);
-      const amountText = result.awarded === 1 ? 'a rupee' : `${result.awarded} rupees`;
-      const earnedText = `${message.author} has earned ${amountText}! They now have ${newBalance}!`;
-      const announcement = `${earnedText}\n\nTo spend your rupees, type /rupeestore.`;
+      const amountText = result.awarded === 1
+        ? `a ${formatCurrencyWord(message.guild.id, 1, { lowercase: true })}`
+        : formatCurrencyAmount(message.guild.id, result.awarded, { lowercase: true });
+      const earnedText = `${message.author} has earned ${amountText}! They now have ${formatCurrencyAmount(message.guild.id, newBalance, { lowercase: true })}!`;
+      const announcement = `${earnedText}\n\nTo spend your ${formatCurrencyWord(message.guild.id, 2, { lowercase: true })}, type /rupeestore.`;
       try {
         const logEmbed = buildRupeeEventEmbed({
           guildId: message.guild.id,
@@ -111,7 +114,7 @@ module.exports = {
         } catch (_) {}
       }
     } catch (err) {
-      console.error('Failed to award rupees', err);
+      console.error('Failed to award economy currency', err);
     }
   },
 };

@@ -22,6 +22,7 @@ const roleCleanManager = require('../utils/roleCleanManager');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
 const rupeeStore = require('../utils/rupeeStore');
 const { isOwner } = require('../utils/ownerIds');
+const { formatCurrencyAmount } = require('../utils/currencyName');
 
 const MAX_ERROR_STACK = 3500;
 const COMMAND_FAILURE_ALERT_CHANNEL_ID = (process.env.COMMAND_FAILURE_ALERT_CHANNEL_ID || '').trim();
@@ -308,7 +309,7 @@ const COMMAND_CATEGORY_MAP = {
 
     // Economy
     inventory: 'economy',
-    rupeeconfig: 'economy',
+    economyconfig: 'economy',
     rupeeboard: 'economy',
     rupeestore: 'economy',
     viewrupees: 'economy',
@@ -398,7 +399,7 @@ const ALWAYS_ENABLED_COMMANDS = new Set([
 const MANAGE_GUILD_COMMANDS = new Set([
   'boosterroleconfig',
   'modconfig',
-  'rupeeconfig',
+  'economyconfig',
   'searchword',
 ]);
 
@@ -1093,8 +1094,8 @@ module.exports = {
 
                 const successPayload = {
                     content: isBotOwner
-                        ? 'Thank you for your vote. You have been given 1 Rupee. Bot owner votes are unlimited.'
-                        : 'Thank you for your vote. You have been given 1 Rupee. Come back in 24 hours to vote again.',
+                        ? `Thank you for your vote. You have been given ${formatCurrencyAmount(interaction.guildId, 1)}. Bot owner votes are unlimited.`
+                        : `Thank you for your vote. You have been given ${formatCurrencyAmount(interaction.guildId, 1)}. Come back in 24 hours to vote again.`,
                     ephemeral: true,
                 };
                 try {
