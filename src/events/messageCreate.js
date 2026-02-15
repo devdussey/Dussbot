@@ -1,6 +1,24 @@
 const { Events } = require('discord.js');
 const store = require('../utils/autoRespondStore');
 
+const responseCooldowns = new Map();
+const GIF_RESPONSE_COOLDOWN_MS = 7000;
+
+function isGifLikeUrl(url) {
+  const value = String(url || '').trim().toLowerCase();
+  if (!value) return false;
+  return /\.gif($|[?#])/.test(value) || value.includes('tenor.com') || value.includes('giphy.com') || value.includes('media.discordapp.net');
+}
+
+function canSendGifResponse(guildId, channelId, ruleId) {
+  const key = `${guildId}:${channelId}:${ruleId}`;
+  const now = Date.now();
+  const last = responseCooldowns.get(key) || 0;
+  if (now - last < GIF_RESPONSE_COOLDOWN_MS) return false;
+  responseCooldowns.set(key, now);
+  return true;
+}
+
 module.exports = {
   name: Events.MessageCreate,
   async execute(message) {
@@ -41,6 +59,11 @@ module.exports = {
           const mediaUrl = String(rule.mediaUrl || '').trim();
           const stickerId = String(rule.stickerId || '').trim();
           if (!content && !mediaUrl && !stickerId) continue;
+
+          if (mediaUrl && isGifLikeUrl(mediaUrl) && !canSendGifResponse(message.guild.id, message.channel.id, rule.id)) {
+            continue;
+          }
+
           const payload = {
             ...(content ? { content } : {}),
             ...(mediaUrl ? { files: [mediaUrl] } : {}),

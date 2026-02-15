@@ -19,6 +19,7 @@ const { setDefaultColour, toHex6 } = require('../utils/guildColourStore');
 const vanityRoleCommand = require('../commands/vanityrole');
 const helpCommand = require('../commands/help');
 const rupeeStoreCommand = require('../commands/rupeestore');
+const autorespondCommand = require('../commands/autorespond');
 const roleCleanManager = require('../utils/roleCleanManager');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
 const rupeeStore = require('../utils/rupeeStore');
@@ -1135,6 +1136,16 @@ module.exports = {
                 } catch (err) {
                     console.error('Failed to handle store button:', err);
                     try { await interaction.reply({ content: 'Store action failed. Please try again.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+            }
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('autorespond:list:')) {
+                try {
+                    const handled = await autorespondCommand.handleButton(interaction);
+                    if (handled) return;
+                } catch (err) {
+                    console.error('Failed to handle autorespond button:', err);
+                    try { await interaction.reply({ content: 'Autorespond action failed. Please try again.', ephemeral: true }); } catch (_) {}
                     return;
                 }
             }

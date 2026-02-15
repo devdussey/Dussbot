@@ -1,5 +1,78 @@
-const { SlashCommandBuilder, PermissionsBitField, ChannelType } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  PermissionsBitField,
+  ChannelType,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require('discord.js');
 const store = require('../utils/autoRespondStore');
+
+const RULES_PER_PAGE = 5;
+const LIST_PREFIX = 'autorespond:list';
+
+function buildResponseLabel(rule) {
+  const textPart = rule.reply ? rule.reply.replace(/\n/g, ' ') : null;
+  const mediaPart = rule.mediaUrl ? `media ${rule.mediaUrl}` : null;
+  const stickerPart = rule.stickerId ? `sticker ${rule.stickerId}` : null;
+  const merged = [textPart, mediaPart, stickerPart].filter(Boolean).join(' + ');
+  return merged || 'empty response';
+}
+
+function buildListView(guildId, page = 0) {
+  const cfg = store.getGuildConfig(guildId);
+  const totalPages = Math.max(1, Math.ceil(cfg.rules.length / RULES_PER_PAGE));
+  const safePage = Math.max(0, Math.min(Number(page) || 0, totalPages - 1));
+  const start = safePage * RULES_PER_PAGE;
+  const rules = cfg.rules.slice(start, start + RULES_PER_PAGE);
+
+  const embed = new EmbedBuilder()
+    .setTitle('Autorespond Rules')
+    .setDescription(
+      cfg.rules.length
+        ? rules.map(rule => `ID#${rule.id} | (${buildResponseLabel(rule)}) <${rule.trigger}>`).join('\n')
+        : 'No rules configured. Use /autorespond add to create one.'
+    )
+    .addFields({ name: 'Status', value: cfg.enabled ? 'ENABLED' : 'DISABLED', inline: true })
+    .setFooter({ text: `Page ${safePage + 1}/${totalPages} • ${cfg.rules.length} total rule(s)` });
+
+  const components = [];
+  if (rules.length) {
+    const deleteRow = new ActionRowBuilder();
+    for (const rule of rules) {
+      deleteRow.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${LIST_PREFIX}:delete:${rule.id}:${safePage}`)
+          .setStyle(ButtonStyle.Danger)
+          .setLabel(`Delete #${rule.id}`)
+      );
+    }
+    components.push(deleteRow);
+  }
+
+  if (totalPages > 1) {
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${LIST_PREFIX}:page:${safePage - 1}`)
+          .setStyle(ButtonStyle.Secondary)
+          .setLabel('Previous')
+          .setDisabled(safePage === 0),
+        new ButtonBuilder()
+          .setCustomId(`${LIST_PREFIX}:page:${safePage + 1}`)
+          .setStyle(ButtonStyle.Secondary)
+          .setLabel('Next')
+          .setDisabled(safePage >= totalPages - 1),
+      )
+    );
+  }
+
+  return {
+    embeds: [embed],
+    components,
+  };
+}
 
 async function resolveGuildSticker(guild, value) {
   if (!guild || !value) return null;
@@ -230,38 +303,44 @@ module.exports = {
     }
 
     if (sub === 'list') {
-      const cfg = store.getGuildConfig(guildId);
-      const lines = [`Status: ${cfg.enabled ? 'ENABLED' : 'DISABLED'}`];
-      if (!cfg.rules.length) {
-        lines.push('No rules configured. Use /autorespond add to create one.');
-      } else {
-        for (const r of cfg.rules) {
-          const textPart = r.reply ? `'${String(r.reply).replace(/\n/g, ' ')}'` : null;
-          const mediaPart = r.mediaUrl ? `media ${r.mediaUrl}` : null;
-          const stickerPart = r.stickerId ? `sticker ${r.stickerId}` : null;
-          const output = [textPart, mediaPart, stickerPart].filter(Boolean).join(' + ') || '(empty response)';
-          lines.push(`#${r.id}: [${r.match}${r.caseSensitive ? ', case' : ''}] '${r.trigger}' -> ${output}${r.channelId ? ` in <#${r.channelId}>` : ''}`);
-        }
-      }
-      const chunks = chunkLines(lines, 1850);
-      if (!chunks.length) {
-        return interaction.editReply({ content: 'No rules configured. Use /autorespond add to create one.' });
-      }
-
-      if (chunks.length === 1) {
-        return interaction.editReply({ content: chunks[0] });
-      }
-
-      await interaction.editReply({ content: `Autorespond rules (1/${chunks.length})\n${chunks[0]}` });
-      for (let i = 1; i < chunks.length; i += 1) {
-        await interaction.followUp({
-          content: `Autorespond rules (${i + 1}/${chunks.length})\n${chunks[i]}`,
-          ephemeral: true,
-        });
-      }
-      return null;
+      const view = buildListView(guildId, 0);
+      return interaction.editReply(view);
     }
 
     return interaction.editReply({ content: 'Unknown subcommand.' });
+  },
+
+  async handleButton(interaction) {
+    if (!interaction.inGuild()) return false;
+    if (typeof interaction.customId !== 'string' || !interaction.customId.startsWith(`${LIST_PREFIX}:`)) {
+      return false;
+    }
+
+    if (!interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator)) {
+      try { await interaction.reply({ content: 'Only server administrators can configure autorespond.', ephemeral: true }); } catch (_) {}
+      return true;
+    }
+
+    const parts = interaction.customId.split(':');
+    const action = parts[2];
+
+    if (action === 'page') {
+      const page = Number(parts[3] || 0);
+      const view = buildListView(interaction.guildId, page);
+      try { await interaction.update(view); } catch (_) {}
+      return true;
+    }
+
+    if (action === 'delete') {
+      const id = Number(parts[3]);
+      const page = Number(parts[4] || 0);
+      const removed = store.removeRule(interaction.guildId, id);
+      const view = buildListView(interaction.guildId, page);
+      const content = removed ? `Removed rule #${id}.` : `Rule #${id} no longer exists.`;
+      try { await interaction.update({ content, ...view }); } catch (_) {}
+      return true;
+    }
+
+    return false;
   },
 };
