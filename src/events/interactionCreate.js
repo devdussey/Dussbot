@@ -18,6 +18,7 @@ const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const { setDefaultColour, toHex6 } = require('../utils/guildColourStore');
 const vanityRoleCommand = require('../commands/vanityrole');
 const helpCommand = require('../commands/help');
+const rupeeStoreCommand = require('../commands/rupeestore');
 const roleCleanManager = require('../utils/roleCleanManager');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
 const rupeeStore = require('../utils/rupeeStore');
@@ -1220,6 +1221,16 @@ module.exports = {
                     await roleCleanManager.handleRoleCleanButton(interaction);
                 } catch (err) {
                     console.error('Failed to handle roleclean button:', err);
+                }
+                return;
+            }
+            if (interaction.customId === 'rupeestore:open') {
+                if (!interaction.inGuild()) return;
+                try {
+                    await rupeeStoreCommand.execute(interaction);
+                } catch (err) {
+                    console.error('Failed to open rupee store from panel button:', err);
+                    try { await interaction.reply({ content: 'Failed to open the store. Please try `/rupeestore`.', ephemeral: true }); } catch (_) {}
                 }
                 return;
             }

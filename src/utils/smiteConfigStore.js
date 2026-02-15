@@ -97,6 +97,7 @@ function getGuildRecord(guildId) {
       voiceMinutesPerRupee: DEFAULT_VOICE_MINUTES_PER_RUPEE,
       currencyName: DEFAULT_CURRENCY_NAME,
       announceChannelId: null,
+      storePanelChannelId: null,
       storeItemCosts: {},
     };
   }
@@ -108,6 +109,7 @@ function getGuildRecord(guildId) {
   guild.voiceMinutesPerRupee = normalisePositiveInt(guild.voiceMinutesPerRupee, DEFAULT_VOICE_MINUTES_PER_RUPEE);
   guild.currencyName = normaliseCurrencyName(guild.currencyName, DEFAULT_CURRENCY_NAME);
   guild.announceChannelId = normaliseOptionalId(guild.announceChannelId);
+  guild.storePanelChannelId = normaliseOptionalId(guild.storePanelChannelId);
   guild.storeItemCosts = normaliseStoreItemCosts(guild.storeItemCosts);
   return guild;
 }
@@ -122,6 +124,7 @@ function getConfig(guildId) {
       voiceMinutesPerRupee: DEFAULT_VOICE_MINUTES_PER_RUPEE,
       currencyName: DEFAULT_CURRENCY_NAME,
       announceChannelId: null,
+      storePanelChannelId: null,
       storeItemCosts: {},
     };
   }
@@ -134,6 +137,7 @@ function getConfig(guildId) {
     voiceMinutesPerRupee: guild.voiceMinutesPerRupee,
     currencyName: normaliseCurrencyName(guild.currencyName, DEFAULT_CURRENCY_NAME),
     announceChannelId: guild.announceChannelId,
+    storePanelChannelId: guild.storePanelChannelId,
     storeItemCosts: normaliseStoreItemCosts(guild.storeItemCosts),
   };
 }
@@ -156,6 +160,10 @@ function getVoiceMinutesPerRupee(guildId) {
 
 function getAnnounceChannelId(guildId) {
   return getConfig(guildId).announceChannelId;
+}
+
+function getStorePanelChannelId(guildId) {
+  return getConfig(guildId).storePanelChannelId;
 }
 
 function getCurrencyName(guildId) {
@@ -224,6 +232,19 @@ async function setAnnounceChannelId(guildId, channelId) {
   store.guilds[guildId] = {
     ...current,
     announceChannelId: normaliseOptionalId(channelId),
+    updatedAt: new Date().toISOString(),
+  };
+  await saveStore();
+  return getConfig(guildId);
+}
+
+async function setStorePanelChannelId(guildId, channelId) {
+  if (!guildId) return getConfig(guildId);
+  const store = loadStore();
+  const current = getGuildRecord(guildId);
+  store.guilds[guildId] = {
+    ...current,
+    storePanelChannelId: normaliseOptionalId(channelId),
     updatedAt: new Date().toISOString(),
   };
   await saveStore();
@@ -308,12 +329,14 @@ module.exports = {
   getMessageThreshold,
   getVoiceMinutesPerRupee,
   getAnnounceChannelId,
+  getStorePanelChannelId,
   getCurrencyName,
   getStoreItemCosts,
   setEnabled,
   setImmuneRoleIds,
   setEarningRates,
   setAnnounceChannelId,
+  setStorePanelChannelId,
   setCurrencyName,
   setStoreItemCost,
   setStoreItemCosts,

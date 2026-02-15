@@ -18,6 +18,7 @@ const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('.
 
 const HORSE_RACE_WIN_RUPEES = 1;
 const SESSION_TIMEOUT_MS = 10 * 60_000;
+const RUPEE_STORE_OPEN_BUTTON_ID = 'rupeestore:open';
 const STORE_ITEM_LOOKUP = new Map((SHOP_ITEMS || []).map(item => [String(item.id), item]));
 
 function parseRoleId(raw) {
@@ -98,6 +99,7 @@ function buildEmbed(guild, config, rupeeLogChannelId) {
   const messageRate = Number(config.messageThreshold) || smiteConfigStore.DEFAULT_MESSAGE_THRESHOLD;
   const voiceRate = Number(config.voiceMinutesPerRupee) || smiteConfigStore.DEFAULT_VOICE_MINUTES_PER_RUPEE;
   const announceDisplay = config.announceChannelId ? `<#${config.announceChannelId}>` : 'Not Configured';
+  const storePanelDisplay = config.storePanelChannelId ? `<#${config.storePanelChannelId}>` : 'Not Configured';
   const logDisplay = rupeeLogChannelId ? `<#${rupeeLogChannelId}>` : 'Not Configured';
   const enabledText = config.enabled ? 'Enabled' : 'Disabled';
 
@@ -119,6 +121,7 @@ function buildEmbed(guild, config, rupeeLogChannelId) {
       },
       { name: 'Immunity Role', value: formatImmuneRoles(config.immuneRoleIds), inline: false },
       { name: `${currencyName} Announce Channel`, value: announceDisplay, inline: false },
+      { name: `${currencyName} Store Panel Channel`, value: storePanelDisplay, inline: false },
       { name: `${currencyName} Log Channel`, value: logDisplay, inline: false },
       { name: 'Store Config', value: formatStoreConfig(guild?.id, config.storeItemCosts), inline: false },
     )
@@ -159,6 +162,11 @@ function buildButtons(baseId, enabled, disabled = false) {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
+        .setCustomId(`${baseId}:storepanel`)
+        .setLabel('Set Store Panel Channel')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
         .setCustomId(`${baseId}:currency`)
         .setLabel('Set Currency Name')
         .setStyle(ButtonStyle.Secondary)
@@ -170,6 +178,27 @@ function buildButtons(baseId, enabled, disabled = false) {
         .setDisabled(disabled),
     ),
   ];
+}
+
+function buildStorePanelPayload(guildId) {
+  const currencyName = getCurrencyName(guildId);
+  const embed = new EmbedBuilder()
+    .setTitle(`${currencyName} Store`)
+    .setDescription(
+      `Press the button below to open the ${formatCurrencyWord(guildId, 1, { lowercase: true })} store.\n` +
+      'Purchases will succeed or fail automatically based on your balance and store rules.'
+    )
+    .setColor(resolveEmbedColour(guildId, 0x00f0ff))
+    .setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(RUPEE_STORE_OPEN_BUTTON_ID)
+      .setLabel('Open Store')
+      .setStyle(ButtonStyle.Success),
+  );
+
+  return { embeds: [embed], components: [row] };
 }
 
 module.exports = {
@@ -497,6 +526,89 @@ module.exports = {
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
         await submission.reply({ content: `${currencyName} log channel set to ${channel}.`, ephemeral: true });
+        return;
+      }
+
+      if (componentInteraction.customId === `${baseId}:storepanel`) {
+        const currencyName = getCurrencyName(interaction.guildId);
+        const modalId = `${baseId}:modal:storepanel`;
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle(trimModalTitle(`Set ${currencyName} Store Panel Channel`))
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('store_panel_channel')
+                .setLabel('Channel mention or ID (type "clear" to remove)')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+                .setPlaceholder('<#CHANNEL_ID> | CHANNEL_ID | clear'),
+            ),
+          );
+
+        await componentInteraction.showModal(modal);
+
+        let submission;
+        try {
+          submission = await componentInteraction.awaitModalSubmit({
+            time: 180_000,
+            filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+          });
+        } catch (_) {
+          return;
+        }
+
+        const raw = (submission.fields.getTextInputValue('store_panel_channel') || '').trim();
+        if (!raw) {
+          await submission.reply({ content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
+          return;
+        }
+
+        if (raw.toLowerCase() === 'clear') {
+          await smiteConfigStore.setStorePanelChannelId(interaction.guildId, null);
+          const nextView = await render();
+          await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+          await submission.reply({ content: `${currencyName} store panel channel cleared.`, ephemeral: true });
+          return;
+        }
+
+        const channelId = parseChannelId(raw);
+        if (!channelId) {
+          await submission.reply({ content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
+          return;
+        }
+
+        let channel = interaction.guild.channels.cache.get(channelId);
+        if (!channel) {
+          try {
+            channel = await interaction.guild.channels.fetch(channelId);
+          } catch (_) {
+            channel = null;
+          }
+        }
+        if (!channel || !channel.isTextBased?.() || channel.type === ChannelType.GuildForum) {
+          await submission.reply({ content: 'Please select a text or announcement channel in this server.', ephemeral: true });
+          return;
+        }
+
+        const me = interaction.guild.members.me;
+        const perms = channel.permissionsFor(me);
+        if (!perms?.has(PermissionsBitField.Flags.SendMessages)) {
+          await submission.reply({ content: `I cannot send messages in ${channel}.`, ephemeral: true });
+          return;
+        }
+
+        try {
+          await channel.send(buildStorePanelPayload(interaction.guildId));
+        } catch (err) {
+          await submission.reply({ content: `Failed to post the store panel in ${channel}: ${err.message || err}`, ephemeral: true });
+          return;
+        }
+
+        await smiteConfigStore.setStorePanelChannelId(interaction.guildId, channel.id);
+        const nextView = await render();
+        await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+        await submission.reply({ content: `${currencyName} store panel channel set to ${channel} and a panel was posted.`, ephemeral: true });
         return;
       }
 
