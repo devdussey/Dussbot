@@ -377,7 +377,7 @@ module.exports = {
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('announce_channel')
-                .setLabel('Channel mention or ID (type "clear" to remove)')
+                .setLabel('Channel mention/ID (type "clear" to remove)')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
                 .setPlaceholder('<#CHANNEL_ID> | CHANNEL_ID | clear'),
@@ -446,7 +446,7 @@ module.exports = {
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('log_channel')
-                .setLabel('Channel mention or ID (type "clear" to remove)')
+                .setLabel('Channel mention/ID (type "clear" to remove)')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
                 .setPlaceholder('<#CHANNEL_ID> | CHANNEL_ID | clear'),
@@ -517,7 +517,7 @@ module.exports = {
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('store_panel_channel')
-                .setLabel('Channel mention or ID (type "clear" to remove)')
+                .setLabel('Channel mention/ID (type "clear" to remove)')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
                 .setPlaceholder('<#CHANNEL_ID> | CHANNEL_ID | clear'),

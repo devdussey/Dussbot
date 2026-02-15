@@ -372,3 +372,53 @@ test('parseBackfillPayload + importBackfill keep enriched media and word stats',
   assert.equal(userStats.topWords[0].word, 'hello');
   assert.equal(userStats.topWords[0].count, 4);
 });
+
+test('legacy stored array-based word formats are normalized for word queries', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
+  const prev = process.env.DISPHORIABOT_DATA_DIR;
+  process.env.DISPHORIABOT_DATA_DIR = tmp;
+  dataDir.resetDataDirCache();
+
+  fs.writeFileSync(path.join(tmp, 'word_stats_config.json'), JSON.stringify({
+    guilds: {
+      g1: {
+        trackedChannelId: 'c1',
+        users: {
+          u1: {
+            count: 10,
+            words: {},
+            topWords: [
+              { word: 'hello', count: 5 },
+              { word: 'world', count: 2 },
+            ],
+          },
+          u2: {
+            count: 3,
+            words: { hello: 1 },
+          },
+        },
+      },
+    },
+  }, null, 2), 'utf8');
+
+  t.after(() => {
+    if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
+    else delete process.env.DISPHORIABOT_DATA_DIR;
+    dataDir.resetDataDirCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const store = freshStore();
+  const topWords = store.getTopWords('g1');
+  assert.equal(topWords.entries[0].word, 'hello');
+  assert.equal(topWords.entries[0].totalCount, 6);
+  assert.equal(topWords.entries[0].topUserId, 'u1');
+  assert.equal(topWords.entries[0].topUserCount, 5);
+
+  const helloUsage = store.searchWordUsage('g1', 'hello');
+  assert.equal(helloUsage.totalMatches, 6);
+  assert.equal(helloUsage.users[0].userId, 'u1');
+  assert.equal(helloUsage.users[0].count, 5);
+  assert.equal(helloUsage.users[1].userId, 'u2');
+  assert.equal(helloUsage.users[1].count, 1);
+});

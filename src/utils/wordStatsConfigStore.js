@@ -94,19 +94,41 @@ function normalizeWordToken(value) {
 
 function mergeWordMaps(target, incoming) {
   if (!target || typeof target !== 'object') return;
-  if (!incoming || typeof incoming !== 'object') return;
+  if (!incoming) return;
+
+  if (Array.isArray(incoming)) {
+    for (const item of incoming) {
+      if (Array.isArray(item)) {
+        const word = normalizeWordToken(item[0]);
+        const count = toNonNegativeInt(item[1]);
+        if (!word || count <= 0) continue;
+        target[word] = (target[word] || 0) + count;
+        continue;
+      }
+
+      if (typeof item === 'string') {
+        const word = normalizeWordToken(item);
+        if (!word) continue;
+        target[word] = (target[word] || 0) + 1;
+        continue;
+      }
+
+      if (!item || typeof item !== 'object') continue;
+      const word = normalizeWordToken(item.word ?? item.token ?? item.key ?? item.name);
+      const count = toNonNegativeInt(item.count ?? item.value ?? item.uses ?? item.total);
+      if (!word || count <= 0) continue;
+      target[word] = (target[word] || 0) + count;
+    }
+    return;
+  }
+
+  if (typeof incoming !== 'object') return;
   for (const [rawWord, rawCount] of Object.entries(incoming)) {
     const word = normalizeWordToken(rawWord);
     const count = toNonNegativeInt(rawCount);
     if (!word || count <= 0) continue;
     target[word] = (target[word] || 0) + count;
   }
-}
-
-function normalizeWordMap(words) {
-  const normalized = {};
-  mergeWordMaps(normalized, words);
-  return normalized;
 }
 
 function normalizeMediaBreakdown(value) {
@@ -126,9 +148,12 @@ function normalizeUserRecord(record) {
   const mediaBreakdown = normalizeMediaBreakdown(
     record?.mediaBreakdown ?? record?.media_breakdown ?? record?.mediaStats ?? record?.media_stats ?? record?.media,
   );
-  const words = normalizeWordMap(
-    record?.words ?? record?.wordCounts ?? record?.word_counts ?? record?.topWords ?? record?.top_words,
-  );
+  const words = {};
+  mergeWordMaps(words, record?.words);
+  mergeWordMaps(words, record?.wordCounts);
+  mergeWordMaps(words, record?.word_counts);
+  mergeWordMaps(words, record?.topWords);
+  mergeWordMaps(words, record?.top_words);
 
   if (mediaCount <= 0) {
     const mediaByBreakdown = mediaBreakdown.images + mediaBreakdown.stickers + mediaBreakdown.emojis;
