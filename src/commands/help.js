@@ -69,9 +69,9 @@ const categories = {
     { cmd: '/analysis', desc: 'Spend 1 currency to analyze your recent messages.', perm: null },
     { cmd: '/summarize', desc: 'Summarize recent channel discussion.', perm: null },
     { cmd: '/transcribe', desc: 'Transcribe an attached audio file.', perm: null },
-    { cmd: '/removebg image/gif', desc: 'Remove image background (non-premium servers: 1 use/day).', perm: 'Premium server for unlimited' },
-    { cmd: '/enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
-    { cmd: '/resize', desc: 'Resize an image by percentage or fixed pixel presets.', perm: null },
+    { cmd: '/image removebg image/gif', desc: 'Remove image background (non-premium servers: 1 use/day).', perm: 'Premium server for unlimited' },
+    { cmd: '/image enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
+    { cmd: '/image resize', desc: 'Resize an image by percentage or fixed pixel presets.', perm: null },
     { cmd: '/imagefilter', desc: 'Apply a GIF filter edit (currently: Load) to an uploaded image or URL.', perm: null },
   ],
   'Economy System and Games': [

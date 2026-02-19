@@ -17,7 +17,7 @@ module.exports = {
         {
           name: 'Includes',
           value: [
-            'Unlimited `/removebg` usage in premium servers.',
+            'Unlimited `/image removebg` usage in premium servers.',
             'Premium-only bot utilities and future premium feature drops.',
             'Premium access via active server boost or paid premium.',
           ].join('\n'),

@@ -326,10 +326,8 @@ const COMMAND_CATEGORY_MAP = {
     stickymessage: 'automations',
 
     // Images
-    enlarge: 'images',
+    image: 'images',
     imagefilter: 'images',
-    removebg: 'images',
-    resize: 'images',
 
     // Utility
     botinfo: 'utility',
@@ -369,13 +367,11 @@ const ADMIN_COMMANDS = new Set([
   'debug',
   'dmdiag',
   'embed',
-  'enlarge',
   'giverupee',
   'logconfig',
   'massblessing',
   'purge',
   'reactionrole',
-  'removebg',
   'role',
   'sacrificeconfig',
   'setdefaultcolour',
