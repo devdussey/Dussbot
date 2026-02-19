@@ -30,8 +30,15 @@ const HORSE_RACE_MAX_PLAYERS = 6;
 const HORSE_RACE_ENTRY_COST = 1;
 const HORSE_RACE_TRACK_START = '▀▄';
 const HORSE_RACE_TRACK_CELL = '⬩';
-const HORSE_RACE_TRACK_FINISH = '🏁';
-const HORSE_RACE_LANE_EMOJIS = ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣'];
+const HORSE_RACE_TRACK_FINISH = ':checkered_flag:';
+const HORSE_RACE_LANE_EMOJIS = [
+  '<:PintoHorse:1474167345437085938>',
+  '<:PalominoHorse:1474166783920443543>',
+  '<:BrownHorse:1474166241781485732>',
+  '<:ChestnutHorse:1474165557640036607>',
+  '<:BlackHorse:1474164999252345063>',
+  '<:WhiteHorse:1474164277576339466>',
+];
 
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 const BLACK_NUMBERS = new Set([2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]);
@@ -116,11 +123,34 @@ function getHorseLaneEmoji(index) {
   return HORSE_RACE_LANE_EMOJIS[index % HORSE_RACE_LANE_EMOJIS.length];
 }
 
+function toOrdinal(place) {
+  if (!Number.isInteger(place) || place <= 0) return `${place || 0}th`;
+  const mod100 = place % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${place}th`;
+  const mod10 = place % 10;
+  if (mod10 === 1) return `${place}st`;
+  if (mod10 === 2) return `${place}nd`;
+  if (mod10 === 3) return `${place}rd`;
+  return `${place}th`;
+}
+
 function renderHorseTrack(position, racerEmoji = HORSE_RACE_LANE_EMOJIS[0]) {
   const arr = Array(HORSE_RACE_TRACK_SLOTS).fill(HORSE_RACE_TRACK_CELL);
   const clamped = Math.max(0, Math.min(position, HORSE_RACE_TRACK_SLOTS - 1));
   arr[clamped] = racerEmoji || HORSE_RACE_LANE_EMOJIS[0];
   return `${HORSE_RACE_TRACK_START}   ${arr.join('   ')}   ${HORSE_RACE_TRACK_FINISH}`;
+}
+
+function getHorseRacePlacementMap(horses) {
+  const ordered = [...horses].sort((a, b) => {
+    if (!!b.finished !== !!a.finished) return b.finished ? 1 : -1;
+    if ((b.position || 0) !== (a.position || 0)) return (b.position || 0) - (a.position || 0);
+    return (a.finishTick || Number.MAX_SAFE_INTEGER) - (b.finishTick || Number.MAX_SAFE_INTEGER);
+  });
+
+  const placements = new Map();
+  ordered.forEach((horse, index) => placements.set(horse.userId, index + 1));
+  return placements;
 }
 
 function normalizeHorseRaceLanes(game) {
@@ -167,16 +197,21 @@ function buildHorseRaceCancelledEmbed(game) {
 }
 
 function buildHorseRaceRunningEmbed(game, horses, step) {
-  const lanes = horses.map((horse, index) => {
-    const track = renderHorseTrack(horse.position, horse.racerEmoji || getHorseLaneEmoji(index));
-    const name = escapeMarkdown(horse.shortName || horse.displayName || `Racer ${index + 1}`).slice(0, 32);
-    return `${track}   **${name}**`;
-  }).join('\n');
-
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x22c55e))
-    .setTitle(`🏇 Horse Race — Update ${step}/${HORSE_RACE_PROGRESS_STEPS}`)
-    .setDescription(lanes || '_Race is preparing..._');
+    .setTitle(`🏇 Horse Race 🏇`)
+    .setDescription('Race in progress...');
+}
+
+function buildHorseRaceRunningContent(game, horses) {
+  const placements = getHorseRacePlacementMap(horses);
+  const lanes = horses.map((horse, index) => {
+    const track = renderHorseTrack(horse.position, horse.racerEmoji || getHorseLaneEmoji(index));
+    const placeLabel = toOrdinal(placements.get(horse.userId) || (index + 1));
+    const record = casinoStatsStore.getUserGameRecord(game.guildId, horse.userId, 'horse_race') || { wins: 0, losses: 0 };
+    return `${track}   (${placeLabel}) (<@${horse.userId}> [${record.wins}-${record.losses}])`;
+  });
+  return lanes.length ? lanes.join('\n\n') : '_Race is preparing..._';
 }
 
 function buildHorseRaceResultEmbed(game, lines) {
@@ -904,6 +939,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
       }
 
       const raceMessage = await game.channel.send({
+        content: buildHorseRaceRunningContent(game, horses),
         embeds: [buildHorseRaceRunningEmbed(game, horses, 0)],
         allowedMentions: { parse: [] },
       });
@@ -932,6 +968,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         }
 
         await raceMessage.edit({
+          content: buildHorseRaceRunningContent(game, horses),
           embeds: [buildHorseRaceRunningEmbed(game, horses, step)],
           allowedMentions: { parse: [] },
         });
@@ -981,29 +1018,29 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         console.error('[Horse Race] Failed to record casino stats:', statsError);
       }
 
-      const winner = finishOrder[0] || null;
-      const second = finishOrder[1] || null;
-      const third = finishOrder[2] || null;
-      const winnerRecord = winner ? casinoStatsStore.getUserGameRecord(game.guildId, winner.userId, 'horse_race') : { wins: 0, losses: 0 };
-      const secondRecord = second ? casinoStatsStore.getUserGameRecord(game.guildId, second.userId, 'horse_race') : { wins: 0, losses: 0 };
-      const thirdRecord = third ? casinoStatsStore.getUserGameRecord(game.guildId, third.userId, 'horse_race') : { wins: 0, losses: 0 };
-
       const resultLines = [];
-      if (winner) {
-        resultLines.push(`🥇 - <@${winner.userId}> _Amount Won ${formatCurrencyAmount(game.guildId, firstPrize)}_ (New Record in ${winnerRecord.wins}-${winnerRecord.losses})`);
-      }
-      if (second) {
-        const secondPrefix = horses.length <= 3 ? '2nd' : '🥈';
-        const secondAmountText = secondPrize > 0 ? ` _Amount Won ${formatCurrencyAmount(game.guildId, secondPrize)}_` : '';
-        resultLines.push(`${secondPrefix} - <@${second.userId}>${secondAmountText} (New Record in ${secondRecord.wins}-${secondRecord.losses})`);
-      }
-      if (third) {
-        resultLines.push(`3rd - <@${third.userId}> (New Record in ${thirdRecord.wins}-${thirdRecord.losses})`);
-      }
+      finishOrder.forEach((horse, index) => {
+        const place = index + 1;
+        const amountWon = payoutsByUser.get(horse.userId) || 0;
+        const didWin = amountWon > 0;
+        const record = casinoStatsStore.getUserGameRecord(game.guildId, horse.userId, 'horse_race') || { wins: 0, losses: 0 };
+        let placeLabel = toOrdinal(place);
+
+        if (place === 1) placeLabel = '🥇';
+        if (place === 2 && didWin) placeLabel = '🥈';
+
+        const amountText = didWin
+          ? formatCurrencyAmount(game.guildId, amountWon)
+          : formatCurrencyAmount(game.guildId, HORSE_RACE_ENTRY_COST);
+        const outcome = didWin ? 'wins' : 'loses';
+
+        resultLines.push(`${placeLabel} - <@${horse.userId}> - ${outcome} (${amountText}) - ${record.wins}-${record.losses}`);
+      });
 
       const resultEmbed = buildHorseRaceResultEmbed(game, resultLines.length ? resultLines : ['No final results available.']);
       const playAgainId = `horserace-play-again-${Date.now()}`;
       await raceMessage.edit({
+        content: null,
         embeds: [resultEmbed],
         components: [
           new ActionRowBuilder().addComponents(
