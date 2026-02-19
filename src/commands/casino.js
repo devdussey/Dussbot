@@ -11,6 +11,7 @@ const {
   escapeMarkdown,
 } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
+const rouletteResultStore = require('../utils/rouletteResultStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { formatCurrencyAmount, getCurrencyName } = require('../utils/currencyName');
 
@@ -20,14 +21,12 @@ const SPIN_DURATION_MS = 10_000;
 
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 const BLACK_NUMBERS = new Set([2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]);
-const BOARD_NUMBERS = ['0', '00', ...Array.from({ length: 36 }, (_, i) => String(i + 1))];
-const NUMBER_PAGES = [
-  ['0', '00', ...Array.from({ length: 18 }, (_, i) => String(i + 1))],
-  Array.from({ length: 18 }, (_, i) => String(i + 19)),
-];
+const LOW_NUMBER_OPTIONS = ['0', '00', ...Array.from({ length: 18 }, (_, i) => String(i + 1))];
+const HIGH_NUMBER_OPTIONS = Array.from({ length: 18 }, (_, i) => String(i + 19));
+const BOARD_NUMBERS = [...LOW_NUMBER_OPTIONS, ...HIGH_NUMBER_OPTIONS];
+const MULTIPLIERS = [1, 2, 5, 10];
 
 const activeGames = new Map();
-const guildResultHistory = new Map();
 const guildLastBets = new Map();
 
 function gameKey(guildId, channelId) {
@@ -57,11 +56,6 @@ function spinResult() {
   const numeric = Number(value);
   const parity = Number.isInteger(numeric) && numeric >= 1 && numeric <= 36 ? (numeric % 2 === 0 ? 'even' : 'odd') : 'none';
   return { value, colorEmoji, colorName, parity };
-}
-
-function getHistory(guildId) {
-  if (!guildResultHistory.has(guildId)) guildResultHistory.set(guildId, []);
-  return guildResultHistory.get(guildId);
 }
 
 function getLastBetStore(guildId) {
@@ -94,7 +88,7 @@ function buildPublicEmbed(game) {
     }).join('\n')
     : '_No bets placed yet._';
 
-  const history = getHistory(game.guildId);
+  const history = rouletteResultStore.getHistory(game.guildId);
   const historyText = history.length
     ? history.slice(0, 10).map((entry, idx) => `${idx + 1}. ${entry.colorEmoji} ${entry.value} (${entry.colorName})`).join('\n')
     : '_No previous results yet._';
@@ -141,17 +135,6 @@ function buildBetEmbed(game, userId, draft, notice = '') {
   return embed;
 }
 
-function clampNumberPage(page) {
-  const parsed = Number.isInteger(page) ? page : 0;
-  return Math.max(0, Math.min(parsed, NUMBER_PAGES.length - 1));
-}
-
-function findNumberPage(numberValue) {
-  if (!numberValue) return 0;
-  const pageIndex = NUMBER_PAGES.findIndex((page) => page.includes(numberValue));
-  return pageIndex >= 0 ? pageIndex : 0;
-}
-
 function logRouletteInteractionError(error, interaction, context) {
   const details = {
     context,
@@ -177,54 +160,53 @@ async function replyRouletteInteractionFailure(interaction) {
 
 function buildBetComponents(game, userId, draft) {
   const raceId = game.raceId;
-  draft.numberPage = clampNumberPage(draft.numberPage ?? findNumberPage(draft.number));
-  const activeNumbers = NUMBER_PAGES[draft.numberPage];
-  const numberMenu = new StringSelectMenuBuilder()
-    .setCustomId(`roulette-number-select-${raceId}`)
-    .setPlaceholder(`Number Bets (Page ${draft.numberPage + 1}/${NUMBER_PAGES.length})`)
+  const lowNumberMenu = new StringSelectMenuBuilder()
+    .setCustomId(`roulette-number-low-${raceId}`)
+    .setPlaceholder('Numbers 0, 00 1-18')
     .addOptions([
       { label: 'No Number Bet', value: 'none', default: !draft.number },
-      ...activeNumbers.map((num) => ({ label: num, value: num, default: draft.number === num })),
+      ...LOW_NUMBER_OPTIONS.map((num) => ({ label: num, value: num, default: draft.number === num })),
     ]);
 
+  const highNumberMenu = new StringSelectMenuBuilder()
+    .setCustomId(`roulette-number-high-${raceId}`)
+    .setPlaceholder('Numbers 19-36')
+    .addOptions(
+      HIGH_NUMBER_OPTIONS.map((num) => ({ label: num, value: num, default: draft.number === num })),
+    );
+
+  const colorValue = draft.color ?? 'none';
   const colorMenu = new StringSelectMenuBuilder()
     .setCustomId(`roulette-color-${raceId}`)
     .setPlaceholder('Red / Black')
     .addOptions([
-      { label: 'No Color Bet', value: 'none' },
-      { label: 'Red', value: 'red' },
-      { label: 'Black', value: 'black' },
+      { label: 'No Color Bet', value: 'none', default: colorValue === 'none' },
+      { label: 'Red', value: 'red', default: colorValue === 'red' },
+      { label: 'Black', value: 'black', default: colorValue === 'black' },
     ]);
 
+  const parityValue = draft.parity ?? 'none';
   const parityMenu = new StringSelectMenuBuilder()
     .setCustomId(`roulette-parity-${raceId}`)
     .setPlaceholder('Odd / Even')
     .addOptions([
-      { label: 'No Odd/Even Bet', value: 'none' },
-      { label: 'Odd', value: 'odd' },
-      { label: 'Even', value: 'even' },
+      { label: 'No Odd/Even Bet', value: 'none', default: parityValue === 'none' },
+      { label: 'Odd', value: 'odd', default: parityValue === 'odd' },
+      { label: 'Even', value: 'even', default: parityValue === 'even' },
     ]);
 
-  const amountRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`roulette-mult-${raceId}-1`).setLabel('1x').setStyle(draft.multiplier === 1 ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`roulette-mult-${raceId}-2`).setLabel('2x').setStyle(draft.multiplier === 2 ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`roulette-mult-${raceId}-5`).setLabel('5x').setStyle(draft.multiplier === 5 ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`roulette-mult-${raceId}-10`).setLabel('10x').setStyle(draft.multiplier === 10 ? ButtonStyle.Primary : ButtonStyle.Secondary),
-  );
-
   const actionRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`roulette-mult-cycle-${raceId}`).setLabel(`Amount: ${draft.multiplier}x`).setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`roulette-place-${raceId}`).setLabel('Place Bets').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`roulette-clear-${raceId}`).setLabel('Clear Bet').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`roulette-repeat-${raceId}`).setLabel('Repeat Last Bet').setStyle(ButtonStyle.Secondary).setDisabled(!getLastBetStore(game.guildId).has(userId)),
-    new ButtonBuilder().setCustomId(`roulette-number-page-prev-${raceId}`).setLabel('Prev Numbers').setStyle(ButtonStyle.Secondary).setDisabled(draft.numberPage === 0),
-    new ButtonBuilder().setCustomId(`roulette-number-page-next-${raceId}`).setLabel('Next Numbers').setStyle(ButtonStyle.Secondary).setDisabled(draft.numberPage >= NUMBER_PAGES.length - 1),
   );
 
   return [
-    new ActionRowBuilder().addComponents(numberMenu),
+    new ActionRowBuilder().addComponents(lowNumberMenu),
+    new ActionRowBuilder().addComponents(highNumberMenu),
     new ActionRowBuilder().addComponents(colorMenu),
     new ActionRowBuilder().addComponents(parityMenu),
-    amountRow,
     actionRow,
   ];
 }
@@ -297,7 +279,7 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
       }
 
       const userId = componentInteraction.user.id;
-      if (!game.drafts.has(userId)) game.drafts.set(userId, { number: null, color: null, parity: null, multiplier: 1, colorName: null, parityName: null, numberPage: 0 });
+      if (!game.drafts.has(userId)) game.drafts.set(userId, { number: null, color: null, parity: null, multiplier: 1, colorName: null, parityName: null });
       const draft = game.drafts.get(userId);
 
       if (id.startsWith(`roulette-join-`)) {
@@ -309,10 +291,9 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         return;
       }
 
-      if (id.startsWith(`roulette-number-select-`)) {
+      if (id.startsWith(`roulette-number-low-`)) {
         const value = componentInteraction.values?.[0];
         draft.number = value === 'none' ? null : value;
-        draft.numberPage = findNumberPage(draft.number);
         await componentInteraction.update({
           embeds: [buildBetEmbed(game, userId, draft, draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.')],
           components: buildBetComponents(game, userId, draft),
@@ -320,19 +301,11 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         return;
       }
 
-      if (id.startsWith(`roulette-number-page-prev-`)) {
-        draft.numberPage = clampNumberPage((draft.numberPage ?? 0) - 1);
+      if (id.startsWith(`roulette-number-high-`)) {
+        const value = componentInteraction.values?.[0];
+        draft.number = HIGH_NUMBER_OPTIONS.includes(value) ? value : draft.number;
         await componentInteraction.update({
-          embeds: [buildBetEmbed(game, userId, draft, `Showing number page ${draft.numberPage + 1}/${NUMBER_PAGES.length}.`)],
-          components: buildBetComponents(game, userId, draft),
-        });
-        return;
-      }
-
-      if (id.startsWith(`roulette-number-page-next-`)) {
-        draft.numberPage = clampNumberPage((draft.numberPage ?? 0) + 1);
-        await componentInteraction.update({
-          embeds: [buildBetEmbed(game, userId, draft, `Showing number page ${draft.numberPage + 1}/${NUMBER_PAGES.length}.`)],
+          embeds: [buildBetEmbed(game, userId, draft, draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.')],
           components: buildBetComponents(game, userId, draft),
         });
         return;
@@ -354,6 +327,13 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         return;
       }
 
+      if (id.startsWith(`roulette-mult-cycle-`)) {
+        const currentIndex = MULTIPLIERS.indexOf(draft.multiplier);
+        draft.multiplier = MULTIPLIERS[(currentIndex + 1) % MULTIPLIERS.length];
+        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft)], components: buildBetComponents(game, userId, draft) });
+        return;
+      }
+
       if (id.startsWith(`roulette-mult-`)) {
         const parts = id.split('-');
         draft.multiplier = Number(parts[parts.length - 1]) || 1;
@@ -367,7 +347,6 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         draft.colorName = null;
         draft.parity = null;
         draft.parityName = null;
-        draft.numberPage = 0;
         draft.multiplier = 1;
         await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Bet cleared.')], components: buildBetComponents(game, userId, draft) });
         return;
@@ -378,7 +357,6 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         if (saved) {
           Object.assign(draft, saved);
         }
-        draft.numberPage = findNumberPage(draft.number);
         await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, saved ? 'Loaded your last bet.' : 'No previous bet found.')], components: buildBetComponents(game, userId, draft) });
         return;
       }
@@ -489,9 +467,11 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         });
       }
 
-      const history = getHistory(game.guildId);
-      history.unshift({ value: result.value, colorName: result.colorName, colorEmoji: result.colorEmoji });
-      if (history.length > 10) history.length = 10;
+      rouletteResultStore.recordResult(game.guildId, {
+        value: result.value,
+        colorName: result.colorName,
+        colorEmoji: result.colorEmoji,
+      });
 
       const resultEmbed = new EmbedBuilder()
         .setColor(resolveEmbedColour(game.guildId, 0x6366f1))
