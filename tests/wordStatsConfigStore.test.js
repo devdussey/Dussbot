@@ -256,6 +256,67 @@ test('parseBackfillPayload supports txt_only_scan style exports', async (t) => {
   assert.equal(entries.find((entry) => entry.userId === '222222222222222222')?.count, 5);
 });
 
+test('parseBackfillPayload supports word_stats export with summary + words.perUser', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
+  const prev = process.env.DISPHORIABOT_DATA_DIR;
+  process.env.DISPHORIABOT_DATA_DIR = tmp;
+  dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
+
+  t.after(() => {
+    if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
+    else delete process.env.DISPHORIABOT_DATA_DIR;
+    dataDir.resetDataDirCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const store = freshStore();
+  const entries = store.parseBackfillPayload({
+    guilds: {
+      g1: {
+        summary: { totalMessages: 3, totalWords: 4, uniqueWords: 2 },
+        users: {
+          u1: { messageCount: 2, lastKnownTag: 'alpha' },
+          u2: { messageCount: 1, lastKnownTag: 'beta' },
+        },
+        words: {
+          hello: {
+            count: 3,
+            perUser: {
+              u1: { count: 2, lastKnownTag: 'alpha' },
+              u2: { count: 1, lastKnownTag: 'beta' },
+            },
+          },
+          world: {
+            count: 1,
+            perUser: {
+              u1: { count: 1 },
+            },
+          },
+        },
+      },
+    },
+  }, 'g1');
+
+  assert.equal(entries.length, 2);
+  assert.equal(entries.find((entry) => entry.userId === 'summary'), undefined);
+  assert.equal(entries.find((entry) => entry.userId === 'u1')?.count, 2);
+  assert.equal(entries.find((entry) => entry.userId === 'u1')?.words?.hello, 2);
+  assert.equal(entries.find((entry) => entry.userId === 'u1')?.words?.world, 1);
+  assert.equal(entries.find((entry) => entry.userId === 'u2')?.count, 1);
+  assert.equal(entries.find((entry) => entry.userId === 'u2')?.words?.hello, 1);
+
+  const imported = await store.importBackfill('g1', entries);
+  assert.equal(imported.importedUsers, 2);
+  assert.equal(imported.importedMessages, 3);
+
+  const topWords = store.getTopWords('g1');
+  assert.equal(topWords.entries[0].word, 'hello');
+  assert.equal(topWords.entries[0].totalCount, 3);
+  assert.equal(topWords.entries[1].word, 'world');
+  assert.equal(topWords.entries[1].totalCount, 1);
+});
+
 test('recordTrackedMessage stores word usage and media breakdowns for queries', async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
   const prev = process.env.DISPHORIABOT_DATA_DIR;

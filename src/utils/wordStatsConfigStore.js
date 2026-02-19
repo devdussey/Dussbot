@@ -392,6 +392,10 @@ function parseBackfillPayload(payload, guildId) {
     'data',
     'meta',
     'metadata',
+    'summary',
+    'words',
+    'wordSummary',
+    'word_summary',
     'version',
     'exportedAt',
     'generatedAt',
@@ -608,6 +612,54 @@ function parseBackfillPayload(payload, guildId) {
     return null;
   };
 
+  const mergeWordSummaryByUser = (target, container) => {
+    if (!target || typeof target !== 'object') return;
+    if (!container || typeof container !== 'object' || Array.isArray(container)) return;
+
+    const wordsContainer = container.words && typeof container.words === 'object' && !Array.isArray(container.words)
+      ? container.words
+      : null;
+    if (!wordsContainer) return;
+
+    for (const [rawWord, rawWordBucket] of Object.entries(wordsContainer)) {
+      const normalizedWord = normalizeWordToken(rawWord);
+      if (!normalizedWord) continue;
+      if (!rawWordBucket || typeof rawWordBucket !== 'object' || Array.isArray(rawWordBucket)) continue;
+
+      const perUser = rawWordBucket.perUser && typeof rawWordBucket.perUser === 'object' && !Array.isArray(rawWordBucket.perUser)
+        ? rawWordBucket.perUser
+        : rawWordBucket.per_user && typeof rawWordBucket.per_user === 'object' && !Array.isArray(rawWordBucket.per_user)
+          ? rawWordBucket.per_user
+          : null;
+      if (!perUser) continue;
+
+      for (const [rawUserId, rawUserBucket] of Object.entries(perUser)) {
+        const normalizedUserId = normalizeUserId(rawUserId)
+          || extractUserId(rawUserBucket);
+        if (!normalizedUserId) continue;
+        if (!target[normalizedUserId] || typeof target[normalizedUserId] !== 'object') continue;
+
+        if (!target[normalizedUserId].words || typeof target[normalizedUserId].words !== 'object' || Array.isArray(target[normalizedUserId].words)) {
+          target[normalizedUserId].words = {};
+        }
+
+        const perUserCount = toCount(
+          rawUserBucket && typeof rawUserBucket === 'object'
+            ? (rawUserBucket.count ?? rawUserBucket.value ?? rawUserBucket.uses ?? rawUserBucket.total)
+            : rawUserBucket,
+        );
+        if (perUserCount <= 0) continue;
+
+        target[normalizedUserId].words[normalizedWord] = (target[normalizedUserId].words[normalizedWord] || 0) + perUserCount;
+
+        const tag = extractTag(rawUserBucket);
+        if (tag && !target[normalizedUserId].lastKnownTag) {
+          target[normalizedUserId].lastKnownTag = tag;
+        }
+      }
+    }
+  };
+
   const summarizeMessageArray = (messages) => {
     if (!Array.isArray(messages) || !messages.length) return null;
     const seenIds = new Set();
@@ -790,25 +842,30 @@ function parseBackfillPayload(payload, guildId) {
 
   const collected = {};
   collectFromContainer(collected, payload);
+  mergeWordSummaryByUser(collected, payload);
 
   if (payload.guilds && typeof payload.guilds === 'object') {
     const guildPayload = guildId ? payload.guilds[guildId] : null;
     if (guildPayload && typeof guildPayload === 'object') {
       collectFromContainer(collected, guildPayload, { includeAsMap: true });
+      mergeWordSummaryByUser(collected, guildPayload);
     } else if (!Object.keys(collected).length) {
       const guildValues = Object.values(payload.guilds).filter((value) => value && typeof value === 'object');
       if (guildValues.length === 1) {
         collectFromContainer(collected, guildValues[0], { includeAsMap: true });
+        mergeWordSummaryByUser(collected, guildValues[0]);
       }
     }
   }
 
   if (payload.data && typeof payload.data === 'object') {
     collectFromContainer(collected, payload.data, { includeAsMap: true });
+    mergeWordSummaryByUser(collected, payload.data);
     if (payload.data.guilds && typeof payload.data.guilds === 'object') {
       const dataGuildPayload = guildId ? payload.data.guilds[guildId] : null;
       if (dataGuildPayload && typeof dataGuildPayload === 'object') {
         collectFromContainer(collected, dataGuildPayload, { includeAsMap: true });
+        mergeWordSummaryByUser(collected, dataGuildPayload);
       }
     }
   }
