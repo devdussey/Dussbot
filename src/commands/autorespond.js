@@ -8,6 +8,7 @@ const {
   ButtonStyle,
 } = require('discord.js');
 const store = require('../utils/autoRespondStore');
+const { isLikelyExpiringDiscordUrl } = require('../utils/mediaAttachment');
 
 const RULES_PER_PAGE = 5;
 const LIST_PREFIX = 'autorespond:list';
@@ -241,10 +242,10 @@ module.exports = {
       const trimmedMediaUrl = mediaUrl.trim();
       const trimmedStickerInput = stickerInput.trim();
 
+      let parsedMediaUrl = null;
       if (trimmedMediaUrl) {
-        let parsed = null;
-        try { parsed = new URL(trimmedMediaUrl); } catch (_) {}
-        if (!parsed || !['http:', 'https:'].includes(parsed.protocol)) {
+        try { parsedMediaUrl = new URL(trimmedMediaUrl); } catch (_) {}
+        if (!parsedMediaUrl || !['http:', 'https:'].includes(parsedMediaUrl.protocol)) {
           return interaction.editReply({ content: 'The `media_url` must be a valid `http` or `https` URL.' });
         }
       }
@@ -280,7 +281,10 @@ module.exports = {
         rule.mediaUrl ? `media ${rule.mediaUrl}` : null,
         rule.stickerId ? `sticker ${sticker?.name || rule.stickerId}` : null,
       ].filter(Boolean).join(' + ');
-      const addedLine = `Added rule #${rule.id}: when ${match}${caseSensitive ? ' (case)' : ''} '${trigger}'${rule.channelId ? ` in <#${rule.channelId}>` : ''} -> ${responseLabel}.`;
+      const mediaUrlWarning = parsedMediaUrl && isLikelyExpiringDiscordUrl(parsedMediaUrl)
+        ? ' Warning: that looks like an expiring Discord CDN link. Prefer a permanent media URL so autorespond does not break later.'
+        : '';
+      const addedLine = `Added rule #${rule.id}: when ${match}${caseSensitive ? ' (case)' : ''} '${trigger}'${rule.channelId ? ` in <#${rule.channelId}>` : ''} -> ${responseLabel}.${mediaUrlWarning}`;
       const chunks = chunkLines([addedLine], 1850);
       if (chunks.length === 1) {
         return interaction.editReply({ content: chunks[0] });

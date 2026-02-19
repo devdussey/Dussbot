@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const store = require('../utils/autoRespondStore');
+const { fetchMediaAttachment } = require('../utils/mediaAttachment');
 
 const responseCooldowns = new Map();
 const GIF_RESPONSE_COOLDOWN_MS = 7000;
@@ -64,11 +65,16 @@ module.exports = {
             continue;
           }
 
+          const mediaAttachment = mediaUrl ? await fetchMediaAttachment(mediaUrl) : null;
           const payload = {
             ...(content ? { content } : {}),
-            ...(mediaUrl ? { files: [mediaUrl] } : {}),
+            ...(mediaAttachment ? { files: [mediaAttachment] } : {}),
             ...(stickerId ? { stickers: [stickerId] } : {}),
           };
+          if (!payload.content && !payload.files && !payload.stickers) {
+            continue;
+          }
+
           try {
             await message.reply(payload);
           } catch (_) {
@@ -76,7 +82,7 @@ module.exports = {
             if (!stickerId) continue;
             const fallbackPayload = {
               ...(content ? { content } : {}),
-              ...(mediaUrl ? { files: [mediaUrl] } : {}),
+              ...(mediaAttachment ? { files: [mediaAttachment] } : {}),
             };
             if (fallbackPayload.content || fallbackPayload.files) {
               try { await message.reply(fallbackPayload); } catch (_) {}
