@@ -564,6 +564,16 @@ module.exports = {
 
         // Handle select menus
         if (interaction.isStringSelectMenu()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('autorespond:list:')) {
+                try {
+                    const handled = await autorespondCommand.handleSelectMenu(interaction);
+                    if (handled) return;
+                } catch (err) {
+                    console.error('Failed to handle autorespond select menu:', err);
+                    try { await interaction.reply({ content: 'Autorespond action failed. Please try again.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
                 try {
                     const handled = await rupeeStoreCommand.handleStoreStringSelect(interaction);
@@ -1406,6 +1416,16 @@ module.exports = {
 
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('autorespond:list:editmodal:')) {
+                try {
+                    const handled = await autorespondCommand.handleModalSubmit(interaction);
+                    if (handled) return;
+                } catch (err) {
+                    console.error('Failed to handle autorespond modal submit:', err);
+                    try { await interaction.reply({ content: 'Autorespond action failed. Please try again.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
                 try {
                     const handled = await rupeeStoreCommand.handleStoreModalSubmit(interaction);

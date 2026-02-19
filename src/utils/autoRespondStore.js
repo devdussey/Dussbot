@@ -34,13 +34,22 @@ function getGuildConfig(guildId) {
     persist();
   }
   const cfg = cache[guildId];
+  let changed = false;
   if (typeof cfg.enabled !== 'boolean') cfg.enabled = false;
   if (!Array.isArray(cfg.rules)) cfg.rules = [];
   if (!cfg.nextId || typeof cfg.nextId !== 'number') cfg.nextId = 1;
   for (const rule of cfg.rules) {
     if (!rule || typeof rule !== 'object') continue;
-    if (typeof rule.stickerId !== 'string') rule.stickerId = '';
+    if (typeof rule.stickerId !== 'string') {
+      rule.stickerId = '';
+      changed = true;
+    }
+    if (!Number.isFinite(rule.createdAt) || Number(rule.createdAt) <= 0) {
+      rule.createdAt = Date.now();
+      changed = true;
+    }
   }
+  if (changed) persist();
   return cfg;
 }
 
@@ -68,10 +77,47 @@ function addRule(guildId, rule) {
     match: (rule.match || 'contains'),
     caseSensitive: !!rule.caseSensitive,
     channelId: rule.channelId || null,
+    createdAt: Date.now(),
   };
   cfg.rules.push(cleaned);
   persist();
   return cleaned;
+}
+
+function getRule(guildId, id) {
+  const cfg = getGuildConfig(guildId);
+  return cfg.rules.find(r => r.id === Number(id)) || null;
+}
+
+function updateRule(guildId, id, updates = {}) {
+  const cfg = getGuildConfig(guildId);
+  const rule = cfg.rules.find(r => r.id === Number(id));
+  if (!rule) return null;
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'trigger')) {
+    rule.trigger = String(updates.trigger || '').slice(0, 300);
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'reply')) {
+    rule.reply = String(updates.reply || '').slice(0, 2000);
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'mediaUrl')) {
+    rule.mediaUrl = String(updates.mediaUrl || '').slice(0, 1000);
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'stickerId')) {
+    rule.stickerId = String(updates.stickerId || '').trim().slice(0, 64);
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'match')) {
+    rule.match = String(updates.match || 'contains');
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'caseSensitive')) {
+    rule.caseSensitive = !!updates.caseSensitive;
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'channelId')) {
+    rule.channelId = updates.channelId || null;
+  }
+
+  persist();
+  return rule;
 }
 
 function removeRule(guildId, id) {
@@ -87,6 +133,8 @@ module.exports = {
   getGuildConfig,
   setEnabled,
   listRules,
+  getRule,
   addRule,
+  updateRule,
   removeRule,
 };

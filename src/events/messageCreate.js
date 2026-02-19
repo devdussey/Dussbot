@@ -20,6 +20,20 @@ function canSendGifResponse(guildId, channelId, ruleId) {
   return true;
 }
 
+function logMediaError(message, rule, mediaUrl, reason, err = null) {
+  const guildId = message?.guild?.id || 'unknown-guild';
+  const channelId = message?.channel?.id || 'unknown-channel';
+  const ruleId = rule?.id ?? 'unknown-rule';
+  if (err) {
+    console.error(
+      `Autorespond media error (${reason}) guild=${guildId} channel=${channelId} rule=${ruleId} url=${mediaUrl}`,
+      err,
+    );
+    return;
+  }
+  console.error(`Autorespond media error (${reason}) guild=${guildId} channel=${channelId} rule=${ruleId} url=${mediaUrl}`);
+}
+
 module.exports = {
   name: Events.MessageCreate,
   async execute(message) {
@@ -65,7 +79,16 @@ module.exports = {
             continue;
           }
 
-          const mediaAttachment = mediaUrl ? await fetchMediaAttachment(mediaUrl) : null;
+          let mediaAttachment = null;
+          if (mediaUrl) {
+            mediaAttachment = await fetchMediaAttachment(mediaUrl);
+            if (!mediaAttachment) {
+              // Broken or unsupported media URL: do not send any autoresponse payload for this rule.
+              logMediaError(message, rule, mediaUrl, 'fetch_failed_or_invalid_media');
+              continue;
+            }
+          }
+
           const payload = {
             ...(content ? { content } : {}),
             ...(mediaAttachment ? { files: [mediaAttachment] } : {}),
@@ -77,7 +100,24 @@ module.exports = {
 
           try {
             await message.reply(payload);
-          } catch (_) {
+          } catch (err) {
+            if (mediaAttachment) {
+              if (stickerId) {
+                const mediaOnlyPayload = {
+                  ...(content ? { content } : {}),
+                  files: [mediaAttachment],
+                };
+                try {
+                  await message.reply(mediaOnlyPayload);
+                } catch (fallbackErr) {
+                  logMediaError(message, rule, mediaUrl, 'send_failed_with_or_without_sticker', fallbackErr);
+                }
+              } else {
+                logMediaError(message, rule, mediaUrl, 'send_failed', err);
+              }
+              continue;
+            }
+
             // If the sticker is invalid/deleted, still send text/media when possible.
             if (!stickerId) continue;
             const fallbackPayload = {
