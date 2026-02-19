@@ -135,6 +135,7 @@ function normalizeHorseRaceLanes(game) {
 }
 
 function buildHorseRaceLobbyEmbed(game) {
+  const competitorCount = game.participants.size;
   const competitors = game.participants.size
     ? [...game.participants.values()]
       .map((horse) => `${horse.racerEmoji} - ${escapeMarkdown(horse.shortName || horse.displayName || 'Racer').slice(0, 32)}`)
@@ -145,10 +146,11 @@ function buildHorseRaceLobbyEmbed(game) {
     .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
     .setTitle('🏇 Horse Race Lobby 🏇')
     .setDescription([
-      '**Competitors**',
+      `**Competitors (${competitorCount}/${HORSE_RACE_MAX_PLAYERS})**`,
       competitors,
       '',
       `Entry Cost - ${formatCurrencyAmount(game.guildId, HORSE_RACE_ENTRY_COST)}`,
+      `Minimum Players - ${HORSE_RACE_MIN_PLAYERS}`,
     ].join('\n'))
     .setFooter({ text: `Race Begins in ${game.secondsLeft} Seconds` });
 }
@@ -705,6 +707,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
     embeds: [buildHorseRaceLobbyEmbed(game)],
     components: buildHorseRaceLobbyComponents(game),
     allowedMentions: { parse: [] },
+    ephemeral: false,
   };
 
   try {
