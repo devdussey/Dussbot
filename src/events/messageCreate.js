@@ -1,6 +1,10 @@
 const { Events } = require('discord.js');
 const store = require('../utils/autoRespondStore');
 const { fetchMediaAttachment } = require('../utils/mediaAttachment');
+const {
+  loadStoredMediaAttachment,
+  storeRuleMediaBuffer,
+} = require('../utils/autoRespondMediaStore');
 
 const responseCooldowns = new Map();
 const mediaErrorCooldowns = new Map();
@@ -86,16 +90,42 @@ module.exports = {
         if (matched) {
           const content = String(rule.reply || '').slice(0, 2000).trim();
           const mediaUrl = String(rule.mediaUrl || '').trim();
+          const mediaStoredPath = String(rule.mediaStoredPath || '').trim();
           const stickerId = String(rule.stickerId || '').trim();
-          if (!content && !mediaUrl && !stickerId) continue;
+          if (!content && !mediaUrl && !mediaStoredPath && !stickerId) continue;
 
           if (mediaUrl && isGifLikeUrl(mediaUrl) && !canSendGifResponse(message.guild.id, message.channel.id, rule.id)) {
             continue;
           }
 
-          const mediaAttachment = mediaUrl ? await fetchMediaAttachment(mediaUrl) : null;
-          if (mediaUrl && !mediaAttachment) {
-            logMediaError(message, rule, mediaUrl, 'fetch_failed_or_invalid_media');
+          let mediaAttachment = mediaStoredPath ? await loadStoredMediaAttachment(rule) : null;
+          if (mediaStoredPath && !mediaAttachment) {
+            logMediaError(message, rule, mediaStoredPath, 'stored_media_missing_or_unreadable');
+          }
+
+          if (!mediaAttachment && mediaUrl) {
+            mediaAttachment = await fetchMediaAttachment(mediaUrl);
+            if (!mediaAttachment) {
+              logMediaError(message, rule, mediaUrl, 'fetch_failed_or_invalid_media');
+            } else {
+              try {
+                const storedMedia = await storeRuleMediaBuffer(
+                  message.guild.id,
+                  rule.id,
+                  mediaAttachment.attachment,
+                  mediaAttachment.name,
+                );
+                if (storedMedia) {
+                  const updated = store.updateRule(message.guild.id, rule.id, storedMedia);
+                  if (updated) {
+                    rule.mediaStoredPath = updated.mediaStoredPath;
+                    rule.mediaStoredName = updated.mediaStoredName;
+                  }
+                }
+              } catch (storeErr) {
+                logMediaError(message, rule, mediaUrl, 'cache_store_failed', storeErr);
+              }
+            }
           }
           const payload = {
             ...(content ? { content } : {}),
@@ -118,10 +148,10 @@ module.exports = {
                 try {
                   await message.reply(mediaOnlyPayload);
                 } catch (fallbackErr) {
-                  logMediaError(message, rule, mediaUrl, 'send_failed_with_or_without_sticker', fallbackErr);
+                  logMediaError(message, rule, mediaUrl || mediaStoredPath, 'send_failed_with_or_without_sticker', fallbackErr);
                 }
               } else {
-                logMediaError(message, rule, mediaUrl, 'send_failed', err);
+                logMediaError(message, rule, mediaUrl || mediaStoredPath, 'send_failed', err);
               }
               continue;
             }

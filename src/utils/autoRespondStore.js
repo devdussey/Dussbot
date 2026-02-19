@@ -1,6 +1,11 @@
 const fs = require('fs');
 const { ensureFileSync, resolveDataPath, writeJsonSync } = require('./dataDir');
 const { normalizeMediaUrlForStorage } = require('./mediaAttachment');
+const {
+  deleteStoredMediaSync,
+  sanitizeStoredMediaName,
+  sanitizeStoredMediaPath,
+} = require('./autoRespondMediaStore');
 
 const STORE_FILE = 'autorespond.json';
 
@@ -54,6 +59,20 @@ function getGuildConfig(guildId) {
       rule.mediaUrl = normalizedMediaUrl.slice(0, 1000);
       changed = true;
     }
+    const normalizedStoredPath = sanitizeStoredMediaPath(rule.mediaStoredPath || '');
+    if (typeof rule.mediaStoredPath !== 'string' || rule.mediaStoredPath !== normalizedStoredPath) {
+      rule.mediaStoredPath = normalizedStoredPath;
+      changed = true;
+    }
+    const normalizedStoredName = sanitizeStoredMediaName(rule.mediaStoredName || '');
+    if (typeof rule.mediaStoredName !== 'string' || rule.mediaStoredName !== normalizedStoredName) {
+      rule.mediaStoredName = normalizedStoredName;
+      changed = true;
+    }
+    if (!rule.mediaStoredPath && rule.mediaStoredName) {
+      rule.mediaStoredName = '';
+      changed = true;
+    }
   }
   if (changed) persist();
   return cfg;
@@ -79,12 +98,15 @@ function addRule(guildId, rule) {
     trigger: String(rule.trigger || '').slice(0, 300),
     reply: String(rule.reply || '').slice(0, 2000),
     mediaUrl: normalizeMediaUrlForStorage(rule.mediaUrl || '').slice(0, 1000),
+    mediaStoredPath: sanitizeStoredMediaPath(rule.mediaStoredPath || ''),
+    mediaStoredName: sanitizeStoredMediaName(rule.mediaStoredName || ''),
     stickerId: String(rule.stickerId || '').trim().slice(0, 64),
     match: (rule.match || 'contains'),
     caseSensitive: !!rule.caseSensitive,
     channelId: rule.channelId || null,
     createdAt: Date.now(),
   };
+  if (!cleaned.mediaStoredPath) cleaned.mediaStoredName = '';
   cfg.rules.push(cleaned);
   persist();
   return cleaned;
@@ -99,6 +121,7 @@ function updateRule(guildId, id, updates = {}) {
   const cfg = getGuildConfig(guildId);
   const rule = cfg.rules.find(r => r.id === Number(id));
   if (!rule) return null;
+  const previousStoredPath = sanitizeStoredMediaPath(rule.mediaStoredPath || '');
 
   if (Object.prototype.hasOwnProperty.call(updates, 'trigger')) {
     rule.trigger = String(updates.trigger || '').slice(0, 300);
@@ -121,6 +144,18 @@ function updateRule(guildId, id, updates = {}) {
   if (Object.prototype.hasOwnProperty.call(updates, 'channelId')) {
     rule.channelId = updates.channelId || null;
   }
+  if (Object.prototype.hasOwnProperty.call(updates, 'mediaStoredPath')) {
+    rule.mediaStoredPath = sanitizeStoredMediaPath(updates.mediaStoredPath || '');
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'mediaStoredName')) {
+    rule.mediaStoredName = sanitizeStoredMediaName(updates.mediaStoredName || '');
+  }
+  if (!rule.mediaStoredPath) {
+    rule.mediaStoredName = '';
+  }
+  if (previousStoredPath && previousStoredPath !== rule.mediaStoredPath) {
+    deleteStoredMediaSync(previousStoredPath);
+  }
 
   persist();
   return rule;
@@ -128,9 +163,17 @@ function updateRule(guildId, id, updates = {}) {
 
 function removeRule(guildId, id) {
   const cfg = getGuildConfig(guildId);
+  const targetId = Number(id);
+  const removedRules = cfg.rules.filter(r => r.id === targetId);
   const before = cfg.rules.length;
-  cfg.rules = cfg.rules.filter(r => r.id !== Number(id));
+  cfg.rules = cfg.rules.filter(r => r.id !== targetId);
   const removed = cfg.rules.length !== before;
+  if (removed) {
+    for (const rule of removedRules) {
+      if (!rule || typeof rule !== 'object') continue;
+      deleteStoredMediaSync(rule.mediaStoredPath || '');
+    }
+  }
   if (removed) persist();
   return removed;
 }

@@ -12,6 +12,11 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const store = require('../utils/autoRespondStore');
+const { fetchMediaAttachment } = require('../utils/mediaAttachment');
+const {
+  deleteStoredMediaSync,
+  storeRuleMediaBuffer,
+} = require('../utils/autoRespondMediaStore');
 
 const RULES_PER_PAGE = 5;
 const LIST_PREFIX = 'autorespond:list';
@@ -58,9 +63,20 @@ function formatChannelLabel(channelId) {
 function buildContentSummary(rule, max = 75) {
   const parts = [];
   if (rule.reply) parts.push(`text: "${truncateText(String(rule.reply).replace(/\n/g, ' '), 40)}"`);
-  if (rule.mediaUrl) parts.push('media');
+  if (rule.mediaUrl || rule.mediaStoredPath) parts.push('media');
   if (rule.stickerId) parts.push('sticker');
   return truncateText(parts.join(' + ') || 'None', max);
+}
+
+function hasRuleMedia(rule) {
+  const mediaUrl = String(rule?.mediaUrl || '').trim();
+  const mediaStoredPath = String(rule?.mediaStoredPath || '').trim();
+  return Boolean(mediaUrl || mediaStoredPath);
+}
+
+function resolveAttachmentSourceUrl(attachment) {
+  if (!attachment) return '';
+  return String(attachment.url || attachment.proxyURL || '').trim();
 }
 
 function chunkLines(lines, maxLength = 1900) {
@@ -228,7 +244,7 @@ function buildRuleDetailView(guildId, ruleId, page = 0) {
 
   const responseTypes = [];
   if (rule.reply) responseTypes.push('text');
-  if (rule.mediaUrl) responseTypes.push('media');
+  if (hasRuleMedia(rule)) responseTypes.push('media');
   if (rule.stickerId) responseTypes.push('sticker');
 
   const embed = new EmbedBuilder()
@@ -241,6 +257,7 @@ function buildRuleDetailView(guildId, ruleId, page = 0) {
       { name: 'Response Types', value: responseTypes.join(', ') || 'None', inline: false },
       { name: 'Reply Content', value: truncateText(rule.reply, 1020), inline: false },
       { name: 'Media URL', value: rule.mediaUrl ? truncateText(rule.mediaUrl, 1020) : 'None', inline: false },
+      { name: 'Stored Media', value: rule.mediaStoredPath ? `\`${truncateText(rule.mediaStoredPath, 1010)}\`` : 'None', inline: false },
       { name: 'Sticker', value: rule.stickerId ? `ID: \`${rule.stickerId}\`` : 'None', inline: false },
     )
     .setFooter({ text: `From page ${safePage + 1}` });
@@ -386,6 +403,11 @@ module.exports = {
             .setDescription('Direct image or GIF URL to attach')
             .setRequired(false),
         )
+        .addAttachmentOption(opt =>
+          opt.setName('media_file')
+            .setDescription('Upload media to store permanently for this rule')
+            .setRequired(false),
+        )
         .addStringOption(opt =>
           opt.setName('sticker')
             .setDescription('Server sticker ID or exact sticker name')
@@ -448,6 +470,7 @@ module.exports = {
       const trigger = interaction.options.getString('trigger', true);
       const reply = interaction.options.getString('reply') || '';
       const mediaUrl = interaction.options.getString('media_url') || '';
+      const mediaFile = interaction.options.getAttachment('media_file');
       const stickerInput = interaction.options.getString('sticker') || '';
       const match = interaction.options.getString('match') || 'contains';
       const caseSensitive = interaction.options.getBoolean('case_sensitive') || false;
@@ -456,6 +479,12 @@ module.exports = {
       const trimmedReply = reply.trim();
       const trimmedMediaUrl = mediaUrl.trim();
       const trimmedStickerInput = stickerInput.trim();
+      const mediaFileUrl = resolveAttachmentSourceUrl(mediaFile);
+      const sourceMediaUrl = trimmedMediaUrl || mediaFileUrl;
+
+      if (trimmedMediaUrl && mediaFile) {
+        return interaction.editReply({ content: 'Use either `media_url` or `media_file`, not both.' });
+      }
 
       if (trimmedMediaUrl) {
         let parsed = null;
@@ -463,6 +492,9 @@ module.exports = {
         if (!parsed || !['http:', 'https:'].includes(parsed.protocol)) {
           return interaction.editReply({ content: 'The `media_url` must be a valid `http` or `https` URL.' });
         }
+      }
+      if (mediaFile && !mediaFileUrl) {
+        return interaction.editReply({ content: 'Could not read the uploaded media file URL. Please re-upload and try again.' });
       }
 
       let sticker = null;
@@ -473,19 +505,54 @@ module.exports = {
         }
       }
 
-      if (!trimmedReply && !trimmedMediaUrl && !sticker) {
-        return interaction.editReply({ content: 'Provide at least one response type: `reply`, `media_url`, or `sticker`.' });
+      if (!trimmedReply && !sourceMediaUrl && !sticker) {
+        return interaction.editReply({ content: 'Provide at least one response type: `reply`, `media_url`, `media_file`, or `sticker`.' });
+      }
+
+      let preparedMedia = null;
+      if (sourceMediaUrl) {
+        preparedMedia = await fetchMediaAttachment(sourceMediaUrl);
+        if (!preparedMedia) {
+          return interaction.editReply({
+            content: mediaFile
+              ? 'The uploaded media file could not be downloaded or is not a supported image/video format.'
+              : 'Could not download media from `media_url`, or the file type/size is not supported.',
+          });
+        }
       }
 
       const rule = store.addRule(guildId, {
         trigger,
         reply: trimmedReply,
-        mediaUrl: trimmedMediaUrl,
+        mediaUrl: sourceMediaUrl,
         stickerId: sticker?.id || '',
         match,
         caseSensitive,
         channelId: channel?.id || null,
       });
+
+      if (preparedMedia) {
+        try {
+          const storedMedia = await storeRuleMediaBuffer(
+            guildId,
+            rule.id,
+            preparedMedia.attachment,
+            mediaFile?.name || preparedMedia.name,
+          );
+          if (!storedMedia) {
+            store.removeRule(guildId, rule.id);
+            return interaction.editReply({ content: 'Failed to store autorespond media. Rule was not saved.' });
+          }
+          const updatedRule = store.updateRule(guildId, rule.id, storedMedia);
+          if (updatedRule) {
+            rule.mediaStoredPath = updatedRule.mediaStoredPath;
+            rule.mediaStoredName = updatedRule.mediaStoredName;
+          }
+        } catch (_) {
+          store.removeRule(guildId, rule.id);
+          return interaction.editReply({ content: 'Failed to store autorespond media. Rule was not saved.' });
+        }
+      }
 
       try {
         const cfg = store.getGuildConfig(guildId);
@@ -494,7 +561,7 @@ module.exports = {
 
       const responseLabel = [
         rule.reply ? `text '${rule.reply}'` : null,
-        rule.mediaUrl ? `media ${rule.mediaUrl}` : null,
+        hasRuleMedia(rule) ? `media${rule.mediaStoredPath ? ' (stored)' : ''}${rule.mediaUrl ? ` ${rule.mediaUrl}` : ''}` : null,
         rule.stickerId ? `sticker ${sticker?.name || rule.stickerId}` : null,
       ].filter(Boolean).join(' + ');
       const addedLine = `Added rule #${rule.id}: when ${match}${caseSensitive ? ' (case)' : ''} '${trigger}'${rule.channelId ? ` in <#${rule.channelId}>` : ''} -> ${responseLabel}.`;
@@ -679,7 +746,43 @@ module.exports = {
       return true;
     }
 
-    const updated = store.updateRule(interaction.guildId, ruleId, {
+    const existingMediaUrl = String(existing.mediaUrl || '').trim();
+    const shouldRefreshStoredMedia = Boolean(mediaUrl) && (mediaUrl !== existingMediaUrl || !existing.mediaStoredPath);
+
+    let preparedStoredMedia = null;
+    if (shouldRefreshStoredMedia) {
+      const fetchedMedia = await fetchMediaAttachment(mediaUrl);
+      if (!fetchedMedia) {
+        try {
+          await interaction.reply({
+            content: 'Could not download the new media URL, or the file type/size is not supported.',
+            ephemeral: true,
+          });
+        } catch (_) {}
+        return true;
+      }
+      try {
+        preparedStoredMedia = await storeRuleMediaBuffer(
+          interaction.guildId,
+          ruleId,
+          fetchedMedia.attachment,
+          fetchedMedia.name,
+        );
+      } catch (_) {
+        preparedStoredMedia = null;
+      }
+      if (!preparedStoredMedia) {
+        try {
+          await interaction.reply({
+            content: 'Could not store media for that URL. Rule was not updated.',
+            ephemeral: true,
+          });
+        } catch (_) {}
+        return true;
+      }
+    }
+
+    const updates = {
       trigger,
       reply,
       mediaUrl,
@@ -689,9 +792,22 @@ module.exports = {
         ? optionUpdates.caseSensitive
         : existing.caseSensitive,
       channelId: targetChannelId || null,
-    });
+    };
+
+    if (preparedStoredMedia) {
+      updates.mediaStoredPath = preparedStoredMedia.mediaStoredPath;
+      updates.mediaStoredName = preparedStoredMedia.mediaStoredName;
+    } else if (!mediaUrl) {
+      updates.mediaStoredPath = '';
+      updates.mediaStoredName = '';
+    }
+
+    const updated = store.updateRule(interaction.guildId, ruleId, updates);
 
     if (!updated) {
+      if (preparedStoredMedia?.mediaStoredPath) {
+        deleteStoredMediaSync(preparedStoredMedia.mediaStoredPath);
+      }
       try { await interaction.reply({ content: `Rule #${ruleId} no longer exists.`, ephemeral: true }); } catch (_) {}
       return true;
     }
