@@ -32,12 +32,12 @@ const HORSE_RACE_TRACK_START = '▀▄';
 const HORSE_RACE_TRACK_CELL = '⬩';
 const HORSE_RACE_TRACK_FINISH = ':checkered_flag:';
 const HORSE_RACE_LANE_EMOJIS = [
-  '<:PintoHorse:1474167345437085938>',
-  '<:PalominoHorse:1474166783920443543>',
-  '<:BrownHorse:1474166241781485732>',
-  '<:ChestnutHorse:1474165557640036607>',
-  '<:BlackHorse:1474164999252345063>',
-  '<:WhiteHorse:1474164277576339466>',
+  '<:PintoHorse:1474174941606711408>',
+  '<:WhiteHorse:1474174916768043172>',
+  '<:PalominoHorse:1474174915434385668>',
+  '<:ChestnutHorse:1474174913626767370>',
+  '<:BrownHorse:1474174911856513191>',
+  '<:BlackHorse:1474172071717376192>',
 ];
 
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
@@ -940,7 +940,6 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
 
       const raceMessage = await game.channel.send({
         content: buildHorseRaceRunningContent(game, horses),
-        embeds: [buildHorseRaceRunningEmbed(game, horses, 0)],
         allowedMentions: { parse: [] },
       });
 
@@ -969,7 +968,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
 
         await raceMessage.edit({
           content: buildHorseRaceRunningContent(game, horses),
-          embeds: [buildHorseRaceRunningEmbed(game, horses, step)],
+          embeds: [],
           allowedMentions: { parse: [] },
         });
       }
