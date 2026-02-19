@@ -81,7 +81,7 @@ const SHOP_ITEMS = [
     id: 'everyone_ping',
     label: 'Guilt Free @everyone ping with message',
     cost: 15,
-    description: 'Post an @everyone message in the configured announcement channel.',
+    description: 'Post a custom @everyone message in the configured main chat. (Posts as the bot)',
     kind: 'everyone_ping',
   },
 ];
