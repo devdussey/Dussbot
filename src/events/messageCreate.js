@@ -79,16 +79,7 @@ module.exports = {
             continue;
           }
 
-          let mediaAttachment = null;
-          if (mediaUrl) {
-            mediaAttachment = await fetchMediaAttachment(mediaUrl);
-            if (!mediaAttachment) {
-              // Broken or unsupported media URL: do not send any autoresponse payload for this rule.
-              logMediaError(message, rule, mediaUrl, 'fetch_failed_or_invalid_media');
-              continue;
-            }
-          }
-
+          const mediaAttachment = mediaUrl ? await fetchMediaAttachment(mediaUrl) : null;
           const payload = {
             ...(content ? { content } : {}),
             ...(mediaAttachment ? { files: [mediaAttachment] } : {}),
