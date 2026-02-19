@@ -21,8 +21,9 @@ const COUNTDOWN_STEP_SECONDS = 5;
 const SPIN_DURATION_MS = 10_000;
 const HORSE_RACE_JOIN_WINDOW_SECONDS = 60;
 const HORSE_RACE_COUNTDOWN_STEP_SECONDS = 5;
-const HORSE_RACE_TICK_DELAY_MS = 5_000;
-const HORSE_RACE_MAX_TICKS = 25;
+const HORSE_RACE_PROGRESS_UPDATE_MS = 5_000;
+const HORSE_RACE_TOTAL_DURATION_MS = 30_000;
+const HORSE_RACE_PROGRESS_STEPS = Math.floor(HORSE_RACE_TOTAL_DURATION_MS / HORSE_RACE_PROGRESS_UPDATE_MS);
 const HORSE_RACE_TRACK_SLOTS = 15;
 const HORSE_RACE_MIN_PLAYERS = 2;
 const HORSE_RACE_MAX_PLAYERS = 6;
@@ -163,7 +164,7 @@ function buildHorseRaceCancelledEmbed(game) {
     ].join('\n'));
 }
 
-function buildHorseRaceRunningEmbed(game, horses, tick) {
+function buildHorseRaceRunningEmbed(game, horses, step) {
   const lanes = horses.map((horse, index) => {
     const track = renderHorseTrack(horse.position, horse.racerEmoji || getHorseLaneEmoji(index));
     const name = escapeMarkdown(horse.shortName || horse.displayName || `Racer ${index + 1}`).slice(0, 32);
@@ -172,44 +173,15 @@ function buildHorseRaceRunningEmbed(game, horses, tick) {
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x22c55e))
-    .setTitle(`🏇 Horse Race — Turn ${tick}`)
+    .setTitle(`🏇 Horse Race — Update ${step}/${HORSE_RACE_PROGRESS_STEPS}`)
     .setDescription(lanes || '_Race is preparing..._');
 }
 
-function buildHorseRaceResultEmbed(game, finishOrder, firstPrize, secondPrize, totalPot) {
-  const podium = finishOrder.slice(0, 3).map((horse, index) => {
-    const place = index + 1;
-    const placeLabel = place === 1 ? '1st' : place === 2 ? '2nd' : '3rd';
-    const name = horse?.userId ? `<@${horse.userId}>` : escapeMarkdown(horse?.shortName || horse?.displayName || 'Racer');
-    return `${placeLabel}: ${name}`;
-  });
-
-  if (!podium.length) {
-    podium.push('1st: _Unavailable_');
-  }
-
-  const prizeLines = [];
-  if (firstPrize > 0 && finishOrder[0]) {
-    prizeLines.push(`🥇 <@${finishOrder[0].userId}> won ${formatCurrencyAmount(game.guildId, firstPrize)}.`);
-  } else {
-    prizeLines.push('🥇 No prize awarded.');
-  }
-
-  if (secondPrize > 0 && finishOrder[1]) {
-    prizeLines.push(`🥈 <@${finishOrder[1].userId}> won ${formatCurrencyAmount(game.guildId, secondPrize)}.`);
-  } else {
-    prizeLines.push('🥈 No second-place prize this round.');
-  }
-
+function buildHorseRaceResultEmbed(game, lines) {
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0xf59e0b))
-    .setTitle('🏁 Horse Race Results')
-    .setDescription([
-      podium.join('\n'),
-      '',
-      ...prizeLines,
-    ].join('\n'))
-    .setFooter({ text: `Pot: ${formatCurrencyAmount(game.guildId, totalPot)} | Racers: ${finishOrder.length}` });
+    .setTitle('🏇 🏁 Horse Race Results 🏁 🏇')
+    .setDescription(lines.join('\n\n'));
 }
 
 function buildHorseRaceLobbyComponents(game, { disabled = false } = {}) {
@@ -928,40 +900,38 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         return;
       }
 
-      if (game.message) {
-        await game.message.edit({
-          embeds: [buildHorseRaceRunningEmbed(game, horses, 0)],
-          components: [],
-          allowedMentions: { parse: [] },
-        });
-      }
+      const raceMessage = await game.channel.send({
+        embeds: [buildHorseRaceRunningEmbed(game, horses, 0)],
+        allowedMentions: { parse: [] },
+      });
 
       const finishOrder = [];
-      for (let tick = 1; tick <= HORSE_RACE_MAX_TICKS; tick += 1) {
+      for (let step = 1; step <= HORSE_RACE_PROGRESS_STEPS; step += 1) {
+        await wait(HORSE_RACE_PROGRESS_UPDATE_MS);
         for (const horse of horses) {
           if (horse.finished) continue;
-          const advance = Math.floor(Math.random() * 3) + 1;
+          const remaining = Math.max(0, (HORSE_RACE_TRACK_SLOTS - 1) - horse.position);
+          const stepsLeft = Math.max(1, HORSE_RACE_PROGRESS_STEPS - step + 1);
+          let advance = 0;
+          if (step === HORSE_RACE_PROGRESS_STEPS) {
+            advance = remaining;
+          } else {
+            const maxAllowed = Math.max(1, remaining - (stepsLeft - 1));
+            advance = Math.min(maxAllowed, (Math.floor(Math.random() * 3) + 1));
+          }
           horse.position += advance;
           if (horse.position >= HORSE_RACE_TRACK_SLOTS - 1) {
             horse.position = HORSE_RACE_TRACK_SLOTS - 1;
             horse.finished = true;
-            horse.finishTick = tick;
+            horse.finishTick = step;
             finishOrder.push(horse);
           }
         }
 
-        if (game.message) {
-          await game.message.edit({
-            embeds: [buildHorseRaceRunningEmbed(game, horses, tick)],
-            components: [],
-            allowedMentions: { parse: [] },
-          });
-        }
-
-        if (horses.every((horse) => horse.finished)) break;
-        if (tick < HORSE_RACE_MAX_TICKS) {
-          await wait(HORSE_RACE_TICK_DELAY_MS);
-        }
+        await raceMessage.edit({
+          embeds: [buildHorseRaceRunningEmbed(game, horses, step)],
+          allowedMentions: { parse: [] },
+        });
       }
 
       if (finishOrder.length < horses.length) {
@@ -998,6 +968,8 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
           amountBet: HORSE_RACE_ENTRY_COST,
           amountWon,
           net: amountWon - HORSE_RACE_ENTRY_COST,
+          didWin: finishOrder[0]?.userId === horse.userId || (secondPrize > 0 && finishOrder[1]?.userId === horse.userId),
+          didLose: !(finishOrder[0]?.userId === horse.userId || (secondPrize > 0 && finishOrder[1]?.userId === horse.userId)),
         };
       });
       try {
@@ -1006,16 +978,67 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         console.error('[Horse Race] Failed to record casino stats:', statsError);
       }
 
-      const resultEmbed = buildHorseRaceResultEmbed(game, finishOrder, firstPrize, secondPrize, totalPot);
-      if (game.message) {
-        await game.message.edit({
-          embeds: [resultEmbed],
-          components: [],
-          allowedMentions: { parse: [] },
-        });
-      } else {
-        await game.channel.send({ embeds: [resultEmbed], allowedMentions: { parse: [] } });
+      const winner = finishOrder[0] || null;
+      const second = finishOrder[1] || null;
+      const third = finishOrder[2] || null;
+      const winnerRecord = winner ? casinoStatsStore.getUserGameRecord(game.guildId, winner.userId, 'horse_race') : { wins: 0, losses: 0 };
+      const secondRecord = second ? casinoStatsStore.getUserGameRecord(game.guildId, second.userId, 'horse_race') : { wins: 0, losses: 0 };
+      const thirdRecord = third ? casinoStatsStore.getUserGameRecord(game.guildId, third.userId, 'horse_race') : { wins: 0, losses: 0 };
+
+      const resultLines = [];
+      if (winner) {
+        resultLines.push(`🥇 - <@${winner.userId}> _Amount Won ${formatCurrencyAmount(game.guildId, firstPrize)}_ (New Record in ${winnerRecord.wins}-${winnerRecord.losses})`);
       }
+      if (second) {
+        const secondPrefix = horses.length <= 3 ? '2nd' : '🥈';
+        const secondAmountText = secondPrize > 0 ? ` _Amount Won ${formatCurrencyAmount(game.guildId, secondPrize)}_` : '';
+        resultLines.push(`${secondPrefix} - <@${second.userId}>${secondAmountText} (New Record in ${secondRecord.wins}-${secondRecord.losses})`);
+      }
+      if (third) {
+        resultLines.push(`3rd - <@${third.userId}> (New Record in ${thirdRecord.wins}-${thirdRecord.losses})`);
+      }
+
+      const resultEmbed = buildHorseRaceResultEmbed(game, resultLines.length ? resultLines : ['No final results available.']);
+      const playAgainId = `horserace-play-again-${Date.now()}`;
+      await raceMessage.edit({
+        embeds: [resultEmbed],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(playAgainId).setLabel('Play Again').setStyle(ButtonStyle.Success),
+          ),
+        ],
+        allowedMentions: { parse: [] },
+      });
+
+      activeGames.delete(key);
+      gameDeleted = true;
+
+      const playAgainCollector = raceMessage.createMessageComponentCollector({
+        time: 120_000,
+        max: 1,
+        filter: (buttonInteraction) => buttonInteraction.customId === playAgainId,
+      });
+
+      playAgainCollector.on('collect', async (buttonInteraction) => {
+        if (activeGames.has(gameKey(buttonInteraction.guildId, buttonInteraction.channelId))) {
+          await buttonInteraction.reply({ content: 'A casino game is already active in this channel.', ephemeral: true });
+          return;
+        }
+        await buttonInteraction.deferUpdate();
+        await runHorseRaceGame(buttonInteraction, { initiatedByButton: true });
+      });
+
+      playAgainCollector.on('end', async () => {
+        try {
+          await raceMessage.edit({
+            components: [
+              new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(playAgainId).setLabel('Play Again').setStyle(ButtonStyle.Secondary).setDisabled(true),
+              ),
+            ],
+          });
+        } catch (_) {}
+      });
     } catch (error) {
       console.error('[Horse Race] Round close flow failed', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, error);
     } finally {

@@ -21,6 +21,24 @@ function normalizeTopPayout(value) {
   };
 }
 
+function normalizeWinLossRecord(value) {
+  const raw = value && typeof value === 'object' ? value : {};
+  return {
+    wins: toWholeNumber(raw.wins),
+    losses: toWholeNumber(raw.losses),
+  };
+}
+
+function normalizeGameRecordMap(value) {
+  const raw = value && typeof value === 'object' ? value : {};
+  const out = {};
+  for (const [game, record] of Object.entries(raw)) {
+    if (!game) continue;
+    out[game] = normalizeWinLossRecord(record);
+  }
+  return out;
+}
+
 function normalizeUserStats(value) {
   const raw = value && typeof value === 'object' ? value : {};
   return {
@@ -28,6 +46,7 @@ function normalizeUserStats(value) {
     totalLost: toWholeNumber(raw.totalLost),
     totalBet: toWholeNumber(raw.totalBet),
     totalPayout: toWholeNumber(raw.totalPayout),
+    games: normalizeGameRecordMap(raw.games),
   };
 }
 
@@ -94,6 +113,7 @@ function ensureUser(guild, userId) {
       totalLost: 0,
       totalBet: 0,
       totalPayout: 0,
+      games: {},
     };
   }
   guild.users[userId] = normalizeUserStats(guild.users[userId]);
@@ -133,6 +153,13 @@ function recordRound(guildId, game, results) {
     user.totalBet += amountBet;
     user.totalPayout += amountWon;
 
+    const gameRecord = normalizeWinLossRecord(user.games[game]);
+    const didWin = typeof raw.didWin === 'boolean' ? raw.didWin : net > 0;
+    const didLose = typeof raw.didLose === 'boolean' ? raw.didLose : net < 0;
+    if (didWin) gameRecord.wins += 1;
+    if (didLose) gameRecord.losses += 1;
+    user.games[game] = gameRecord;
+
     if (net > 0) user.totalWon += toWholeNumber(net);
     if (net < 0) user.totalLost += toWholeNumber(Math.abs(net));
 
@@ -148,6 +175,14 @@ function recordRound(guildId, game, results) {
   guild.updatedAt = Date.now();
   save();
   return getSummary(guildId);
+}
+
+function getUserGameRecord(guildId, userId, game) {
+  if (!guildId || !userId || !game) return { wins: 0, losses: 0 };
+  const guild = getGuildEntry(guildId);
+  if (!guild) return { wins: 0, losses: 0 };
+  const user = ensureUser(guild, userId);
+  return normalizeWinLossRecord(user.games[game]);
 }
 
 function findTopUser(users, key) {
@@ -216,4 +251,5 @@ function getSummary(guildId) {
 module.exports = {
   recordRound,
   getSummary,
+  getUserGameRecord,
 };
