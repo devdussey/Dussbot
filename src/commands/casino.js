@@ -6,8 +6,11 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  ModalBuilder,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   escapeMarkdown,
 } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
@@ -137,15 +140,34 @@ function buildBetEmbed(game, userId, draft, notice = '') {
   return embed;
 }
 
+function parseRouletteNumberInput(rawValue) {
+  const input = String(rawValue ?? '').trim();
+  if (!input || input.toLowerCase() === 'none' || input.toLowerCase() === 'clear') {
+    return { value: null };
+  }
+  if (input === '00') {
+    return { value: '00' };
+  }
+  const numeric = Number(input);
+  if (!Number.isInteger(numeric) || numeric < 0 || numeric > 36) {
+    return { error: 'Invalid number. Enter `0`, `00`, or `1-36`.' };
+  }
+  return { value: String(numeric) };
+}
+
 function buildBetComponents(game, userId, draft) {
   const raceId = game.raceId;
-  const numberMenu = new StringSelectMenuBuilder()
-    .setCustomId(`roulette-number-${raceId}`)
-    .setPlaceholder('Number Bets (includes 0 and 00)')
-    .addOptions([
-      { label: 'No Number Bet', value: 'none' },
-      ...BOARD_NUMBERS.map((num) => ({ label: num, value: num })),
-    ]);
+  const numberRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`roulette-set-number-${raceId}`)
+      .setLabel(draft.number ? `Number: ${draft.number}` : 'Set Number Bet')
+      .setStyle(draft.number ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`roulette-number-clear-${raceId}`)
+      .setLabel('Clear Number')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!draft.number),
+  );
 
   const colorMenu = new StringSelectMenuBuilder()
     .setCustomId(`roulette-color-${raceId}`)
@@ -179,7 +201,7 @@ function buildBetComponents(game, userId, draft) {
   );
 
   return [
-    new ActionRowBuilder().addComponents(numberMenu),
+    numberRow,
     new ActionRowBuilder().addComponents(colorMenu),
     new ActionRowBuilder().addComponents(parityMenu),
     amountRow,
@@ -263,10 +285,62 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
       return;
     }
 
-    if (id.startsWith(`roulette-number-`)) {
-      const value = componentInteraction.values?.[0];
-      draft.number = value === 'none' ? null : value;
-      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft)], components: buildBetComponents(game, userId, draft) });
+    if (id.startsWith(`roulette-set-number-`)) {
+      const modalId = `roulette-number-modal-${game.raceId}-${userId}`;
+      const numberInput = new TextInputBuilder()
+        .setCustomId('roulette-number-input')
+        .setLabel('Enter 0, 00, or 1-36 (or "none" to clear)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Example: 17')
+        .setRequired(true)
+        .setMaxLength(5);
+      if (draft.number) numberInput.setValue(draft.number);
+
+      const modal = new ModalBuilder()
+        .setCustomId(modalId)
+        .setTitle('Set Number Bet')
+        .addComponents(new ActionRowBuilder().addComponents(numberInput));
+
+      await componentInteraction.showModal(modal);
+
+      let modalSubmit = null;
+      try {
+        modalSubmit = await componentInteraction.awaitModalSubmit({
+          filter: (modalInteraction) => modalInteraction.customId === modalId && modalInteraction.user.id === userId,
+          time: 60_000,
+        });
+        const parsed = parseRouletteNumberInput(modalSubmit.fields.getTextInputValue('roulette-number-input'));
+        if (parsed.error) {
+          await modalSubmit.reply({ content: parsed.error, ephemeral: true });
+          return;
+        }
+        draft.number = parsed.value;
+        const updatedPayload = {
+          embeds: [buildBetEmbed(game, userId, draft, draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.')],
+          components: buildBetComponents(game, userId, draft),
+        };
+        if (typeof modalSubmit.update === 'function') {
+          await modalSubmit.update(updatedPayload);
+        } else {
+          await modalSubmit.reply({ content: draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.', ephemeral: true });
+        }
+      } catch (error) {
+        if (modalSubmit && !modalSubmit.replied && !modalSubmit.deferred) {
+          try {
+            await modalSubmit.reply({ content: 'Failed to update your number bet. Please try again.', ephemeral: true });
+          } catch (_) {}
+        }
+        const timedOut = error?.code === 'InteractionCollectorError' || String(error?.message || '').includes('Collector received no interactions before ending with reason: time');
+        if (!timedOut) {
+          console.error('Failed to collect roulette number modal:', error);
+        }
+      }
+      return;
+    }
+
+    if (id.startsWith(`roulette-number-clear-`)) {
+      draft.number = null;
+      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Number bet cleared.')], components: buildBetComponents(game, userId, draft) });
       return;
     }
 
