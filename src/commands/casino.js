@@ -6,11 +6,8 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
-  ModalBuilder,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
-  TextInputBuilder,
-  TextInputStyle,
   escapeMarkdown,
 } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
@@ -24,6 +21,10 @@ const SPIN_DURATION_MS = 10_000;
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 const BLACK_NUMBERS = new Set([2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]);
 const BOARD_NUMBERS = ['0', '00', ...Array.from({ length: 36 }, (_, i) => String(i + 1))];
+const NUMBER_PAGES = [
+  ['0', '00', ...Array.from({ length: 18 }, (_, i) => String(i + 1))],
+  Array.from({ length: 18 }, (_, i) => String(i + 19)),
+];
 
 const activeGames = new Map();
 const guildResultHistory = new Map();
@@ -140,19 +141,15 @@ function buildBetEmbed(game, userId, draft, notice = '') {
   return embed;
 }
 
-function parseRouletteNumberInput(rawValue) {
-  const input = String(rawValue ?? '').trim();
-  if (!input || input.toLowerCase() === 'none' || input.toLowerCase() === 'clear') {
-    return { value: null };
-  }
-  if (input === '00') {
-    return { value: '00' };
-  }
-  const numeric = Number(input);
-  if (!Number.isInteger(numeric) || numeric < 0 || numeric > 36) {
-    return { error: 'Invalid number. Enter `0`, `00`, or `1-36`.' };
-  }
-  return { value: String(numeric) };
+function clampNumberPage(page) {
+  const parsed = Number.isInteger(page) ? page : 0;
+  return Math.max(0, Math.min(parsed, NUMBER_PAGES.length - 1));
+}
+
+function findNumberPage(numberValue) {
+  if (!numberValue) return 0;
+  const pageIndex = NUMBER_PAGES.findIndex((page) => page.includes(numberValue));
+  return pageIndex >= 0 ? pageIndex : 0;
 }
 
 function logRouletteInteractionError(error, interaction, context) {
@@ -180,17 +177,15 @@ async function replyRouletteInteractionFailure(interaction) {
 
 function buildBetComponents(game, userId, draft) {
   const raceId = game.raceId;
-  const numberRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`roulette-set-number-${raceId}`)
-      .setLabel(draft.number ? `Number: ${draft.number}` : 'Set Number Bet')
-      .setStyle(draft.number ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`roulette-number-clear-${raceId}`)
-      .setLabel('Clear Number')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!draft.number),
-  );
+  draft.numberPage = clampNumberPage(draft.numberPage ?? findNumberPage(draft.number));
+  const activeNumbers = NUMBER_PAGES[draft.numberPage];
+  const numberMenu = new StringSelectMenuBuilder()
+    .setCustomId(`roulette-number-select-${raceId}`)
+    .setPlaceholder(`Number Bets (Page ${draft.numberPage + 1}/${NUMBER_PAGES.length})`)
+    .addOptions([
+      { label: 'No Number Bet', value: 'none', default: !draft.number },
+      ...activeNumbers.map((num) => ({ label: num, value: num, default: draft.number === num })),
+    ]);
 
   const colorMenu = new StringSelectMenuBuilder()
     .setCustomId(`roulette-color-${raceId}`)
@@ -221,10 +216,12 @@ function buildBetComponents(game, userId, draft) {
     new ButtonBuilder().setCustomId(`roulette-place-${raceId}`).setLabel('Place Bets').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`roulette-clear-${raceId}`).setLabel('Clear Bet').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`roulette-repeat-${raceId}`).setLabel('Repeat Last Bet').setStyle(ButtonStyle.Secondary).setDisabled(!getLastBetStore(game.guildId).has(userId)),
+    new ButtonBuilder().setCustomId(`roulette-number-page-prev-${raceId}`).setLabel('Prev Numbers').setStyle(ButtonStyle.Secondary).setDisabled(draft.numberPage === 0),
+    new ButtonBuilder().setCustomId(`roulette-number-page-next-${raceId}`).setLabel('Next Numbers').setStyle(ButtonStyle.Secondary).setDisabled(draft.numberPage >= NUMBER_PAGES.length - 1),
   );
 
   return [
-    numberRow,
+    new ActionRowBuilder().addComponents(numberMenu),
     new ActionRowBuilder().addComponents(colorMenu),
     new ActionRowBuilder().addComponents(parityMenu),
     amountRow,
@@ -300,7 +297,7 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
       }
 
       const userId = componentInteraction.user.id;
-      if (!game.drafts.has(userId)) game.drafts.set(userId, { number: null, color: null, parity: null, multiplier: 1, colorName: null, parityName: null });
+      if (!game.drafts.has(userId)) game.drafts.set(userId, { number: null, color: null, parity: null, multiplier: 1, colorName: null, parityName: null, numberPage: 0 });
       const draft = game.drafts.get(userId);
 
       if (id.startsWith(`roulette-join-`)) {
@@ -312,62 +309,32 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         return;
       }
 
-      if (id.startsWith(`roulette-set-number-`)) {
-        const modalId = `roulette-number-modal-${game.raceId}-${userId}`;
-        const numberInput = new TextInputBuilder()
-          .setCustomId('roulette-number-input')
-          .setLabel('Enter 0, 00, or 1-36 (or "none" to clear)')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('Example: 17')
-          .setRequired(true)
-          .setMaxLength(5);
-        if (draft.number) numberInput.setValue(draft.number);
-
-        const modal = new ModalBuilder()
-          .setCustomId(modalId)
-          .setTitle('Set Number Bet')
-          .addComponents(new ActionRowBuilder().addComponents(numberInput));
-
-        await componentInteraction.showModal(modal);
-
-        let modalSubmit = null;
-        try {
-          modalSubmit = await componentInteraction.awaitModalSubmit({
-            filter: (modalInteraction) => modalInteraction.customId === modalId && modalInteraction.user.id === userId,
-            time: 60_000,
-          });
-          const parsed = parseRouletteNumberInput(modalSubmit.fields.getTextInputValue('roulette-number-input'));
-          if (parsed.error) {
-            await modalSubmit.reply({ content: parsed.error, ephemeral: true });
-            return;
-          }
-          draft.number = parsed.value;
-          const updatedPayload = {
-            embeds: [buildBetEmbed(game, userId, draft, draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.')],
-            components: buildBetComponents(game, userId, draft),
-          };
-          if (typeof modalSubmit.update === 'function') {
-            await modalSubmit.update(updatedPayload);
-          } else {
-            await modalSubmit.reply({ content: draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.', ephemeral: true });
-          }
-        } catch (error) {
-          if (modalSubmit && !modalSubmit.replied && !modalSubmit.deferred) {
-            try {
-              await modalSubmit.reply({ content: 'Failed to update your number bet. Please try again.', ephemeral: true });
-            } catch (_) {}
-          }
-          const timedOut = error?.code === 'InteractionCollectorError' || String(error?.message || '').includes('Collector received no interactions before ending with reason: time');
-          if (!timedOut) {
-            logRouletteInteractionError(error, componentInteraction, 'number_modal');
-          }
-        }
+      if (id.startsWith(`roulette-number-select-`)) {
+        const value = componentInteraction.values?.[0];
+        draft.number = value === 'none' ? null : value;
+        draft.numberPage = findNumberPage(draft.number);
+        await componentInteraction.update({
+          embeds: [buildBetEmbed(game, userId, draft, draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.')],
+          components: buildBetComponents(game, userId, draft),
+        });
         return;
       }
 
-      if (id.startsWith(`roulette-number-clear-`)) {
-        draft.number = null;
-        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Number bet cleared.')], components: buildBetComponents(game, userId, draft) });
+      if (id.startsWith(`roulette-number-page-prev-`)) {
+        draft.numberPage = clampNumberPage((draft.numberPage ?? 0) - 1);
+        await componentInteraction.update({
+          embeds: [buildBetEmbed(game, userId, draft, `Showing number page ${draft.numberPage + 1}/${NUMBER_PAGES.length}.`)],
+          components: buildBetComponents(game, userId, draft),
+        });
+        return;
+      }
+
+      if (id.startsWith(`roulette-number-page-next-`)) {
+        draft.numberPage = clampNumberPage((draft.numberPage ?? 0) + 1);
+        await componentInteraction.update({
+          embeds: [buildBetEmbed(game, userId, draft, `Showing number page ${draft.numberPage + 1}/${NUMBER_PAGES.length}.`)],
+          components: buildBetComponents(game, userId, draft),
+        });
         return;
       }
 
@@ -400,6 +367,7 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         draft.colorName = null;
         draft.parity = null;
         draft.parityName = null;
+        draft.numberPage = 0;
         draft.multiplier = 1;
         await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Bet cleared.')], components: buildBetComponents(game, userId, draft) });
         return;
@@ -410,6 +378,7 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         if (saved) {
           Object.assign(draft, saved);
         }
+        draft.numberPage = findNumberPage(draft.number);
         await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, saved ? 'Loaded your last bet.' : 'No previous bet found.')], components: buildBetComponents(game, userId, draft) });
         return;
       }
