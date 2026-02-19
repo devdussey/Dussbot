@@ -45,7 +45,7 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setTitle(`No matches for "${word}"`)
         .setColor(EMBED_COLOR)
-        .setDescription('No stored messages contain that word yet. Try fetching a channel first with /fetchchannel.')
+        .setDescription('No stored messages contain that word yet.')
         .setTimestamp();
       return interaction.editReply({ embeds: [embed] });
     }

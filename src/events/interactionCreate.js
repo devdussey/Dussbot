@@ -287,8 +287,6 @@ const COMMAND_CATEGORY_MAP = {
     // AI
     analysis: 'ai',
     chat: 'ai',
-    fetchchannel: 'ai',
-    fetchmessage: 'ai',
     summarize: 'ai',
     transcribe: 'ai',
     transriptconfig: 'ai',
@@ -372,8 +370,6 @@ const ADMIN_COMMANDS = new Set([
   'dmdiag',
   'embed',
   'enlarge',
-  'fetchchannel',
-  'fetchmessage',
   'giverupee',
   'logconfig',
   'massblessing',
