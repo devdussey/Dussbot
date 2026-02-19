@@ -318,8 +318,7 @@ const COMMAND_CATEGORY_MAP = {
 
     // Games
     blessing: 'games',
-    horserace: 'games',
-    horseracestandings: 'games',
+    casino: 'games',
     wordrush: 'games',
 
     // Automations
@@ -376,7 +375,6 @@ const ADMIN_COMMANDS = new Set([
   'fetchchannel',
   'fetchmessage',
   'giverupee',
-  'horseracestandings',
   'logconfig',
   'massblessing',
   'purge',

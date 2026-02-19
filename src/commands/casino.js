@@ -19,6 +19,18 @@ const { formatCurrencyAmount, getCurrencyName } = require('../utils/currencyName
 const JOIN_WINDOW_SECONDS = 30;
 const COUNTDOWN_STEP_SECONDS = 5;
 const SPIN_DURATION_MS = 10_000;
+const HORSE_RACE_JOIN_WINDOW_SECONDS = 60;
+const HORSE_RACE_COUNTDOWN_STEP_SECONDS = 5;
+const HORSE_RACE_TICK_DELAY_MS = 5_000;
+const HORSE_RACE_MAX_TICKS = 25;
+const HORSE_RACE_TRACK_SLOTS = 15;
+const HORSE_RACE_MIN_PLAYERS = 2;
+const HORSE_RACE_MAX_PLAYERS = 6;
+const HORSE_RACE_ENTRY_COST = 1;
+const HORSE_RACE_TRACK_START = '▀▄';
+const HORSE_RACE_TRACK_CELL = '⬩';
+const HORSE_RACE_TRACK_FINISH = '🏁';
+const HORSE_RACE_LANE_EMOJIS = ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣'];
 
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 const BLACK_NUMBERS = new Set([2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]);
@@ -33,6 +45,10 @@ const guildLastBets = new Map();
 
 function gameKey(guildId, channelId) {
   return `${guildId}:${channelId}`;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getNumberColour(label) {
@@ -92,6 +108,122 @@ function formatGameName(game) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ');
+}
+
+function getHorseLaneEmoji(index) {
+  if (!Number.isInteger(index) || index < 0) return HORSE_RACE_LANE_EMOJIS[0];
+  return HORSE_RACE_LANE_EMOJIS[index % HORSE_RACE_LANE_EMOJIS.length];
+}
+
+function renderHorseTrack(position, racerEmoji = HORSE_RACE_LANE_EMOJIS[0]) {
+  const arr = Array(HORSE_RACE_TRACK_SLOTS).fill(HORSE_RACE_TRACK_CELL);
+  const clamped = Math.max(0, Math.min(position, HORSE_RACE_TRACK_SLOTS - 1));
+  arr[clamped] = racerEmoji || HORSE_RACE_LANE_EMOJIS[0];
+  return `${HORSE_RACE_TRACK_START}   ${arr.join('   ')}   ${HORSE_RACE_TRACK_FINISH}`;
+}
+
+function normalizeHorseRaceLanes(game) {
+  const next = new Map();
+  let lane = 0;
+  for (const horse of game.participants.values()) {
+    horse.racerEmoji = getHorseLaneEmoji(lane);
+    next.set(horse.userId, horse);
+    lane += 1;
+  }
+  game.participants = next;
+}
+
+function buildHorseRaceLobbyEmbed(game) {
+  const competitors = game.participants.size
+    ? [...game.participants.values()]
+      .map((horse) => `${horse.racerEmoji} - ${escapeMarkdown(horse.shortName || horse.displayName || 'Racer').slice(0, 32)}`)
+      .join('\n')
+    : '_No competitors yet._';
+
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
+    .setTitle('🏇 Horse Race Lobby 🏇')
+    .setDescription([
+      '**Competitors**',
+      competitors,
+      '',
+      `Entry Cost - ${formatCurrencyAmount(game.guildId, HORSE_RACE_ENTRY_COST)}`,
+    ].join('\n'))
+    .setFooter({ text: `Race Begins in ${game.secondsLeft} Seconds` });
+}
+
+function buildHorseRaceCancelledEmbed(game) {
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
+    .setTitle('🏇 Horse Race Lobby 🏇')
+    .setDescription([
+      'There are not enough competitors. Please try again later.',
+      '',
+      'Your entry fee has been reimbursed.',
+    ].join('\n'));
+}
+
+function buildHorseRaceRunningEmbed(game, horses, tick) {
+  const lanes = horses.map((horse, index) => {
+    const track = renderHorseTrack(horse.position, horse.racerEmoji || getHorseLaneEmoji(index));
+    const name = escapeMarkdown(horse.shortName || horse.displayName || `Racer ${index + 1}`).slice(0, 32);
+    return `${track}   **${name}**`;
+  }).join('\n');
+
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(game.guildId, 0x22c55e))
+    .setTitle(`🏇 Horse Race — Turn ${tick}`)
+    .setDescription(lanes || '_Race is preparing..._');
+}
+
+function buildHorseRaceResultEmbed(game, finishOrder, firstPrize, secondPrize, totalPot) {
+  const podium = finishOrder.slice(0, 3).map((horse, index) => {
+    const place = index + 1;
+    const placeLabel = place === 1 ? '1st' : place === 2 ? '2nd' : '3rd';
+    const name = horse?.userId ? `<@${horse.userId}>` : escapeMarkdown(horse?.shortName || horse?.displayName || 'Racer');
+    return `${placeLabel}: ${name}`;
+  });
+
+  if (!podium.length) {
+    podium.push('1st: _Unavailable_');
+  }
+
+  const prizeLines = [];
+  if (firstPrize > 0 && finishOrder[0]) {
+    prizeLines.push(`🥇 <@${finishOrder[0].userId}> won ${formatCurrencyAmount(game.guildId, firstPrize)}.`);
+  } else {
+    prizeLines.push('🥇 No prize awarded.');
+  }
+
+  if (secondPrize > 0 && finishOrder[1]) {
+    prizeLines.push(`🥈 <@${finishOrder[1].userId}> won ${formatCurrencyAmount(game.guildId, secondPrize)}.`);
+  } else {
+    prizeLines.push('🥈 No second-place prize this round.');
+  }
+
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(game.guildId, 0xf59e0b))
+    .setTitle('🏁 Horse Race Results')
+    .setDescription([
+      podium.join('\n'),
+      '',
+      ...prizeLines,
+    ].join('\n'))
+    .setFooter({ text: `Pot: ${formatCurrencyAmount(game.guildId, totalPot)} | Racers: ${finishOrder.length}` });
+}
+
+function buildHorseRaceLobbyComponents(game, { disabled = false } = {}) {
+  const joinId = `horserace-join-${game.raceId}`;
+  const leaveId = `horserace-leave-${game.raceId}`;
+  const joinDisabled = disabled || !game.isOpen || game.participants.size >= HORSE_RACE_MAX_PLAYERS;
+  const leaveDisabled = disabled || !game.isOpen || game.participants.size === 0;
+
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(joinId).setLabel('Join Race').setStyle(ButtonStyle.Success).setDisabled(joinDisabled),
+      new ButtonBuilder().setCustomId(leaveId).setLabel('Leave Race').setStyle(ButtonStyle.Danger).setDisabled(leaveDisabled),
+    ),
+  ];
 }
 
 function buildPublicEmbed(game) {
@@ -252,7 +384,7 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
 
   const key = gameKey(interaction.guildId, interaction.channelId);
   if (activeGames.has(key)) {
-    const payload = { content: 'A roulette game is already active in this channel.', ephemeral: true };
+    const payload = { content: 'A casino game is already active in this channel.', ephemeral: true };
     if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
     return interaction.reply(payload);
   }
@@ -549,7 +681,7 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
       const playAgainCollector = resultMessage.createMessageComponentCollector({ time: 120_000, max: 1 });
       playAgainCollector.on('collect', async (buttonInteraction) => {
         if (activeGames.has(gameKey(buttonInteraction.guildId, buttonInteraction.channelId))) {
-          await buttonInteraction.reply({ content: 'A roulette game is already active.', ephemeral: true });
+          await buttonInteraction.reply({ content: 'A casino game is already active in this channel.', ephemeral: true });
           return;
         }
         await buttonInteraction.deferUpdate();
@@ -565,6 +697,331 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
       console.error('[Roulette] Round close flow failed', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, error);
     } finally {
       activeGames.delete(key);
+    }
+  });
+}
+
+async function runHorseRaceGame(interaction, { initiatedByButton = false } = {}) {
+  if (!interaction.inGuild()) {
+    const payload = { content: 'Horse race can only be played in a server channel.', ephemeral: true };
+    if (initiatedByButton) return interaction.reply(payload);
+    return interaction.reply(payload);
+  }
+
+  const key = gameKey(interaction.guildId, interaction.channelId);
+  if (activeGames.has(key)) {
+    const payload = { content: 'A casino game is already active in this channel.', ephemeral: true };
+    if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
+    return interaction.reply(payload);
+  }
+
+  const game = {
+    type: 'horserace',
+    raceId: `${interaction.id}-${Date.now()}`,
+    guildId: interaction.guildId,
+    channel: interaction.channel,
+    participants: new Map(),
+    entryPayments: new Set(),
+    isOpen: true,
+    secondsLeft: HORSE_RACE_JOIN_WINDOW_SECONDS,
+    message: null,
+  };
+
+  activeGames.set(key, game);
+
+  const startPayload = {
+    embeds: [buildHorseRaceLobbyEmbed(game)],
+    components: buildHorseRaceLobbyComponents(game),
+    allowedMentions: { parse: [] },
+  };
+
+  try {
+    if (interaction.deferred || interaction.replied) {
+      game.message = await interaction.followUp(startPayload);
+    } else {
+      await interaction.reply(startPayload);
+      game.message = await interaction.fetchReply();
+    }
+  } catch (err) {
+    activeGames.delete(key);
+    throw err;
+  }
+
+  const updateLobbyMessage = async ({ disabled = false, embedOverride = null, componentsOverride = null } = {}) => {
+    if (!game.message) return;
+    try {
+      await game.message.edit({
+        embeds: [embedOverride || buildHorseRaceLobbyEmbed(game)],
+        components: componentsOverride || buildHorseRaceLobbyComponents(game, { disabled }),
+        allowedMentions: { parse: [] },
+      });
+    } catch (err) {
+      console.error('[Horse Race] Failed to update lobby message:', err);
+    }
+  };
+
+  const collector = game.channel.createMessageComponentCollector({
+    time: HORSE_RACE_JOIN_WINDOW_SECONDS * 1000 + 10_000,
+    filter: (buttonInteraction) => buttonInteraction.customId.includes(game.raceId),
+  });
+
+  collector.on('collect', async (buttonInteraction) => {
+    const id = buttonInteraction.customId;
+    try {
+      if (id.startsWith(`horserace-join-`)) {
+        if (!game.isOpen) {
+          await buttonInteraction.reply({ content: 'The queue is closed for this race.', ephemeral: true });
+          return;
+        }
+        if (game.participants.has(buttonInteraction.user.id)) {
+          await buttonInteraction.reply({ content: 'You are already queued in this race.', ephemeral: true });
+          return;
+        }
+        if (game.participants.size >= HORSE_RACE_MAX_PLAYERS) {
+          await buttonInteraction.reply({ content: 'The race queue is full.', ephemeral: true });
+          return;
+        }
+
+        const paid = await rupeeStore.spendTokens(game.guildId, buttonInteraction.user.id, HORSE_RACE_ENTRY_COST);
+        if (!paid) {
+          const balance = rupeeStore.getBalance(game.guildId, buttonInteraction.user.id);
+          await buttonInteraction.reply({
+            content: `Joining costs ${formatCurrencyAmount(game.guildId, HORSE_RACE_ENTRY_COST, { lowercase: true })}. You have ${formatCurrencyAmount(game.guildId, balance, { lowercase: true })}.`,
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const laneIndex = game.participants.size;
+        const displayName = buttonInteraction.member?.displayName || buttonInteraction.user.globalName || buttonInteraction.user.username;
+        const horse = {
+          userId: buttonInteraction.user.id,
+          displayName,
+          shortName: displayName,
+          racerEmoji: getHorseLaneEmoji(laneIndex),
+          position: 0,
+          finished: false,
+          finishTick: Number.POSITIVE_INFINITY,
+        };
+        game.participants.set(buttonInteraction.user.id, horse);
+        game.entryPayments.add(buttonInteraction.user.id);
+
+        await buttonInteraction.reply({
+          content: `You joined the race as ${horse.racerEmoji}. Entry fee paid: ${formatCurrencyAmount(game.guildId, HORSE_RACE_ENTRY_COST, { lowercase: true })}.`,
+          ephemeral: true,
+        });
+        await updateLobbyMessage();
+        return;
+      }
+
+      if (id.startsWith(`horserace-leave-`)) {
+        if (!game.isOpen) {
+          await buttonInteraction.reply({ content: 'The queue is already closed.', ephemeral: true });
+          return;
+        }
+        if (!game.participants.has(buttonInteraction.user.id)) {
+          await buttonInteraction.reply({ content: 'You are not queued in this race.', ephemeral: true });
+          return;
+        }
+
+        game.participants.delete(buttonInteraction.user.id);
+        normalizeHorseRaceLanes(game);
+        if (game.entryPayments.has(buttonInteraction.user.id)) {
+          await rupeeStore.addTokens(game.guildId, buttonInteraction.user.id, HORSE_RACE_ENTRY_COST);
+          game.entryPayments.delete(buttonInteraction.user.id);
+        }
+
+        await buttonInteraction.reply({
+          content: `You left the race. Refunded ${formatCurrencyAmount(game.guildId, HORSE_RACE_ENTRY_COST, { lowercase: true })}.`,
+          ephemeral: true,
+        });
+        await updateLobbyMessage();
+      }
+    } catch (error) {
+      console.error('[Horse Race] Lobby interaction failed:', error);
+      const payload = { content: 'Horse race action failed. Try again.', ephemeral: true };
+      if (buttonInteraction.deferred || buttonInteraction.replied) {
+        await buttonInteraction.followUp(payload).catch(() => {});
+      } else {
+        await buttonInteraction.reply(payload).catch(() => {});
+      }
+    }
+  });
+
+  const interval = setInterval(async () => {
+    if (!game.isOpen) return;
+    game.secondsLeft = Math.max(0, game.secondsLeft - HORSE_RACE_COUNTDOWN_STEP_SECONDS);
+    await updateLobbyMessage();
+    if (game.secondsLeft <= 0) {
+      game.isOpen = false;
+      collector.stop('countdown_complete');
+    }
+  }, HORSE_RACE_COUNTDOWN_STEP_SECONDS * 1000);
+
+  collector.on('end', async () => {
+    clearInterval(interval);
+    game.isOpen = false;
+    let gameDeleted = false;
+
+    try {
+      await updateLobbyMessage({ disabled: true });
+
+      const horses = [...game.participants.values()].map((horse) => ({
+        ...horse,
+        position: 0,
+        finished: false,
+        finishTick: Number.POSITIVE_INFINITY,
+      }));
+
+      if (horses.length < HORSE_RACE_MIN_PLAYERS) {
+        for (const userId of game.entryPayments) {
+          await rupeeStore.addTokens(game.guildId, userId, HORSE_RACE_ENTRY_COST);
+        }
+        game.entryPayments.clear();
+
+        const retryId = `horserace-retry-${Date.now()}`;
+        const retryComponents = [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(retryId).setLabel('Try Again').setStyle(ButtonStyle.Success),
+          ),
+        ];
+
+        if (game.message) {
+          await game.message.edit({
+            embeds: [buildHorseRaceCancelledEmbed(game)],
+            components: retryComponents,
+            allowedMentions: { parse: [] },
+          });
+        }
+
+        activeGames.delete(key);
+        gameDeleted = true;
+
+        if (!game.message) return;
+        const retryCollector = game.message.createMessageComponentCollector({
+          time: 120_000,
+          max: 1,
+          filter: (buttonInteraction) => buttonInteraction.customId === retryId,
+        });
+
+        retryCollector.on('collect', async (buttonInteraction) => {
+          if (activeGames.has(gameKey(buttonInteraction.guildId, buttonInteraction.channelId))) {
+            await buttonInteraction.reply({ content: 'A casino game is already active in this channel.', ephemeral: true });
+            return;
+          }
+          await buttonInteraction.deferUpdate();
+          await runHorseRaceGame(buttonInteraction, { initiatedByButton: true });
+        });
+
+        retryCollector.on('end', async () => {
+          if (!game.message) return;
+          try {
+            await game.message.edit({
+              components: [
+                new ActionRowBuilder().addComponents(
+                  new ButtonBuilder().setCustomId(retryId).setLabel('Try Again').setStyle(ButtonStyle.Secondary).setDisabled(true),
+                ),
+              ],
+            });
+          } catch (_) {}
+        });
+        return;
+      }
+
+      if (game.message) {
+        await game.message.edit({
+          embeds: [buildHorseRaceRunningEmbed(game, horses, 0)],
+          components: [],
+          allowedMentions: { parse: [] },
+        });
+      }
+
+      const finishOrder = [];
+      for (let tick = 1; tick <= HORSE_RACE_MAX_TICKS; tick += 1) {
+        for (const horse of horses) {
+          if (horse.finished) continue;
+          const advance = Math.floor(Math.random() * 3) + 1;
+          horse.position += advance;
+          if (horse.position >= HORSE_RACE_TRACK_SLOTS - 1) {
+            horse.position = HORSE_RACE_TRACK_SLOTS - 1;
+            horse.finished = true;
+            horse.finishTick = tick;
+            finishOrder.push(horse);
+          }
+        }
+
+        if (game.message) {
+          await game.message.edit({
+            embeds: [buildHorseRaceRunningEmbed(game, horses, tick)],
+            components: [],
+            allowedMentions: { parse: [] },
+          });
+        }
+
+        if (horses.every((horse) => horse.finished)) break;
+        if (tick < HORSE_RACE_MAX_TICKS) {
+          await wait(HORSE_RACE_TICK_DELAY_MS);
+        }
+      }
+
+      if (finishOrder.length < horses.length) {
+        const remaining = horses.filter((horse) => !finishOrder.includes(horse));
+        remaining.sort((a, b) => b.position - a.position);
+        finishOrder.push(...remaining);
+      }
+
+      const totalPot = horses.length * HORSE_RACE_ENTRY_COST;
+      let firstPrize = 0;
+      let secondPrize = 0;
+      if (horses.length <= 3) {
+        firstPrize = Math.max(0, totalPot - HORSE_RACE_ENTRY_COST);
+      } else {
+        firstPrize = Math.round(totalPot * 0.75);
+        firstPrize = Math.max(1, Math.min(totalPot, firstPrize));
+        secondPrize = Math.max(0, totalPot - firstPrize);
+      }
+
+      const payoutsByUser = new Map();
+      if (finishOrder[0] && firstPrize > 0) {
+        await rupeeStore.addTokens(game.guildId, finishOrder[0].userId, firstPrize);
+        payoutsByUser.set(finishOrder[0].userId, firstPrize);
+      }
+      if (finishOrder[1] && secondPrize > 0) {
+        await rupeeStore.addTokens(game.guildId, finishOrder[1].userId, secondPrize);
+        payoutsByUser.set(finishOrder[1].userId, (payoutsByUser.get(finishOrder[1].userId) || 0) + secondPrize);
+      }
+
+      const roundStats = horses.map((horse) => {
+        const amountWon = payoutsByUser.get(horse.userId) || 0;
+        return {
+          userId: horse.userId,
+          amountBet: HORSE_RACE_ENTRY_COST,
+          amountWon,
+          net: amountWon - HORSE_RACE_ENTRY_COST,
+        };
+      });
+      try {
+        casinoStatsStore.recordRound(game.guildId, 'horse_race', roundStats);
+      } catch (statsError) {
+        console.error('[Horse Race] Failed to record casino stats:', statsError);
+      }
+
+      const resultEmbed = buildHorseRaceResultEmbed(game, finishOrder, firstPrize, secondPrize, totalPot);
+      if (game.message) {
+        await game.message.edit({
+          embeds: [resultEmbed],
+          components: [],
+          allowedMentions: { parse: [] },
+        });
+      } else {
+        await game.channel.send({ embeds: [resultEmbed], allowedMentions: { parse: [] } });
+      }
+    } catch (error) {
+      console.error('[Horse Race] Round close flow failed', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, error);
+    } finally {
+      if (!gameDeleted) {
+        activeGames.delete(key);
+      }
     }
   });
 }
@@ -623,6 +1080,10 @@ module.exports = {
         .setDescription('Start an American roulette game lobby.'))
     .addSubcommand((sub) =>
       sub
+        .setName('horserace')
+        .setDescription('Start a horse race lobby with join and leave buttons.'))
+    .addSubcommand((sub) =>
+      sub
         .setName('stats')
         .setDescription('View casino stats for this server.')),
 
@@ -630,6 +1091,10 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
     if (sub === 'roulette') {
       await runRouletteGame(interaction);
+      return;
+    }
+    if (sub === 'horserace') {
+      await runHorseRaceGame(interaction);
       return;
     }
     if (sub === 'stats') {
