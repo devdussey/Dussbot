@@ -155,6 +155,29 @@ function parseRouletteNumberInput(rawValue) {
   return { value: String(numeric) };
 }
 
+function logRouletteInteractionError(error, interaction, context) {
+  const details = {
+    context,
+    customId: interaction?.customId || null,
+    userId: interaction?.user?.id || null,
+    guildId: interaction?.guildId || null,
+    channelId: interaction?.channelId || null,
+    messageId: interaction?.message?.id || null,
+    deferred: interaction?.deferred ?? null,
+    replied: interaction?.replied ?? null,
+  };
+  console.error('[Roulette] Interaction error', details, error);
+}
+
+async function replyRouletteInteractionFailure(interaction) {
+  const payload = { content: 'Roulette bet panel error. Check bot logs for details.', ephemeral: true };
+  if (interaction.deferred || interaction.replied) {
+    await interaction.followUp(payload);
+  } else {
+    await interaction.reply(payload);
+  }
+}
+
 function buildBetComponents(game, userId, draft) {
   const raceId = game.raceId;
   const numberRow = new ActionRowBuilder().addComponents(
@@ -262,177 +285,189 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
     game.message = await interaction.fetchReply();
   }
 
-  const collector = game.message.createMessageComponentCollector({ time: JOIN_WINDOW_SECONDS * 1000 });
+  const collector = game.channel.createMessageComponentCollector({
+    time: JOIN_WINDOW_SECONDS * 1000,
+    filter: (componentInteraction) => componentInteraction.customId.includes(game.raceId),
+  });
 
   collector.on('collect', async (componentInteraction) => {
     const id = componentInteraction.customId;
     if (!id.includes(game.raceId)) return;
-    if (!game.isOpen) {
-      await componentInteraction.reply({ content: 'Betting is already closed for this round.', ephemeral: true });
-      return;
-    }
+    try {
+      if (!game.isOpen) {
+        await componentInteraction.reply({ content: 'Betting is already closed for this round.', ephemeral: true });
+        return;
+      }
 
-    const userId = componentInteraction.user.id;
-    if (!game.drafts.has(userId)) game.drafts.set(userId, { number: null, color: null, parity: null, multiplier: 1, colorName: null, parityName: null });
-    const draft = game.drafts.get(userId);
+      const userId = componentInteraction.user.id;
+      if (!game.drafts.has(userId)) game.drafts.set(userId, { number: null, color: null, parity: null, multiplier: 1, colorName: null, parityName: null });
+      const draft = game.drafts.get(userId);
 
-    if (id.startsWith(`roulette-join-`)) {
-      await componentInteraction.reply({
-        embeds: [buildBetEmbed(game, userId, draft)],
-        components: buildBetComponents(game, userId, draft),
-        ephemeral: true,
-      });
-      return;
-    }
-
-    if (id.startsWith(`roulette-set-number-`)) {
-      const modalId = `roulette-number-modal-${game.raceId}-${userId}`;
-      const numberInput = new TextInputBuilder()
-        .setCustomId('roulette-number-input')
-        .setLabel('Enter 0, 00, or 1-36 (or "none" to clear)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Example: 17')
-        .setRequired(true)
-        .setMaxLength(5);
-      if (draft.number) numberInput.setValue(draft.number);
-
-      const modal = new ModalBuilder()
-        .setCustomId(modalId)
-        .setTitle('Set Number Bet')
-        .addComponents(new ActionRowBuilder().addComponents(numberInput));
-
-      await componentInteraction.showModal(modal);
-
-      let modalSubmit = null;
-      try {
-        modalSubmit = await componentInteraction.awaitModalSubmit({
-          filter: (modalInteraction) => modalInteraction.customId === modalId && modalInteraction.user.id === userId,
-          time: 60_000,
+      if (id.startsWith(`roulette-join-`)) {
+        await componentInteraction.reply({
+          embeds: [buildBetEmbed(game, userId, draft)],
+          components: buildBetComponents(game, userId, draft),
+          ephemeral: true,
         });
-        const parsed = parseRouletteNumberInput(modalSubmit.fields.getTextInputValue('roulette-number-input'));
-        if (parsed.error) {
-          await modalSubmit.reply({ content: parsed.error, ephemeral: true });
+        return;
+      }
+
+      if (id.startsWith(`roulette-set-number-`)) {
+        const modalId = `roulette-number-modal-${game.raceId}-${userId}`;
+        const numberInput = new TextInputBuilder()
+          .setCustomId('roulette-number-input')
+          .setLabel('Enter 0, 00, or 1-36 (or "none" to clear)')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Example: 17')
+          .setRequired(true)
+          .setMaxLength(5);
+        if (draft.number) numberInput.setValue(draft.number);
+
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Set Number Bet')
+          .addComponents(new ActionRowBuilder().addComponents(numberInput));
+
+        await componentInteraction.showModal(modal);
+
+        let modalSubmit = null;
+        try {
+          modalSubmit = await componentInteraction.awaitModalSubmit({
+            filter: (modalInteraction) => modalInteraction.customId === modalId && modalInteraction.user.id === userId,
+            time: 60_000,
+          });
+          const parsed = parseRouletteNumberInput(modalSubmit.fields.getTextInputValue('roulette-number-input'));
+          if (parsed.error) {
+            await modalSubmit.reply({ content: parsed.error, ephemeral: true });
+            return;
+          }
+          draft.number = parsed.value;
+          const updatedPayload = {
+            embeds: [buildBetEmbed(game, userId, draft, draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.')],
+            components: buildBetComponents(game, userId, draft),
+          };
+          if (typeof modalSubmit.update === 'function') {
+            await modalSubmit.update(updatedPayload);
+          } else {
+            await modalSubmit.reply({ content: draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.', ephemeral: true });
+          }
+        } catch (error) {
+          if (modalSubmit && !modalSubmit.replied && !modalSubmit.deferred) {
+            try {
+              await modalSubmit.reply({ content: 'Failed to update your number bet. Please try again.', ephemeral: true });
+            } catch (_) {}
+          }
+          const timedOut = error?.code === 'InteractionCollectorError' || String(error?.message || '').includes('Collector received no interactions before ending with reason: time');
+          if (!timedOut) {
+            logRouletteInteractionError(error, componentInteraction, 'number_modal');
+          }
+        }
+        return;
+      }
+
+      if (id.startsWith(`roulette-number-clear-`)) {
+        draft.number = null;
+        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Number bet cleared.')], components: buildBetComponents(game, userId, draft) });
+        return;
+      }
+
+      if (id.startsWith(`roulette-color-`)) {
+        const value = componentInteraction.values?.[0];
+        draft.color = value === 'none' ? null : value;
+        draft.colorName = value === 'none' ? null : (value === 'red' ? 'Red' : 'Black');
+        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft)], components: buildBetComponents(game, userId, draft) });
+        return;
+      }
+
+      if (id.startsWith(`roulette-parity-`)) {
+        const value = componentInteraction.values?.[0];
+        draft.parity = value === 'none' ? null : value;
+        draft.parityName = value === 'none' ? null : (value === 'odd' ? 'Odd' : 'Even');
+        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft)], components: buildBetComponents(game, userId, draft) });
+        return;
+      }
+
+      if (id.startsWith(`roulette-mult-`)) {
+        const parts = id.split('-');
+        draft.multiplier = Number(parts[parts.length - 1]) || 1;
+        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft)], components: buildBetComponents(game, userId, draft) });
+        return;
+      }
+
+      if (id.startsWith(`roulette-clear-`)) {
+        draft.number = null;
+        draft.color = null;
+        draft.colorName = null;
+        draft.parity = null;
+        draft.parityName = null;
+        draft.multiplier = 1;
+        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Bet cleared.')], components: buildBetComponents(game, userId, draft) });
+        return;
+      }
+
+      if (id.startsWith(`roulette-repeat-`)) {
+        const saved = getLastBetStore(game.guildId).get(userId);
+        if (saved) {
+          Object.assign(draft, saved);
+        }
+        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, saved ? 'Loaded your last bet.' : 'No previous bet found.')], components: buildBetComponents(game, userId, draft) });
+        return;
+      }
+
+      if (id.startsWith(`roulette-place-`)) {
+        const count = [draft.number, draft.color, draft.parity].filter(Boolean).length;
+        if (count === 0) {
+          await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Select at least one bet before placing.')], components: buildBetComponents(game, userId, draft) });
           return;
         }
-        draft.number = parsed.value;
-        const updatedPayload = {
-          embeds: [buildBetEmbed(game, userId, draft, draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.')],
-          components: buildBetComponents(game, userId, draft),
-        };
-        if (typeof modalSubmit.update === 'function') {
-          await modalSubmit.update(updatedPayload);
-        } else {
-          await modalSubmit.reply({ content: draft.number ? `Number bet set to ${draft.number}.` : 'Number bet cleared.', ephemeral: true });
-        }
-      } catch (error) {
-        if (modalSubmit && !modalSubmit.replied && !modalSubmit.deferred) {
-          try {
-            await modalSubmit.reply({ content: 'Failed to update your number bet. Please try again.', ephemeral: true });
-          } catch (_) {}
-        }
-        const timedOut = error?.code === 'InteractionCollectorError' || String(error?.message || '').includes('Collector received no interactions before ending with reason: time');
-        if (!timedOut) {
-          console.error('Failed to collect roulette number modal:', error);
-        }
-      }
-      return;
-    }
+        const totalCost = count * draft.multiplier;
 
-    if (id.startsWith(`roulette-number-clear-`)) {
-      draft.number = null;
-      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Number bet cleared.')], components: buildBetComponents(game, userId, draft) });
-      return;
-    }
-
-    if (id.startsWith(`roulette-color-`)) {
-      const value = componentInteraction.values?.[0];
-      draft.color = value === 'none' ? null : value;
-      draft.colorName = value === 'none' ? null : (value === 'red' ? 'Red' : 'Black');
-      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft)], components: buildBetComponents(game, userId, draft) });
-      return;
-    }
-
-    if (id.startsWith(`roulette-parity-`)) {
-      const value = componentInteraction.values?.[0];
-      draft.parity = value === 'none' ? null : value;
-      draft.parityName = value === 'none' ? null : (value === 'odd' ? 'Odd' : 'Even');
-      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft)], components: buildBetComponents(game, userId, draft) });
-      return;
-    }
-
-    if (id.startsWith(`roulette-mult-`)) {
-      const parts = id.split('-');
-      draft.multiplier = Number(parts[parts.length - 1]) || 1;
-      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft)], components: buildBetComponents(game, userId, draft) });
-      return;
-    }
-
-    if (id.startsWith(`roulette-clear-`)) {
-      draft.number = null;
-      draft.color = null;
-      draft.colorName = null;
-      draft.parity = null;
-      draft.parityName = null;
-      draft.multiplier = 1;
-      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Bet cleared.')], components: buildBetComponents(game, userId, draft) });
-      return;
-    }
-
-    if (id.startsWith(`roulette-repeat-`)) {
-      const saved = getLastBetStore(game.guildId).get(userId);
-      if (saved) {
-        Object.assign(draft, saved);
-      }
-      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, saved ? 'Loaded your last bet.' : 'No previous bet found.')], components: buildBetComponents(game, userId, draft) });
-      return;
-    }
-
-    if (id.startsWith(`roulette-place-`)) {
-      const count = [draft.number, draft.color, draft.parity].filter(Boolean).length;
-      if (count === 0) {
-        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, 'Select at least one bet before placing.')], components: buildBetComponents(game, userId, draft) });
-        return;
-      }
-      const totalCost = count * draft.multiplier;
-
-      const existing = game.bets.get(userId);
-      if (existing) {
-        await rupeeStore.addTokens(game.guildId, userId, existing.totalCost);
-      }
-
-      const paid = await rupeeStore.spendTokens(game.guildId, userId, totalCost);
-      if (!paid) {
+        const existing = game.bets.get(userId);
         if (existing) {
-          await rupeeStore.spendTokens(game.guildId, userId, existing.totalCost);
+          await rupeeStore.addTokens(game.guildId, userId, existing.totalCost);
         }
-        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, `Not enough balance for this bet (needs ${formatCurrencyAmount(game.guildId, totalCost, { lowercase: true })}).`)], components: buildBetComponents(game, userId, draft) });
-        return;
+
+        const paid = await rupeeStore.spendTokens(game.guildId, userId, totalCost);
+        if (!paid) {
+          if (existing) {
+            await rupeeStore.spendTokens(game.guildId, userId, existing.totalCost);
+          }
+          await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, `Not enough balance for this bet (needs ${formatCurrencyAmount(game.guildId, totalCost, { lowercase: true })}).`)], components: buildBetComponents(game, userId, draft) });
+          return;
+        }
+
+        const displayName = escapeMarkdown(componentInteraction.member?.displayName || componentInteraction.user.globalName || componentInteraction.user.username);
+        const placed = {
+          userId,
+          userTag: displayName,
+          number: draft.number,
+          color: draft.color,
+          colorName: draft.colorName,
+          parity: draft.parity,
+          parityName: draft.parityName,
+          amountPerBet: draft.multiplier,
+          totalCost,
+        };
+        game.bets.set(userId, placed);
+        getLastBetStore(game.guildId).set(userId, {
+          number: draft.number,
+          color: draft.color,
+          colorName: draft.colorName,
+          parity: draft.parity,
+          parityName: draft.parityName,
+          multiplier: draft.multiplier,
+        });
+
+        await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, `Bet placed for ${formatCurrencyAmount(game.guildId, totalCost, { lowercase: true })}.`)], components: buildBetComponents(game, userId, draft) });
+        await updateLobbyMessage(game);
       }
-
-      const displayName = escapeMarkdown(componentInteraction.member?.displayName || componentInteraction.user.globalName || componentInteraction.user.username);
-      const placed = {
-        userId,
-        userTag: displayName,
-        number: draft.number,
-        color: draft.color,
-        colorName: draft.colorName,
-        parity: draft.parity,
-        parityName: draft.parityName,
-        amountPerBet: draft.multiplier,
-        totalCost,
-      };
-      game.bets.set(userId, placed);
-      getLastBetStore(game.guildId).set(userId, {
-        number: draft.number,
-        color: draft.color,
-        colorName: draft.colorName,
-        parity: draft.parity,
-        parityName: draft.parityName,
-        multiplier: draft.multiplier,
-      });
-
-      await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, `Bet placed for ${formatCurrencyAmount(game.guildId, totalCost, { lowercase: true })}.`)], components: buildBetComponents(game, userId, draft) });
-      await updateLobbyMessage(game);
+    } catch (error) {
+      logRouletteInteractionError(error, componentInteraction, 'bet_collect');
+      try {
+        await replyRouletteInteractionFailure(componentInteraction);
+      } catch (replyError) {
+        logRouletteInteractionError(replyError, componentInteraction, 'bet_collect_reply');
+      }
     }
   });
 
@@ -443,85 +478,89 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
   }, COUNTDOWN_STEP_SECONDS * 1000);
 
   collector.on('end', async () => {
-    clearInterval(interval);
-    game.isOpen = false;
-    await updateLobbyMessage(game);
+    try {
+      clearInterval(interval);
+      game.isOpen = false;
+      await updateLobbyMessage(game);
 
-    const mentions = [...game.bets.keys()].map((id) => `<@${id}>`).join(' ');
-    const closeEmbed = new EmbedBuilder()
-      .setColor(resolveEmbedColour(game.guildId, 0xf59e0b))
-      .setTitle('Bets Closed')
-      .setDescription('Game Beginning');
+      const mentions = [...game.bets.keys()].map((id) => `<@${id}>`).join(' ');
+      const closeEmbed = new EmbedBuilder()
+        .setColor(resolveEmbedColour(game.guildId, 0xf59e0b))
+        .setTitle('Bets Closed')
+        .setDescription('Game Beginning');
 
-    const gifPath = path.join(__dirname, '..', 'assets', 'roulette-spin.gif');
-    const files = [];
-    if (fs.existsSync(gifPath)) {
-      files.push(new AttachmentBuilder(gifPath, { name: 'roulette-spin.gif' }));
-      closeEmbed.setImage('attachment://roulette-spin.gif');
-    }
-
-    const spinMessage = await game.channel.send({ content: mentions || 'No bets were placed this round.', embeds: [closeEmbed], files });
-
-    await new Promise((resolve) => setTimeout(resolve, SPIN_DURATION_MS));
-
-    try { await spinMessage.delete(); } catch (_) {}
-
-    const result = spinResult();
-    const winners = [];
-
-    for (const bet of game.bets.values()) {
-      const winningBets = isWinningBet(bet, result);
-      if (!winningBets.length) continue;
-      let payout = 0;
-      for (const wb of winningBets) {
-        payout += bet.amountPerBet * (wb.odds + 1);
+      const gifPath = path.join(__dirname, '..', 'assets', 'roulette-spin.gif');
+      const files = [];
+      if (fs.existsSync(gifPath)) {
+        files.push(new AttachmentBuilder(gifPath, { name: 'roulette-spin.gif' }));
+        closeEmbed.setImage('attachment://roulette-spin.gif');
       }
-      await rupeeStore.addTokens(game.guildId, bet.userId, payout);
-      winners.push({
-        userTag: bet.userTag,
-        amountBet: bet.totalCost,
-        amountWon: payout,
-      });
-    }
 
-    const history = getHistory(game.guildId);
-    history.unshift({ value: result.value, colorName: result.colorName, colorEmoji: result.colorEmoji });
-    if (history.length > 10) history.length = 10;
+      const spinMessage = await game.channel.send({ content: mentions || 'No bets were placed this round.', embeds: [closeEmbed], files });
 
-    const resultEmbed = new EmbedBuilder()
-      .setColor(resolveEmbedColour(game.guildId, 0x6366f1))
-      .setTitle('Roulette Result')
-      .setDescription(`Result: ${result.colorEmoji} **${result.value} (${result.colorName})**`)
-      .addFields({
-        name: 'WINNERS',
-        value: winners.length
-          ? winners.map((w) => `• ${w.userTag} - ${w.amountBet} bet - ${w.amountWon} won`).join('\n')
-          : '_No winners this round._',
-      });
+      await new Promise((resolve) => setTimeout(resolve, SPIN_DURATION_MS));
 
-    const playAgainId = `roulette-play-again-${Date.now()}`;
-    const resultMessage = await game.channel.send({
-      embeds: [resultEmbed],
-      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(playAgainId).setLabel('Play Again').setStyle(ButtonStyle.Primary))],
-    });
+      try { await spinMessage.delete(); } catch (_) {}
 
-    const playAgainCollector = resultMessage.createMessageComponentCollector({ time: 120_000, max: 1 });
-    playAgainCollector.on('collect', async (buttonInteraction) => {
-      if (activeGames.has(gameKey(buttonInteraction.guildId, buttonInteraction.channelId))) {
-        await buttonInteraction.reply({ content: 'A roulette game is already active.', ephemeral: true });
-        return;
+      const result = spinResult();
+      const winners = [];
+
+      for (const bet of game.bets.values()) {
+        const winningBets = isWinningBet(bet, result);
+        if (!winningBets.length) continue;
+        let payout = 0;
+        for (const wb of winningBets) {
+          payout += bet.amountPerBet * (wb.odds + 1);
+        }
+        await rupeeStore.addTokens(game.guildId, bet.userId, payout);
+        winners.push({
+          userTag: bet.userTag,
+          amountBet: bet.totalCost,
+          amountWon: payout,
+        });
       }
-      await buttonInteraction.deferUpdate();
-      await runRouletteGame(buttonInteraction, { initiatedByButton: true });
-    });
 
-    playAgainCollector.on('end', async () => {
-      try {
-        await resultMessage.edit({ components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(playAgainId).setLabel('Play Again').setStyle(ButtonStyle.Secondary).setDisabled(true))] });
-      } catch (_) {}
-    });
+      const history = getHistory(game.guildId);
+      history.unshift({ value: result.value, colorName: result.colorName, colorEmoji: result.colorEmoji });
+      if (history.length > 10) history.length = 10;
 
-    activeGames.delete(key);
+      const resultEmbed = new EmbedBuilder()
+        .setColor(resolveEmbedColour(game.guildId, 0x6366f1))
+        .setTitle('Roulette Result')
+        .setDescription(`Result: ${result.colorEmoji} **${result.value} (${result.colorName})**`)
+        .addFields({
+          name: 'WINNERS',
+          value: winners.length
+            ? winners.map((w) => `• ${w.userTag} - ${w.amountBet} bet - ${w.amountWon} won`).join('\n')
+            : '_No winners this round._',
+        });
+
+      const playAgainId = `roulette-play-again-${Date.now()}`;
+      const resultMessage = await game.channel.send({
+        embeds: [resultEmbed],
+        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(playAgainId).setLabel('Play Again').setStyle(ButtonStyle.Primary))],
+      });
+
+      const playAgainCollector = resultMessage.createMessageComponentCollector({ time: 120_000, max: 1 });
+      playAgainCollector.on('collect', async (buttonInteraction) => {
+        if (activeGames.has(gameKey(buttonInteraction.guildId, buttonInteraction.channelId))) {
+          await buttonInteraction.reply({ content: 'A roulette game is already active.', ephemeral: true });
+          return;
+        }
+        await buttonInteraction.deferUpdate();
+        await runRouletteGame(buttonInteraction, { initiatedByButton: true });
+      });
+
+      playAgainCollector.on('end', async () => {
+        try {
+          await resultMessage.edit({ components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(playAgainId).setLabel('Play Again').setStyle(ButtonStyle.Secondary).setDisabled(true))] });
+        } catch (_) {}
+      });
+    } catch (error) {
+      console.error('[Roulette] Round close flow failed', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, error);
+    } finally {
+      activeGames.delete(key);
+    }
   });
 }
 
