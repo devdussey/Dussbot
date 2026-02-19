@@ -12,6 +12,7 @@ const {
 } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
 const rouletteResultStore = require('../utils/rouletteResultStore');
+const casinoStatsStore = require('../utils/casinoStatsStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { formatCurrencyAmount, getCurrencyName } = require('../utils/currencyName');
 
@@ -25,6 +26,7 @@ const LOW_NUMBER_OPTIONS = ['0', '00', ...Array.from({ length: 18 }, (_, i) => S
 const HIGH_NUMBER_OPTIONS = Array.from({ length: 18 }, (_, i) => String(i + 19));
 const BOARD_NUMBERS = [...LOW_NUMBER_OPTIONS, ...HIGH_NUMBER_OPTIONS];
 const MULTIPLIERS = [1, 2, 5, 10];
+const BET_PANEL_INSTRUCTION = 'Select the bets you would like to make using the select menu. When you are done, make sure to hit the green "Place Bets" Button';
 
 const activeGames = new Map();
 const guildLastBets = new Map();
@@ -73,6 +75,23 @@ function rouletteBoardText() {
     '🟥25 ⬛26 🟥27 ⬛28 ⬛29 🟥30 ⬛31 🟥32 ⬛33 🟥34 ⬛35 🟥36',
     '```',
   ].join('\n');
+}
+
+function describeBetSelection(bet) {
+  const selections = [];
+  if (bet.number) selections.push(`Number ${bet.number}`);
+  if (bet.color) selections.push(bet.colorName);
+  if (bet.parity) selections.push(bet.parityName);
+  return selections.length ? selections.join(' • ') : 'No selections';
+}
+
+function formatGameName(game) {
+  if (!game || typeof game !== 'string') return 'Unknown';
+  return game
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
 }
 
 function buildPublicEmbed(game) {
@@ -124,7 +143,7 @@ function buildBetEmbed(game, userId, draft, notice = '') {
   const embed = new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x22c55e))
     .setTitle('Current Bet')
-    .setDescription(notice || 'Choose your bet options, set amount, then press **Place Bets**.')
+    .setDescription(notice ? `${BET_PANEL_INSTRUCTION}\n\n${notice}` : BET_PANEL_INSTRUCTION)
     .addFields(
       { name: 'Selected Bets', value: selections },
       { name: 'Bet Amount', value: `${draft.multiplier} per selected bet (${total} total)` },
@@ -451,20 +470,43 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
 
       const result = spinResult();
       const winners = [];
+      const losers = [];
+      const roundStats = [];
 
       for (const bet of game.bets.values()) {
         const winningBets = isWinningBet(bet, result);
-        if (!winningBets.length) continue;
         let payout = 0;
         for (const wb of winningBets) {
           payout += bet.amountPerBet * (wb.odds + 1);
         }
-        await rupeeStore.addTokens(game.guildId, bet.userId, payout);
-        winners.push({
-          userTag: bet.userTag,
+        if (payout > 0) {
+          await rupeeStore.addTokens(game.guildId, bet.userId, payout);
+        }
+
+        const net = payout - bet.totalCost;
+        roundStats.push({
+          userId: bet.userId,
           amountBet: bet.totalCost,
           amountWon: payout,
+          net,
         });
+
+        if (net > 0) {
+          winners.push({
+            userTag: bet.userTag,
+            amountBet: bet.totalCost,
+            amountWon: payout,
+          });
+          continue;
+        }
+
+        if (net < 0) {
+          losers.push({
+            userTag: bet.userTag,
+            betSelection: describeBetSelection(bet),
+            amountLost: Math.abs(net),
+          });
+        }
       }
 
       rouletteResultStore.recordResult(game.guildId, {
@@ -473,16 +515,30 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         colorEmoji: result.colorEmoji,
       });
 
+      try {
+        casinoStatsStore.recordRound(game.guildId, 'roulette', roundStats);
+      } catch (statsError) {
+        console.error('[Roulette] Failed to record casino stats', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, statsError);
+      }
+
       const resultEmbed = new EmbedBuilder()
         .setColor(resolveEmbedColour(game.guildId, 0x6366f1))
         .setTitle('Roulette Result')
         .setDescription(`Result: ${result.colorEmoji} **${result.value} (${result.colorName})**`)
-        .addFields({
-          name: 'WINNERS',
-          value: winners.length
-            ? winners.map((w) => `• ${w.userTag} - ${w.amountBet} bet - ${w.amountWon} won`).join('\n')
-            : '_No winners this round._',
-        });
+        .addFields(
+          {
+            name: 'WINNERS',
+            value: winners.length
+              ? winners.map((w) => `• ${w.userTag} - ${w.amountBet} bet - ${w.amountWon} won`).join('\n')
+              : '_No winners this round._',
+          },
+          {
+            name: 'LOSERS',
+            value: losers.length
+              ? losers.map((l) => `• ${l.userTag} - ${l.betSelection} - ${l.amountLost} lost`).join('\n')
+              : '_No losers this round._',
+          },
+        );
 
       const playAgainId = `roulette-play-again-${Date.now()}`;
       const resultMessage = await game.channel.send({
@@ -513,6 +569,50 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
   });
 }
 
+async function runCasinoStats(interaction) {
+  if (!interaction.inGuild()) {
+    await interaction.reply({ content: 'Casino stats can only be viewed in a server channel.', ephemeral: true });
+    return;
+  }
+
+  const summary = casinoStatsStore.getSummary(interaction.guildId);
+  const guildId = interaction.guildId;
+
+  const winnerText = summary.topWinner
+    ? `<@${summary.topWinner.userId}> (${formatCurrencyAmount(guildId, summary.topWinner.amount, { lowercase: true })} won)`
+    : '_No recorded winners yet._';
+
+  const loserText = summary.topLoser
+    ? `<@${summary.topLoser.userId}> (${formatCurrencyAmount(guildId, summary.topLoser.amount, { lowercase: true })} lost)`
+    : '_No recorded losses yet._';
+
+  const topGameText = summary.topGame
+    ? [
+      `Game: **${formatGameName(summary.topGame.game)}** (${formatCurrencyAmount(guildId, summary.topGame.totalPaidOut, { lowercase: true })} paid out)`,
+      summary.topGame.topPayout?.userId
+        ? `Top recipient: <@${summary.topGame.topPayout.userId}> (${formatCurrencyAmount(guildId, summary.topGame.topPayout.amount, { lowercase: true })})`
+        : 'Top recipient: _None yet._',
+    ].join('\n')
+    : '_No casino rounds have been recorded yet._';
+
+  const highestPayoutText = summary.highestPayout
+    ? `${formatGameName(summary.highestPayout.game)} paid <@${summary.highestPayout.userId}> ${formatCurrencyAmount(guildId, summary.highestPayout.amount, { lowercase: true })}`
+    : '_No payouts recorded yet._';
+
+  const embed = new EmbedBuilder()
+    .setColor(resolveEmbedColour(guildId, 0x06b6d4))
+    .setTitle('Casino Stats')
+    .addFields(
+      { name: 'Most Won', value: winnerText },
+      { name: 'Most Lost', value: loserText },
+      { name: 'Top Paying Game', value: topGameText },
+      { name: 'Highest Single Payout', value: highestPayoutText },
+    )
+    .setFooter({ text: `Tracked users: ${summary.usersTracked} | Tracked games: ${summary.gamesTracked}` });
+
+  await interaction.reply({ embeds: [embed] });
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('casino')
@@ -520,12 +620,20 @@ module.exports = {
     .addSubcommand((sub) =>
       sub
         .setName('roulette')
-        .setDescription('Start an American roulette game lobby.')),
+        .setDescription('Start an American roulette game lobby.'))
+    .addSubcommand((sub) =>
+      sub
+        .setName('stats')
+        .setDescription('View casino stats for this server.')),
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
     if (sub === 'roulette') {
       await runRouletteGame(interaction);
+      return;
+    }
+    if (sub === 'stats') {
+      await runCasinoStats(interaction);
     }
   },
 };
