@@ -84,6 +84,13 @@ const MUZZLE_DURATION_MS = 5 * 60_000;
 const IMMUNITY_BUFFER_MS = 10 * 60_000; // After timeout ends
 const ROLE_ICON_FEATURE = 'ROLE_ICONS'; // Needed for gradient role colours
 const muzzleTimers = new Map();
+const MODERATOR_PERMISSION_FLAGS = [
+  PermissionsBitField.Flags.ModerateMembers,
+  PermissionsBitField.Flags.ManageMessages,
+  PermissionsBitField.Flags.KickMembers,
+  PermissionsBitField.Flags.BanMembers,
+  PermissionsBitField.Flags.ManageGuild,
+];
 
 function makeEmbed(guildId) {
   return new EmbedBuilder().setColor(resolveEmbedColour(guildId, 0x00f0ff));
@@ -204,6 +211,15 @@ async function logRupeeStorePurchase({ interaction, itemLabel, cost, target, bal
   }
 }
 
+function logStorePurchaseError(interaction, reason, extra = {}) {
+  console.error('Rupee store purchase error', {
+    guildId: interaction?.guildId || null,
+    userId: interaction?.user?.id || null,
+    reason,
+    ...extra,
+  });
+}
+
 function buildItemSelect(customId, shopItems, disabled = false) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
@@ -270,6 +286,11 @@ function isStaffMember(member, modRoleId) {
   return Boolean(isAdmin || hasModeratorRole(member, modRoleId));
 }
 
+function hasModeratorPermissions(member) {
+  if (!member?.permissions) return false;
+  return MODERATOR_PERMISSION_FLAGS.some(flag => member.permissions.has(flag));
+}
+
 async function applyTimeoutPurchase({ interaction, item, targetMember, modRoleId }) {
   const guild = interaction.guild;
   const actor = interaction.user;
@@ -291,8 +312,8 @@ async function applyTimeoutPurchase({ interaction, item, targetMember, modRoleId
     return { error: 'This item cannot be used on administrators.' };
   }
 
-  if (item.id === 'stfu' && isStaffMember(targetMember, modRoleId)) {
-    return { error: 'STFU can only target non-staff users.' };
+  if (item.id === 'stfu' && (hasModeratorRole(targetMember, modRoleId) || hasModeratorPermissions(targetMember))) {
+    return { error: 'STFU cannot be used on moderators.' };
   }
 
   if (item.id === 'abuse_mod') {
@@ -656,6 +677,7 @@ async function handleStorePurchaseResult(interaction, item, targetMember, result
     return true;
   }
   if (result.error) {
+    logStorePurchaseError(interaction, result.error, { itemId: item?.id || null, targetId: targetMember?.id || null });
     await interaction.reply({ embeds: [makeEmbed(interaction.guildId).setTitle('Purchase failed').setDescription(result.error)], ephemeral: true });
     return true;
   }
@@ -674,41 +696,41 @@ async function handleStorePurchaseResult(interaction, item, targetMember, result
   return true;
 }
 
-function buildStoreItemEmbed(guildId, index, item) {
+function buildStoreItemEmbed(guildId, item) {
   return makeEmbed(guildId)
-    .setTitle(`Item ${index}`)
-    .setDescription(`**${item.label}**\n${item.description}\n\nCost: ${formatCurrencyAmount(guildId, item.cost, { lowercase: true })}`);
+    .setTitle(item.label)
+    .setDescription(`${item.description}\n\nCost: ${formatCurrencyAmount(guildId, item.cost, { lowercase: true })}`);
 }
 
 function buildStoreItemMessages(guildId, shopItems) {
   const byId = new Map(shopItems.map(item => [item.id, item]));
   return [
     {
-      embeds: [buildStoreItemEmbed(guildId, 1, byId.get('stfu'))],
-      components: [buildUserSelect('store:buy:stfu', false, 'Select a non-staff user')],
+      embeds: [buildStoreItemEmbed(guildId, byId.get('stfu'))],
+      components: [buildUserSelect('store:buy:stfu', false, 'Select a non-moderator user')],
     },
     {
-      embeds: [buildStoreItemEmbed(guildId, 2, byId.get('muzzle'))],
+      embeds: [buildStoreItemEmbed(guildId, byId.get('muzzle'))],
       components: [buildUserSelect('store:buy:muzzle', false, 'Select a user in voice')],
     },
     {
-      embeds: [buildStoreItemEmbed(guildId, 3, byId.get('abuse_mod'))],
+      embeds: [buildStoreItemEmbed(guildId, byId.get('abuse_mod'))],
       components: [],
     },
     {
-      embeds: [buildStoreItemEmbed(guildId, 4, byId.get('nickname'))],
+      embeds: [buildStoreItemEmbed(guildId, byId.get('nickname'))],
       components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:nickname').setLabel('Change Nickname').setStyle(ButtonStyle.Primary))],
     },
     {
-      embeds: [buildStoreItemEmbed(guildId, 5, byId.get('nickname_member'))],
+      embeds: [buildStoreItemEmbed(guildId, byId.get('nickname_member'))],
       components: [buildUserSelect('store:buy:nickname_member', false, 'Select a non-staff user')],
     },
     {
-      embeds: [buildStoreItemEmbed(guildId, 6, byId.get('custom_role_solid'))],
+      embeds: [buildStoreItemEmbed(guildId, byId.get('custom_role_solid'))],
       components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:custom_role_solid').setLabel('Configure Solid Role').setStyle(ButtonStyle.Primary))],
     },
     {
-      embeds: [buildStoreItemEmbed(guildId, 7, byId.get('custom_role_gradient'))],
+      embeds: [buildStoreItemEmbed(guildId, byId.get('custom_role_gradient'))],
       components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:custom_role_gradient').setLabel('Configure Gradient Role').setStyle(ButtonStyle.Primary))],
     },
   ];
@@ -772,12 +794,14 @@ async function handleStoreUserSelect(interaction) {
   if (itemId === 'abuse_mod') return false;
   const item = findItem(itemId, resolveShopItemsForGuild(interaction.guildId));
   if (!item) {
+    logStorePurchaseError(interaction, 'Requested store item is unavailable.', { itemId });
     await interaction.reply({ content: 'This item is unavailable.', ephemeral: true });
     return true;
   }
   const targetId = interaction.values?.[0];
   const targetMember = targetId ? await interaction.guild.members.fetch(targetId).catch(() => null) : null;
   if (!targetMember) {
+    logStorePurchaseError(interaction, 'Invalid target member for store purchase.', { itemId, targetId: targetId || null });
     await interaction.reply({ content: 'Could not find that member in this server.', ephemeral: true });
     return true;
   }
@@ -791,6 +815,7 @@ async function handleStoreUserSelect(interaction) {
 
   if (item.id === 'nickname_member') {
     if (isStaffMember(targetMember, modRoleId)) {
+      logStorePurchaseError(interaction, 'Invalid target for Nickname Another Member: staff users are not allowed.', { itemId, targetId: targetMember.id });
       await interaction.reply({ content: 'Nickname Another Member can only target non-staff users.', ephemeral: true });
       return true;
     }
@@ -813,12 +838,14 @@ async function handleStoreStringSelect(interaction) {
   if (interaction.customId !== 'store:buy:abuse_mod') return false;
   const targetId = interaction.values?.[0];
   if (!targetId || targetId === 'none') {
+    logStorePurchaseError(interaction, 'Invalid target for Abuse Mod: no moderator target selected.', { itemId: 'abuse_mod', targetId: targetId || null });
     await interaction.reply({ content: 'No moderator is available to target right now.', ephemeral: true });
     return true;
   }
   const item = findItem('abuse_mod', resolveShopItemsForGuild(interaction.guildId));
   const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
   if (!item || !targetMember) {
+    logStorePurchaseError(interaction, 'Invalid target for Abuse Mod: moderator target is unavailable.', { itemId: 'abuse_mod', targetId });
     await interaction.reply({ content: 'That moderator target is unavailable.', ephemeral: true });
     return true;
   }
@@ -840,6 +867,7 @@ async function handleStoreModalSubmit(interaction) {
     }
     const result = await applyNicknamePurchase({ interaction, newNickname: nickname, cost: item.cost });
     if (result.error) {
+      logStorePurchaseError(interaction, result.error, { itemId: 'nickname', targetId: interaction.user.id });
       await interaction.reply({ content: result.error, ephemeral: true });
       return true;
     }
@@ -853,6 +881,7 @@ async function handleStoreModalSubmit(interaction) {
     const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
     const item = findItem('nickname_member', shopItems);
     if (!targetMember || !item) {
+      logStorePurchaseError(interaction, 'Invalid target for Nickname Another Member: target is missing or item unavailable.', { itemId: 'nickname_member', targetId: targetId || null });
       await interaction.reply({ content: 'Could not find that target member.', ephemeral: true });
       return true;
     }
@@ -865,6 +894,7 @@ async function handleStoreModalSubmit(interaction) {
     const modRoleId = await getModeratorRoleId(interaction.guildId);
     const result = await applyMemberNicknamePurchase({ interaction, targetMember, newNickname: nickname, cost: item.cost, modRoleId });
     if (result.error) {
+      logStorePurchaseError(interaction, result.error, { itemId: 'nickname_member', targetId: targetMember.id });
       await interaction.reply({ content: result.error, ephemeral: true });
       return true;
     }
@@ -877,6 +907,7 @@ async function handleStoreModalSubmit(interaction) {
     const itemId = interaction.customId.replace('store:modal:', '');
     const item = findItem(itemId, shopItems);
     if (!item) {
+      logStorePurchaseError(interaction, 'Requested custom role item is unavailable.', { itemId });
       await interaction.reply({ content: 'This item is unavailable.', ephemeral: true });
       return true;
     }
@@ -898,6 +929,7 @@ async function handleStoreModalSubmit(interaction) {
       cost: item.cost,
     });
     if (result.error) {
+      logStorePurchaseError(interaction, result.error, { itemId: item.id, targetId: interaction.user.id });
       await interaction.editReply({ content: result.error });
       return true;
     }
