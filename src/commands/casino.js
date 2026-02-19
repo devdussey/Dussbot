@@ -224,13 +224,16 @@ function buildHorseRaceResultEmbed(game, lines) {
 function buildHorseRaceLobbyComponents(game, { disabled = false } = {}) {
   const joinId = `horserace-join-${game.raceId}`;
   const leaveId = `horserace-leave-${game.raceId}`;
+  const startId = `horserace-start-${game.raceId}`;
   const joinDisabled = disabled || !game.isOpen || game.participants.size >= HORSE_RACE_MAX_PLAYERS;
   const leaveDisabled = disabled || !game.isOpen || game.participants.size === 0;
+  const startDisabled = disabled || !game.isOpen;
 
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(joinId).setLabel('Join Race').setStyle(ButtonStyle.Success).setDisabled(joinDisabled),
       new ButtonBuilder().setCustomId(leaveId).setLabel('Leave Race').setStyle(ButtonStyle.Danger).setDisabled(leaveDisabled),
+      new ButtonBuilder().setCustomId(startId).setLabel('Start Race').setStyle(ButtonStyle.Primary).setDisabled(startDisabled),
     ),
   ];
 }
@@ -727,6 +730,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
   const game = {
     type: 'horserace',
     raceId: `${interaction.id}-${Date.now()}`,
+    starterId: interaction.user.id,
     guildId: interaction.guildId,
     channel: interaction.channel,
     participants: new Map(),
@@ -778,6 +782,23 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
   collector.on('collect', async (buttonInteraction) => {
     const id = buttonInteraction.customId;
     try {
+      if (id.startsWith(`horserace-start-`)) {
+        if (!game.isOpen) {
+          await buttonInteraction.reply({ content: 'The queue is already closed.', ephemeral: true });
+          return;
+        }
+        if (buttonInteraction.user.id !== game.starterId) {
+          await buttonInteraction.reply({ content: 'Only the user who started this lobby can start the race early.', ephemeral: true });
+          return;
+        }
+
+        game.secondsLeft = 0;
+        game.isOpen = false;
+        await buttonInteraction.reply({ content: 'Starting the race now...', ephemeral: true });
+        collector.stop('started_by_host');
+        return;
+      }
+
       if (id.startsWith(`horserace-join-`)) {
         if (!game.isOpen) {
           await buttonInteraction.reply({ content: 'The queue is closed for this race.', ephemeral: true });
