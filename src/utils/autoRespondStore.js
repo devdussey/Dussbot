@@ -1,5 +1,6 @@
 const fs = require('fs');
 const { ensureFileSync, resolveDataPath, writeJsonSync } = require('./dataDir');
+const { normalizeMediaUrlForStorage } = require('./mediaAttachment');
 
 const STORE_FILE = 'autorespond.json';
 
@@ -48,6 +49,11 @@ function getGuildConfig(guildId) {
       rule.createdAt = Date.now();
       changed = true;
     }
+    const normalizedMediaUrl = normalizeMediaUrlForStorage(rule.mediaUrl || '');
+    if (String(rule.mediaUrl || '') !== normalizedMediaUrl) {
+      rule.mediaUrl = normalizedMediaUrl.slice(0, 1000);
+      changed = true;
+    }
   }
   if (changed) persist();
   return cfg;
@@ -72,7 +78,7 @@ function addRule(guildId, rule) {
     id,
     trigger: String(rule.trigger || '').slice(0, 300),
     reply: String(rule.reply || '').slice(0, 2000),
-    mediaUrl: String(rule.mediaUrl || '').slice(0, 1000),
+    mediaUrl: normalizeMediaUrlForStorage(rule.mediaUrl || '').slice(0, 1000),
     stickerId: String(rule.stickerId || '').trim().slice(0, 64),
     match: (rule.match || 'contains'),
     caseSensitive: !!rule.caseSensitive,
@@ -101,7 +107,7 @@ function updateRule(guildId, id, updates = {}) {
     rule.reply = String(updates.reply || '').slice(0, 2000);
   }
   if (Object.prototype.hasOwnProperty.call(updates, 'mediaUrl')) {
-    rule.mediaUrl = String(updates.mediaUrl || '').slice(0, 1000);
+    rule.mediaUrl = normalizeMediaUrlForStorage(updates.mediaUrl || '').slice(0, 1000);
   }
   if (Object.prototype.hasOwnProperty.call(updates, 'stickerId')) {
     rule.stickerId = String(updates.stickerId || '').trim().slice(0, 64);

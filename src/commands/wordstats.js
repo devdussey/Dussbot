@@ -3,6 +3,7 @@ const wordStatsStore = require('../utils/wordStatsConfigStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
 const MAX_ROWS = 10;
+const WORDSTATS_BUGGED_TITLE = '***INDIVIDUAL WORD COUNTS AND STATS ARE BUGGED CURRENTLY***';
 
 function formatNumber(value) {
   return new Intl.NumberFormat('en-US').format(Math.max(0, Math.floor(Number(value) || 0)));
@@ -44,10 +45,22 @@ function joinLines(lines, fallback = 'No data yet.', limit = 1024) {
   return output.length ? output.join('\n') : fallback;
 }
 
+function withBuggedTitle(title) {
+  const safeTitle = String(title || '').trim();
+  if (!safeTitle) return WORDSTATS_BUGGED_TITLE;
+
+  const separator = ' | ';
+  const maxTitleLength = 256;
+  const maxBaseLength = maxTitleLength - WORDSTATS_BUGGED_TITLE.length - separator.length;
+  if (maxBaseLength <= 0) return WORDSTATS_BUGGED_TITLE.slice(0, maxTitleLength);
+
+  return `${WORDSTATS_BUGGED_TITLE}${separator}${safeTitle.slice(0, maxBaseLength)}`;
+}
+
 function buildNoDataEmbed(interaction, title, description) {
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x5865f2))
-    .setTitle(title)
+    .setTitle(withBuggedTitle(title))
     .setDescription(description)
     .setFooter({ text: `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}` })
     .setTimestamp();
@@ -76,7 +89,7 @@ function buildOverviewEmbed(interaction) {
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x1abc9c))
-    .setTitle('Word Stats Overview')
+    .setTitle(withBuggedTitle('Word Stats Overview'))
     .addFields(
       { name: 'Top 10 Words', value: joinLines(wordLines, 'No words recorded yet.') },
       { name: 'Top 10 Message Senders', value: joinLines(userLines, 'No tracked users yet.') },
@@ -105,7 +118,7 @@ function buildWordEmbed(interaction, normalizedWord, searchResult) {
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x3498db))
-    .setTitle(`Word Usage: "${normalizedWord}"`)
+    .setTitle(withBuggedTitle(`Word Usage: "${normalizedWord}"`))
     .setDescription(joinLines(usageLines, 'No data yet.', 4096))
     .setFooter({
       text: [
@@ -132,7 +145,7 @@ function buildMediaEmbed(interaction) {
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0xe67e22))
-    .setTitle('Media Stats')
+    .setTitle(withBuggedTitle('Media Stats'))
     .setDescription(joinLines(lines, 'No data yet.', 4096))
     .setFooter({
       text: [
@@ -158,7 +171,7 @@ function buildUserEmbed(interaction, user, stats) {
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x9b59b6))
-    .setTitle(`Word Stats for ${user.username}`)
+    .setTitle(withBuggedTitle(`Word Stats for ${user.username}`))
     .addFields(
       {
         name: 'Message Counts',

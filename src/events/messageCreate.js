@@ -3,7 +3,9 @@ const store = require('../utils/autoRespondStore');
 const { fetchMediaAttachment } = require('../utils/mediaAttachment');
 
 const responseCooldowns = new Map();
+const mediaErrorCooldowns = new Map();
 const GIF_RESPONSE_COOLDOWN_MS = 7000;
+const MEDIA_ERROR_COOLDOWN_MS = 5 * 60 * 1000;
 
 function isGifLikeUrl(url) {
   const value = String(url || '').trim().toLowerCase();
@@ -24,6 +26,18 @@ function logMediaError(message, rule, mediaUrl, reason, err = null) {
   const guildId = message?.guild?.id || 'unknown-guild';
   const channelId = message?.channel?.id || 'unknown-channel';
   const ruleId = rule?.id ?? 'unknown-rule';
+  const key = `${guildId}:${channelId}:${ruleId}:${reason}:${String(mediaUrl || '').slice(0, 500)}`;
+  const now = Date.now();
+  const lastSeen = mediaErrorCooldowns.get(key) || 0;
+  if (now - lastSeen < MEDIA_ERROR_COOLDOWN_MS) return;
+  mediaErrorCooldowns.set(key, now);
+  if (mediaErrorCooldowns.size > 1000) {
+    for (const [entryKey, ts] of mediaErrorCooldowns.entries()) {
+      if (now - ts > MEDIA_ERROR_COOLDOWN_MS) {
+        mediaErrorCooldowns.delete(entryKey);
+      }
+    }
+  }
   if (err) {
     console.error(
       `Autorespond media error (${reason}) guild=${guildId} channel=${channelId} rule=${ruleId} url=${mediaUrl}`,
@@ -80,6 +94,9 @@ module.exports = {
           }
 
           const mediaAttachment = mediaUrl ? await fetchMediaAttachment(mediaUrl) : null;
+          if (mediaUrl && !mediaAttachment) {
+            logMediaError(message, rule, mediaUrl, 'fetch_failed_or_invalid_media');
+          }
           const payload = {
             ...(content ? { content } : {}),
             ...(mediaAttachment ? { files: [mediaAttachment] } : {}),
