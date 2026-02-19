@@ -164,7 +164,7 @@ function buildBetComponents(game, userId, draft) {
     .setCustomId(`roulette-number-low-${raceId}`)
     .setPlaceholder('Numbers 0, 00 1-18')
     .addOptions([
-      { label: 'No Number Bet', value: 'none', default: !draft.number },
+      { label: '0, 00, 1-18', value: 'none', default: !draft.number },
       ...LOW_NUMBER_OPTIONS.map((num) => ({ label: num, value: num, default: draft.number === num })),
     ]);
 
@@ -180,7 +180,7 @@ function buildBetComponents(game, userId, draft) {
     .setCustomId(`roulette-color-${raceId}`)
     .setPlaceholder('Red / Black')
     .addOptions([
-      { label: 'No Color Bet', value: 'none', default: colorValue === 'none' },
+      { label: 'Red/Black Bet', value: 'none', default: colorValue === 'none' },
       { label: 'Red', value: 'red', default: colorValue === 'red' },
       { label: 'Black', value: 'black', default: colorValue === 'black' },
     ]);
@@ -190,7 +190,7 @@ function buildBetComponents(game, userId, draft) {
     .setCustomId(`roulette-parity-${raceId}`)
     .setPlaceholder('Odd / Even')
     .addOptions([
-      { label: 'No Odd/Even Bet', value: 'none', default: parityValue === 'none' },
+      { label: 'Odd/Even Bet', value: 'none', default: parityValue === 'none' },
       { label: 'Odd', value: 'odd', default: parityValue === 'odd' },
       { label: 'Even', value: 'even', default: parityValue === 'even' },
     ]);
