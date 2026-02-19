@@ -30,9 +30,11 @@ test('defaults to enabled when no config exists', async () => {
     assert.equal(config.enabled, true);
     assert.deepEqual(config.immuneRoleIds, []);
     assert.deepEqual(config.storeItemCosts, {});
+    assert.deepEqual(config.storeItemIds, store.DEFAULT_ENABLED_STORE_ITEM_IDS);
     assert.equal(store.isEnabled('guild'), true);
     assert.deepEqual(store.getImmuneRoleIds('guild'), []);
     assert.deepEqual(store.getStoreItemCosts('guild'), {});
+    assert.deepEqual(store.getStoreItemIds('guild'), store.DEFAULT_ENABLED_STORE_ITEM_IDS);
   });
 });
 
@@ -102,5 +104,29 @@ test('store item costs can be set, reset, and persisted per guild', async () => 
     assert.equal(saved.guilds[guildId].storeItemCosts.muzzle, 9);
     assert.equal(Object.prototype.hasOwnProperty.call(saved.guilds[guildId].storeItemCosts, 'stfu'), false);
     assert.equal(saved.guilds[otherGuildId].storeItemCosts.stfu, 3);
+  });
+});
+
+test('store item ids can be removed, added, and persisted per guild', async () => {
+  await withTempStore(async (store) => {
+    const guildId = 'guild';
+    const otherGuildId = 'other';
+
+    await store.removeStoreItem(guildId, 'stfu');
+    await store.removeStoreItem(guildId, 'everyone_ping');
+    await store.addStoreItem(guildId, 'stfu');
+    await store.removeStoreItem(otherGuildId, 'muzzle');
+
+    const config = store.getConfig(guildId);
+    const otherConfig = store.getConfig(otherGuildId);
+    assert.equal(config.storeItemIds.includes('stfu'), true);
+    assert.equal(config.storeItemIds.includes('everyone_ping'), false);
+    assert.equal(otherConfig.storeItemIds.includes('muzzle'), false);
+
+    const file = path.join(process.env.DISPHORIABOT_DATA_DIR, 'smite_config.json');
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.guilds[guildId].storeItemIds.includes('everyone_ping'), false);
+    assert.equal(saved.guilds[guildId].storeItemIds.includes('stfu'), true);
+    assert.equal(saved.guilds[otherGuildId].storeItemIds.includes('muzzle'), false);
   });
 });

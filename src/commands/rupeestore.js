@@ -77,6 +77,13 @@ const SHOP_ITEMS = [
     kind: 'custom_role',
     mode: 'gradient',
   },
+  {
+    id: 'everyone_ping',
+    label: 'Guilt Free @everyone ping with message',
+    cost: 15,
+    description: 'Post an @everyone message in the configured announcement channel.',
+    kind: 'everyone_ping',
+  },
 ];
 
 const TIMEOUT_DURATION_MS = 5 * 60_000;
@@ -84,13 +91,6 @@ const MUZZLE_DURATION_MS = 5 * 60_000;
 const IMMUNITY_BUFFER_MS = 10 * 60_000; // After timeout ends
 const ROLE_ICON_FEATURE = 'ROLE_ICONS'; // Needed for gradient role colours
 const muzzleTimers = new Map();
-const MODERATOR_PERMISSION_FLAGS = [
-  PermissionsBitField.Flags.ModerateMembers,
-  PermissionsBitField.Flags.ManageMessages,
-  PermissionsBitField.Flags.KickMembers,
-  PermissionsBitField.Flags.BanMembers,
-  PermissionsBitField.Flags.ManageGuild,
-];
 
 function makeEmbed(guildId) {
   return new EmbedBuilder().setColor(resolveEmbedColour(guildId, 0x00f0ff));
@@ -99,6 +99,13 @@ function makeEmbed(guildId) {
 function formatMinutes(ms) {
   const mins = Math.ceil(Math.max(0, ms) / 60_000);
   return `${mins} minute${mins === 1 ? '' : 's'}`;
+}
+
+function truncateForEmbed(value, max = 1024) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.length <= max) return raw;
+  return `${raw.slice(0, Math.max(1, max - 3))}...`;
 }
 
 function formatBlessingStatus(guildId, userId) {
@@ -129,15 +136,21 @@ function resolveShopItemsForGuild(guildId) {
   const storeItemCosts = config?.storeItemCosts && typeof config.storeItemCosts === 'object'
     ? config.storeItemCosts
     : {};
+  const configuredItemIds = Array.isArray(config?.storeItemIds)
+    ? config.storeItemIds
+    : SHOP_ITEMS.map(item => item.id);
+  const enabledItemIds = new Set(configuredItemIds.map(id => String(id)));
 
-  return SHOP_ITEMS.map((item) => {
+  return SHOP_ITEMS
+    .filter(item => enabledItemIds.has(item.id))
+    .map((item) => {
     const raw = storeItemCosts[item.id];
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return { ...item };
     const cost = Math.floor(parsed);
     if (cost < 1) return { ...item };
     return { ...item, cost };
-  });
+    });
 }
 
 function buildShopEmbed({ guildId, balance, selectedItemId = null, blessingStatus, shopItems }) {
@@ -286,11 +299,6 @@ function isStaffMember(member, modRoleId) {
   return Boolean(isAdmin || hasModeratorRole(member, modRoleId));
 }
 
-function hasModeratorPermissions(member) {
-  if (!member?.permissions) return false;
-  return MODERATOR_PERMISSION_FLAGS.some(flag => member.permissions.has(flag));
-}
-
 async function applyTimeoutPurchase({ interaction, item, targetMember, modRoleId }) {
   const guild = interaction.guild;
   const actor = interaction.user;
@@ -312,7 +320,7 @@ async function applyTimeoutPurchase({ interaction, item, targetMember, modRoleId
     return { error: 'This item cannot be used on administrators.' };
   }
 
-  if (item.id === 'stfu' && (hasModeratorRole(targetMember, modRoleId) || hasModeratorPermissions(targetMember))) {
+  if (item.id === 'stfu' && hasModeratorRole(targetMember, modRoleId)) {
     return { error: 'STFU cannot be used on moderators.' };
   }
 
@@ -360,7 +368,7 @@ async function applyTimeoutPurchase({ interaction, item, targetMember, modRoleId
   return { success: true, newBalance };
 }
 
-async function applyMuzzlePurchase({ interaction, item, targetMember }) {
+async function applyMuzzlePurchase({ interaction, item, targetMember, modRoleId }) {
   const guild = interaction.guild;
   const actor = interaction.user;
   const me = guild.members.me;
@@ -379,6 +387,9 @@ async function applyMuzzlePurchase({ interaction, item, targetMember }) {
   const isAdminTarget = targetMember.permissions.has(PermissionsBitField.Flags.Administrator);
   if (isAdminTarget) {
     return { error: 'This item cannot be used on administrators.' };
+  }
+  if (hasModeratorRole(targetMember, modRoleId)) {
+    return { error: 'Muzzle cannot be used on moderators.' };
   }
 
   const remainingMs = immunityStore.getRemainingMs(guild.id, targetMember.id);
@@ -653,6 +664,138 @@ async function applyCustomRolePurchase({ interaction, mode, colors, roleName, co
   return { success: true, newBalance, role };
 }
 
+async function applyEveryonePingPurchase({ interaction, item, message }) {
+  const guild = interaction.guild;
+  const actor = interaction.user;
+  const announceConfig = await getConfiguredAnnouncementChannel(guild, { requireMentionEveryone: true });
+  if (announceConfig.error) {
+    return { error: announceConfig.error };
+  }
+  const { announceChannel, announceChannelId } = announceConfig;
+
+  const content = `@everyone ${message}`.trim();
+  if (content.length > 2000) {
+    return { error: 'Your message is too long. Keep it under 1990 characters.' };
+  }
+
+  const paid = await rupeeStore.spendTokens(guild.id, actor.id, item.cost);
+  if (!paid) {
+    const balance = rupeeStore.getBalance(guild.id, actor.id);
+    return { error: `You need ${formatCurrencyAmount(guild.id, item.cost, { lowercase: true })} to buy ${item.label}. Balance: ${formatCurrencyAmount(guild.id, balance, { lowercase: true })}.` };
+  }
+
+  try {
+    await announceChannel.send({
+      content,
+      allowedMentions: { parse: ['everyone'] },
+    });
+  } catch (err) {
+    await rupeeStore.addTokens(guild.id, actor.id, item.cost);
+    return { error: `Failed to post in the announcement channel. Your ${formatCurrencyWord(guild.id, 2, { lowercase: true })} were refunded.` };
+  }
+
+  const newBalance = rupeeStore.getBalance(guild.id, actor.id);
+  return { success: true, newBalance, announceChannelId, announceChannel };
+}
+
+async function getConfiguredAnnouncementChannel(guild, { requireMentionEveryone = false } = {}) {
+  const announceChannelId = smiteConfigStore.getAnnounceChannelId(guild.id);
+  if (!announceChannelId) {
+    return { error: 'No announcement channel is configured. Set it first in `/economyconfig`.' };
+  }
+
+  const announceChannel = await guild.channels.fetch(announceChannelId).catch(() => null);
+  if (!announceChannel || !announceChannel.isTextBased?.() || announceChannel.type === ChannelType.GuildForum) {
+    return { error: 'The configured announcement channel is invalid. Update it in `/economyconfig`.' };
+  }
+
+  const me = guild.members.me;
+  const channelPerms = announceChannel.permissionsFor(me);
+  if (!channelPerms?.has(PermissionsBitField.Flags.SendMessages)) {
+    return { error: `I cannot send messages in <#${announceChannelId}>.` };
+  }
+  if (requireMentionEveryone && !channelPerms?.has(PermissionsBitField.Flags.MentionEveryone)) {
+    return { error: `I need the Mention Everyone permission in <#${announceChannelId}> to use this item.` };
+  }
+
+  return { announceChannel, announceChannelId };
+}
+
+function buildTargetedStoreAnnouncementEmbed({
+  guildId,
+  item,
+  actor,
+  targetLabel,
+  targetAvatarUrl,
+  durationMs = null,
+  everyoneMessage = '',
+}) {
+  const embed = makeEmbed(guildId).setTitle(item.label);
+
+  if (item.id === 'everyone_ping') {
+    embed.setDescription(`${actor} has deployed a **${item.label}** on ${targetLabel}.`);
+    const cleanMessage = truncateForEmbed(everyoneMessage, 1024);
+    if (cleanMessage) {
+      embed.addFields({ name: 'Message', value: cleanMessage, inline: false });
+    }
+  } else if (item.id === 'muzzle') {
+    embed.setDescription(`${actor} has deployed a **${item.label}** on ${targetLabel} and has server-muted them for ${formatMinutes(durationMs || MUZZLE_DURATION_MS)}.`);
+  } else {
+    embed.setDescription(`${actor} has deployed a **${item.label}** on ${targetLabel} and has muted them for ${formatMinutes(durationMs || TIMEOUT_DURATION_MS)}.`);
+  }
+
+  if (targetAvatarUrl) {
+    embed.setThumbnail(targetAvatarUrl);
+  }
+
+  embed
+    .setFooter({
+      text: `Used by ${actor.tag}`,
+      iconURL: actor.displayAvatarURL({ size: 256 }),
+    })
+    .setTimestamp(new Date());
+
+  return embed;
+}
+
+async function sendStoreTargetAnnouncement({
+  interaction,
+  item,
+  targetMember = null,
+  durationMs = null,
+  everyoneMessage = '',
+  announceChannel = null,
+}) {
+  try {
+    let channel = announceChannel;
+    if (!channel) {
+      const resolved = await getConfiguredAnnouncementChannel(interaction.guild, { requireMentionEveryone: false });
+      if (resolved.error) return;
+      channel = resolved.announceChannel;
+    }
+    if (!channel) return;
+
+    const targetLabel = targetMember ? `${targetMember}` : '@everyone';
+    const targetAvatarUrl = targetMember
+      ? targetMember.displayAvatarURL({ size: 256 })
+      : interaction.guild?.iconURL({ size: 256 }) || interaction.user.displayAvatarURL({ size: 256 });
+
+    const embed = buildTargetedStoreAnnouncementEmbed({
+      guildId: interaction.guildId,
+      item,
+      actor: interaction.user,
+      targetLabel,
+      targetAvatarUrl,
+      durationMs,
+      everyoneMessage,
+    });
+
+    await channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error('Failed to send store purchase announcement:', err?.message || err);
+  }
+}
+
 async function getModerators(guild, modRoleId) {
   if (!guild || !modRoleId) return [];
   try {
@@ -693,6 +836,12 @@ async function handleStorePurchaseResult(interaction, item, targetMember, result
     target: targetMember,
     balance: Number.isFinite(result.newBalance) ? result.newBalance : rupeeStore.getBalance(interaction.guildId, interaction.user.id),
   });
+  await sendStoreTargetAnnouncement({
+    interaction,
+    item,
+    targetMember,
+    durationMs,
+  });
   return true;
 }
 
@@ -702,38 +851,65 @@ function buildStoreItemEmbed(guildId, item) {
     .setDescription(`${item.description}\n\nCost: ${formatCurrencyAmount(guildId, item.cost, { lowercase: true })}`);
 }
 
+function buildStoreItemPayload(guildId, item) {
+  if (!item) return null;
+  switch (item.id) {
+    case 'stfu':
+      return {
+        itemId: item.id,
+        embeds: [buildStoreItemEmbed(guildId, item)],
+        components: [buildUserSelect('store:buy:stfu', false, 'Select a non-admin/non-mod user')],
+      };
+    case 'muzzle':
+      return {
+        itemId: item.id,
+        embeds: [buildStoreItemEmbed(guildId, item)],
+        components: [buildUserSelect('store:buy:muzzle', false, 'Select a non-admin/non-mod user in voice')],
+      };
+    case 'abuse_mod':
+      return {
+        itemId: item.id,
+        embeds: [buildStoreItemEmbed(guildId, item)],
+        components: [],
+      };
+    case 'nickname':
+      return {
+        itemId: item.id,
+        embeds: [buildStoreItemEmbed(guildId, item)],
+        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:nickname').setLabel('Change Nickname').setStyle(ButtonStyle.Primary))],
+      };
+    case 'nickname_member':
+      return {
+        itemId: item.id,
+        embeds: [buildStoreItemEmbed(guildId, item)],
+        components: [buildUserSelect('store:buy:nickname_member', false, 'Select a non-staff user')],
+      };
+    case 'custom_role_solid':
+      return {
+        itemId: item.id,
+        embeds: [buildStoreItemEmbed(guildId, item)],
+        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:custom_role_solid').setLabel('Configure Solid Role').setStyle(ButtonStyle.Primary))],
+      };
+    case 'custom_role_gradient':
+      return {
+        itemId: item.id,
+        embeds: [buildStoreItemEmbed(guildId, item)],
+        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:custom_role_gradient').setLabel('Configure Gradient Role').setStyle(ButtonStyle.Primary))],
+      };
+    case 'everyone_ping':
+      return {
+        itemId: item.id,
+        embeds: [buildStoreItemEmbed(guildId, item)],
+        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:everyone_ping').setLabel('Create Message').setStyle(ButtonStyle.Primary))],
+      };
+    default:
+      return null;
+  }
+}
+
 function buildStoreItemMessages(guildId, shopItems) {
-  const byId = new Map(shopItems.map(item => [item.id, item]));
-  return [
-    {
-      embeds: [buildStoreItemEmbed(guildId, byId.get('stfu'))],
-      components: [buildUserSelect('store:buy:stfu', false, 'Select a non-moderator user')],
-    },
-    {
-      embeds: [buildStoreItemEmbed(guildId, byId.get('muzzle'))],
-      components: [buildUserSelect('store:buy:muzzle', false, 'Select a user in voice')],
-    },
-    {
-      embeds: [buildStoreItemEmbed(guildId, byId.get('abuse_mod'))],
-      components: [],
-    },
-    {
-      embeds: [buildStoreItemEmbed(guildId, byId.get('nickname'))],
-      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:nickname').setLabel('Change Nickname').setStyle(ButtonStyle.Primary))],
-    },
-    {
-      embeds: [buildStoreItemEmbed(guildId, byId.get('nickname_member'))],
-      components: [buildUserSelect('store:buy:nickname_member', false, 'Select a non-staff user')],
-    },
-    {
-      embeds: [buildStoreItemEmbed(guildId, byId.get('custom_role_solid'))],
-      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:custom_role_solid').setLabel('Configure Solid Role').setStyle(ButtonStyle.Primary))],
-    },
-    {
-      embeds: [buildStoreItemEmbed(guildId, byId.get('custom_role_gradient'))],
-      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('store:openmodal:custom_role_gradient').setLabel('Configure Gradient Role').setStyle(ButtonStyle.Primary))],
-    },
-  ];
+  if (!Array.isArray(shopItems) || shopItems.length === 0) return [];
+  return shopItems.map(item => buildStoreItemPayload(guildId, item)).filter(Boolean);
 }
 
 async function buildAbuseModMenu(guild, modRoleId) {
@@ -760,6 +936,25 @@ async function handleStoreButton(interaction) {
       .addComponents(
         new ActionRowBuilder().addComponents(
           new TextInputBuilder().setCustomId('nickname').setLabel('New nickname').setStyle(TextInputStyle.Short).setMaxLength(32).setMinLength(1).setRequired(true),
+        ),
+      );
+    await interaction.showModal(modal);
+    return true;
+  }
+
+  if (item.id === 'everyone_ping') {
+    const modal = new ModalBuilder()
+      .setCustomId('store:modal:everyone_ping')
+      .setTitle('Guilt Free @everyone')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('everyone_message')
+            .setLabel('Message for @everyone')
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+            .setMinLength(1)
+            .setMaxLength(1900),
         ),
       );
     await interaction.showModal(modal);
@@ -903,6 +1098,52 @@ async function handleStoreModalSubmit(interaction) {
     return true;
   }
 
+  if (interaction.customId === 'store:modal:everyone_ping') {
+    const item = findItem('everyone_ping', shopItems);
+    if (!item) {
+      logStorePurchaseError(interaction, 'Requested @everyone item is unavailable.', { itemId: 'everyone_ping' });
+      await interaction.reply({ content: 'This item is unavailable.', ephemeral: true });
+      return true;
+    }
+
+    const messageRaw = interaction.fields.getTextInputValue('everyone_message') || '';
+    const message = messageRaw.trim();
+    if (!message) {
+      await interaction.reply({ content: 'Please enter a message to send.', ephemeral: true });
+      return true;
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    const result = await applyEveryonePingPurchase({ interaction, item, message });
+    if (result.error) {
+      logStorePurchaseError(interaction, result.error, { itemId: item.id, targetId: 'everyone' });
+      await interaction.editReply({ content: result.error });
+      return true;
+    }
+
+    await interaction.editReply({
+      embeds: [
+        makeEmbed(interaction.guildId)
+          .setTitle('Message sent')
+          .setDescription(`Your @everyone announcement was posted in <#${result.announceChannelId}>.\nRemaining balance: ${formatCurrencyAmount(interaction.guildId, result.newBalance, { lowercase: true })}.`),
+      ],
+    });
+    await logRupeeStorePurchase({
+      interaction,
+      itemLabel: item.label,
+      cost: item.cost,
+      target: 'Announcement Channel',
+      balance: result.newBalance,
+    });
+    await sendStoreTargetAnnouncement({
+      interaction,
+      item,
+      everyoneMessage: message,
+      announceChannel: result.announceChannel,
+    });
+    return true;
+  }
+
   if (interaction.customId === 'store:modal:custom_role_solid' || interaction.customId === 'store:modal:custom_role_gradient') {
     const itemId = interaction.customId.replace('store:modal:', '');
     const item = findItem(itemId, shopItems);
@@ -941,6 +1182,15 @@ async function handleStoreModalSubmit(interaction) {
   return false;
 }
 
+function withStoreItemChoices(optionBuilder) {
+  const choices = SHOP_ITEMS.map((item, index) => ({
+    name: `${index + 1}. ${item.label}`.slice(0, 100),
+    value: item.id,
+  }));
+  optionBuilder.addChoices(...choices);
+  return optionBuilder;
+}
+
 module.exports = {
   SHOP_ITEMS,
   handleStoreButton,
@@ -949,9 +1199,33 @@ module.exports = {
   handleStoreModalSubmit,
   data: new SlashCommandBuilder()
     .setName('storeconfig')
-    .setDescription('Post purchasable store item panels in the configured store channel')
+    .setDescription('Manage which store items are available and post item panels')
     .setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('add')
+        .setDescription('Add an item back into the store and post its panel')
+        .addStringOption(option => withStoreItemChoices(
+          option
+            .setName('item')
+            .setDescription('Store item to add')
+            .setRequired(true),
+        )))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('remove')
+        .setDescription('Remove an item from the store')
+        .addStringOption(option => withStoreItemChoices(
+          option
+            .setName('item')
+            .setDescription('Store item to remove')
+            .setRequired(true),
+        )))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('post')
+        .setDescription('Post all currently enabled store item panels')),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -965,7 +1239,92 @@ module.exports = {
       return;
     }
 
+    const subcommand = interaction.options.getSubcommand(true);
     const config = smiteConfigStore.getConfig(interaction.guildId);
+
+    if (subcommand === 'remove') {
+      const itemId = interaction.options.getString('item', true);
+      const wasEnabled = Array.isArray(config.storeItemIds) && config.storeItemIds.includes(itemId);
+      const item = SHOP_ITEMS.find(entry => entry.id === itemId);
+      await smiteConfigStore.removeStoreItem(interaction.guildId, itemId);
+
+      if (!wasEnabled) {
+        await interaction.reply({
+          content: `${item?.label || itemId} is already removed from the store.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      await interaction.reply({
+        content: `${item?.label || itemId} removed from the store. Existing panel messages for this item will no longer work.`,
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (subcommand === 'add') {
+      const itemId = interaction.options.getString('item', true);
+      const alreadyEnabled = Array.isArray(config.storeItemIds) && config.storeItemIds.includes(itemId);
+      await smiteConfigStore.addStoreItem(interaction.guildId, itemId);
+
+      const item = findItem(itemId, resolveShopItemsForGuild(interaction.guildId)) || SHOP_ITEMS.find(entry => entry.id === itemId);
+      if (!item) {
+        await interaction.reply({ content: 'Failed to load that item after updating the store config.', ephemeral: true });
+        return;
+      }
+
+      const channelId = config.storePanelChannelId;
+      if (!channelId) {
+        await interaction.reply({
+          content: `${item.label} is now enabled in the store. No store panel channel is configured yet, so no panel was posted.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+      if (!channel || !channel.isTextBased?.() || channel.type === ChannelType.GuildForum) {
+        await interaction.reply({
+          content: `${item.label} is now enabled in the store, but the configured store panel channel is invalid. Update it in \`/economyconfig\`.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const me = interaction.guild.members.me;
+      const perms = channel.permissionsFor(me);
+      if (!perms?.has(PermissionsBitField.Flags.SendMessages)) {
+        await interaction.reply({
+          content: `${item.label} is now enabled in the store, but I cannot send messages in ${channel}.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const payload = buildStoreItemPayload(interaction.guildId, item);
+      if (!payload) {
+        await interaction.reply({ content: 'This store item cannot be posted yet.', ephemeral: true });
+        return;
+      }
+
+      if (payload.itemId === 'abuse_mod') {
+        const modRoleId = await getModeratorRoleId(interaction.guildId);
+        payload.components = [await buildAbuseModMenu(interaction.guild, modRoleId)];
+      }
+
+      await channel.send({
+        embeds: payload.embeds,
+        components: payload.components,
+      });
+
+      await interaction.reply({
+        content: `${item.label} ${alreadyEnabled ? 'is already enabled, so I reposted' : 'was added and posted'} in ${channel}.`,
+        ephemeral: true,
+      });
+      return;
+    }
+
     const channelId = config.storePanelChannelId;
     if (!channelId) {
       await interaction.reply({ content: 'No store panel channel is configured. Set it first in `/economyconfig`.', ephemeral: true });
@@ -986,17 +1345,27 @@ module.exports = {
     }
 
     await interaction.deferReply({ ephemeral: true });
+
     const shopItems = resolveShopItemsForGuild(interaction.guildId);
+    if (!shopItems.length) {
+      await interaction.editReply({ content: 'No store items are enabled. Use `/storeconfig add` first.' });
+      return;
+    }
+
     const payloads = buildStoreItemMessages(interaction.guildId, shopItems);
     const modRoleId = await getModeratorRoleId(interaction.guildId);
-    payloads[2].components = [await buildAbuseModMenu(interaction.guild, modRoleId)];
-
     let sent = 0;
     for (const payload of payloads) {
+      const components = payload.itemId === 'abuse_mod'
+        ? [await buildAbuseModMenu(interaction.guild, modRoleId)]
+        : payload.components;
       // eslint-disable-next-line no-await-in-loop
-      await channel.send(payload);
+      await channel.send({
+        embeds: payload.embeds,
+        components,
+      });
       sent += 1;
     }
-    await interaction.editReply({ content: `Posted ${sent} store item panel messages in ${channel}.` });
+    await interaction.editReply({ content: `Posted ${sent} enabled store item panel messages in ${channel}.` });
   },
 };

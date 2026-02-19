@@ -77,7 +77,7 @@ function buildInventoryEmbed({
 
   embed.addFields({
     name: `🏪 ${currencySingular} Shop`,
-    value: 'Use the configured store panel channel to buy **STFU** (5), **Muzzle** (5), **Abuse Mod** (15), **Nickname** (5), **Nickname Another Member** (10), **Custom Role w/ Solid Colour** (5), and **Custom Role w/ Gradient** (15).',
+    value: 'Use the configured store panel channel to buy **STFU** (5), **Muzzle** (5), **Abuse Mod** (15), **Nickname** (5), **Nickname Another Member** (10), **Custom Role w/ Solid Colour** (5), **Custom Role w/ Gradient** (15), and **Guilt Free @everyone ping with message** (15).',
   });
 
   const avatarUrl = typeof user.displayAvatarURL === 'function' ? user.displayAvatarURL({ forceStatic: true }) : null;

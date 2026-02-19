@@ -384,10 +384,10 @@ module.exports = {
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('announce_channel')
-                .setLabel('Channel mention/ID (type "clear" to remove)')
+                .setLabel('Channel ID (type "clear" to remove)')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
-                .setPlaceholder('<#CHANNEL_ID> | CHANNEL_ID | clear'),
+                .setPlaceholder('CHANNEL_ID | clear'),
             ),
           );
 
@@ -405,7 +405,7 @@ module.exports = {
 
         const raw = (submission.fields.getTextInputValue('announce_channel') || '').trim();
         if (!raw) {
-          await replyToModal(submission, { content: 'Please provide a channel mention/ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Please provide a channel ID, or `clear`.', ephemeral: true });
           return;
         }
 
@@ -417,9 +417,9 @@ module.exports = {
           return;
         }
 
-        const channelId = parseChannelId(raw);
+        const channelId = raw.match(/^\d{15,22}$/)?.[0] || null;
         if (!channelId) {
-          await replyToModal(submission, { content: 'Invalid channel format. Use a channel mention, channel ID, or `clear`.', ephemeral: true });
+          await replyToModal(submission, { content: 'Invalid channel ID. Use a numeric channel ID or `clear`.', ephemeral: true });
           return;
         }
 
@@ -586,7 +586,7 @@ module.exports = {
         await smiteConfigStore.setStorePanelChannelId(interaction.guildId, channel.id);
         const nextView = await render();
         await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
-        await replyToModal(submission, { content: `${currencyName} store panel channel set to ${channel}. Run /storeconfig to publish store item embeds.`, ephemeral: true });
+        await replyToModal(submission, { content: `${currencyName} store panel channel set to ${channel}. Run /storeconfig post to publish enabled store item embeds.`, ephemeral: true });
         return;
       }
 

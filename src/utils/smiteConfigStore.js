@@ -12,7 +12,9 @@ const DEFAULT_STORE_ITEM_COSTS = Object.freeze({
   nickname_member: 10,
   custom_role_solid: 5,
   custom_role_gradient: 15,
+  everyone_ping: 15,
 });
+const DEFAULT_ENABLED_STORE_ITEM_IDS = Object.freeze(Object.keys(DEFAULT_STORE_ITEM_COSTS));
 let cache = null;
 
 function normaliseRoleIds(roleIds) {
@@ -58,6 +60,20 @@ function normaliseStoreItemCosts(value) {
   return output;
 }
 
+function normaliseStoreItemIds(value, fallback = DEFAULT_ENABLED_STORE_ITEM_IDS) {
+  const source = Array.isArray(value) ? value : fallback;
+  if (!Array.isArray(source)) return [];
+  const seen = new Set();
+  for (const raw of source) {
+    if (!raw) continue;
+    const itemId = String(raw);
+    if (!Object.prototype.hasOwnProperty.call(DEFAULT_STORE_ITEM_COSTS, itemId)) continue;
+    if (seen.has(itemId)) continue;
+    seen.add(itemId);
+  }
+  return Array.from(seen);
+}
+
 function ensureStore() {
   ensureFileSync(STORE_FILE, { guilds: {} });
 }
@@ -99,6 +115,7 @@ function getGuildRecord(guildId) {
       announceChannelId: null,
       storePanelChannelId: null,
       storeItemCosts: {},
+      storeItemIds: [...DEFAULT_ENABLED_STORE_ITEM_IDS],
     };
   }
   const guild = store.guilds[guildId];
@@ -111,6 +128,7 @@ function getGuildRecord(guildId) {
   guild.announceChannelId = normaliseOptionalId(guild.announceChannelId);
   guild.storePanelChannelId = normaliseOptionalId(guild.storePanelChannelId);
   guild.storeItemCosts = normaliseStoreItemCosts(guild.storeItemCosts);
+  guild.storeItemIds = normaliseStoreItemIds(guild.storeItemIds, DEFAULT_ENABLED_STORE_ITEM_IDS);
   return guild;
 }
 
@@ -126,6 +144,7 @@ function getConfig(guildId) {
       announceChannelId: null,
       storePanelChannelId: null,
       storeItemCosts: {},
+      storeItemIds: [...DEFAULT_ENABLED_STORE_ITEM_IDS],
     };
   }
   const guild = getGuildRecord(guildId);
@@ -139,6 +158,7 @@ function getConfig(guildId) {
     announceChannelId: guild.announceChannelId,
     storePanelChannelId: guild.storePanelChannelId,
     storeItemCosts: normaliseStoreItemCosts(guild.storeItemCosts),
+    storeItemIds: normaliseStoreItemIds(guild.storeItemIds, DEFAULT_ENABLED_STORE_ITEM_IDS),
   };
 }
 
@@ -172,6 +192,10 @@ function getCurrencyName(guildId) {
 
 function getStoreItemCosts(guildId) {
   return getConfig(guildId).storeItemCosts || {};
+}
+
+function getStoreItemIds(guildId) {
+  return getConfig(guildId).storeItemIds || [];
 }
 
 async function setEnabled(guildId, enabled) {
@@ -300,6 +324,37 @@ async function setStoreItemCosts(guildId, costs) {
   return getConfig(guildId);
 }
 
+async function setStoreItemIds(guildId, itemIds) {
+  if (!guildId) return getConfig(guildId);
+  const store = loadStore();
+  const current = getGuildRecord(guildId);
+  store.guilds[guildId] = {
+    ...current,
+    storeItemIds: normaliseStoreItemIds(itemIds, []),
+    updatedAt: new Date().toISOString(),
+  };
+  await saveStore();
+  return getConfig(guildId);
+}
+
+async function addStoreItem(guildId, itemId) {
+  if (!guildId || !itemId || !Object.prototype.hasOwnProperty.call(DEFAULT_STORE_ITEM_COSTS, itemId)) {
+    return getConfig(guildId);
+  }
+  const current = getGuildRecord(guildId);
+  if (current.storeItemIds.includes(itemId)) return getConfig(guildId);
+  return setStoreItemIds(guildId, [...current.storeItemIds, itemId]);
+}
+
+async function removeStoreItem(guildId, itemId) {
+  if (!guildId || !itemId || !Object.prototype.hasOwnProperty.call(DEFAULT_STORE_ITEM_COSTS, itemId)) {
+    return getConfig(guildId);
+  }
+  const current = getGuildRecord(guildId);
+  if (!current.storeItemIds.includes(itemId)) return getConfig(guildId);
+  return setStoreItemIds(guildId, current.storeItemIds.filter(id => id !== itemId));
+}
+
 async function addImmuneRole(guildId, roleId) {
   if (!guildId || !roleId) return getConfig(guildId);
   const current = getGuildRecord(guildId);
@@ -323,6 +378,7 @@ module.exports = {
   DEFAULT_VOICE_MINUTES_PER_RUPEE,
   DEFAULT_CURRENCY_NAME,
   DEFAULT_STORE_ITEM_COSTS,
+  DEFAULT_ENABLED_STORE_ITEM_IDS,
   getConfig,
   isEnabled,
   getImmuneRoleIds,
@@ -332,6 +388,7 @@ module.exports = {
   getStorePanelChannelId,
   getCurrencyName,
   getStoreItemCosts,
+  getStoreItemIds,
   setEnabled,
   setImmuneRoleIds,
   setEarningRates,
@@ -340,6 +397,9 @@ module.exports = {
   setCurrencyName,
   setStoreItemCost,
   setStoreItemCosts,
+  setStoreItemIds,
+  addStoreItem,
+  removeStoreItem,
   addImmuneRole,
   removeImmuneRole,
   clearCache,

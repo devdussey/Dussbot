@@ -60,7 +60,7 @@ const categories = {
     { cmd: '/inventory', desc: 'View your coins and server currency.', perm: null },
     { cmd: '/rupeeboard', desc: 'View the server currency leaderboard.', perm: null },
     { cmd: 'Store Panels', desc: 'Spend currency using the configured store panel messages.', perm: null },
-    { cmd: '/storeconfig', desc: 'Post the store panel item embeds in the configured store channel.', perm: 'Administrator' },
+    { cmd: '/storeconfig add/remove/post', desc: 'Enable or remove specific store items, and post enabled item panels.', perm: 'Administrator' },
     { cmd: '/economyconfig', desc: 'Configure economy rewards, currency name, store prices, immunity role, and economy channels.', perm: 'Manage Server' },
     { cmd: '/blessing', desc: 'Claim your daily blessing currency.', perm: 'Administrator' },
     { cmd: '/horserace', desc: 'Start a race with live betting and payouts.', perm: null },
