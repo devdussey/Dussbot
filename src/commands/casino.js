@@ -164,7 +164,7 @@ function buildBetComponents(game, userId, draft) {
     .setCustomId(`roulette-number-low-${raceId}`)
     .setPlaceholder('Numbers 0, 00 1-18')
     .addOptions([
-      { label: '0, 00, 1-18', value: 'none', default: !draft.number },
+      { label: 'Numbers 0, 00, 1-18', value: 'none', default: !draft.number },
       ...LOW_NUMBER_OPTIONS.map((num) => ({ label: num, value: num, default: draft.number === num })),
     ]);
 
