@@ -50,7 +50,13 @@ function resolveForumArchiveDuration(channel) {
 function isUnknownChannelError(err) {
   if (!err) return false;
   const code = err?.code || err?.status;
-  return code === 404 || UNKNOWN_CHANNEL_CODES.has(code);
+  const numericCode = Number(code);
+  return (
+    code === 404
+    || numericCode === 404
+    || UNKNOWN_CHANNEL_CODES.has(code)
+    || (Number.isFinite(numericCode) && UNKNOWN_CHANNEL_CODES.has(numericCode))
+  );
 }
 
 async function clearMissingChannelEntry(guildId, logKey, channelId) {
@@ -190,15 +196,18 @@ async function sendLog(options) {
             channel = await guild.channels.fetch(channelId);
           } catch (err) {
             channelFetchError = err;
-            const code = err?.code || err?.status;
-            console.error(`logSender: Failed to fetch channel ${channelId} in guild ${guildId} for ${logType} (code ${code}):`, err?.message || err);
+            if (!isUnknownChannelError(err)) {
+              const code = err?.code || err?.status;
+              console.error(`logSender: Failed to fetch channel ${channelId} in guild ${guildId} for ${logType} (code ${code}):`, err?.message || err);
+            }
           }
         }
 
         if (!channel) {
-          console.error(`logSender: Channel ${channelId} not found/accessible in guild ${guildId} for ${logType}`);
           if (isUnknownChannelError(channelFetchError)) {
             await clearMissingChannelEntry(guildId, resolvedLogKey, channelId);
+          } else {
+            console.error(`logSender: Channel ${channelId} not found/accessible in guild ${guildId} for ${logType}`);
           }
         } else if (!channel.isTextBased?.() && channel.type !== ChannelType.GuildForum) {
           console.error(`logSender: Channel ${channelId} is not text-based for ${logType}`);
@@ -228,8 +237,12 @@ async function sendLog(options) {
                 sentSuccessfully = true;
               }
             } catch (err) {
-              const code = err?.code || err?.status;
-              console.error(`Failed to send ${logType} log to channel ${channelId} (code ${code}):`, err?.message || err);
+              if (isUnknownChannelError(err)) {
+                await clearMissingChannelEntry(guildId, resolvedLogKey, channelId);
+              } else {
+                const code = err?.code || err?.status;
+                console.error(`Failed to send ${logType} log to channel ${channelId} (code ${code}):`, err?.message || err);
+              }
             }
           }
         }
