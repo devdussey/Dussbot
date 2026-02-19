@@ -66,6 +66,7 @@ const categories = {
     { cmd: '/horserace', desc: 'Start a race with live betting and payouts.', perm: null },
     { cmd: '/horseracestandings', desc: 'View race podium history and stats.', perm: null },
     { cmd: '/wordrush start', desc: 'Start a WordRush lobby.', perm: null },
+    { cmd: '/casino roulette', desc: 'Start an American roulette round with configurable bets.', perm: null },
   ],
   'Utilities and Bot Info': [
     { cmd: '/avatar', desc: 'Display user avatar and download links.', perm: null },
