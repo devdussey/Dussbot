@@ -252,7 +252,10 @@ function buildHorseRaceLobbyComponents(game, { disabled = false } = {}) {
 function buildBlackjackLobbyEmbed(game) {
   const players = [...game.players];
   const playersText = players.length
-    ? players.map((userId) => `<@${userId}>`).join('\n')
+    ? players.map((userId) => {
+      const buyIn = game.buyIns.get(userId) ?? BLACKJACK_MIN_BUY_IN;
+      return `<@${userId}> - Bet: ${formatCurrencyAmount(game.guildId, buyIn, { lowercase: true })}`;
+    }).join('\n')
     : '_No players yet._';
   const currency = getCurrencyName(game.guildId);
 
@@ -445,7 +448,7 @@ function buildBlackjackResultEmbed(game, outcomes) {
     const hand = game.hands.get(userId) || [];
     const total = getBlackjackHandValue(hand).total;
     const outcome = outcomes.get(userId) || { result: 'lose' };
-    const resultLabel = outcome.result.toUpperCase();
+    const resultLabel = outcome.result === 'bust' ? 'BUST' : outcome.result.toUpperCase();
     return `• <@${userId}> - ${formatBlackjackHand(hand)} (${total}) - ${resultLabel}`;
   });
 
@@ -454,7 +457,7 @@ function buildBlackjackResultEmbed(game, outcomes) {
     .setTitle(`${BLACKJACK_EMOJI} Blackjack - Results`)
     .setDescription(
       [
-        `Dealer - ${formatBlackjackHand(game.dealerHand)} (${dealerTotal}) - ${dealerStatus}`,
+        `**Dealer** - ${formatBlackjackHand(game.dealerHand)} (${dealerTotal}) - ${dealerStatus}`,
         '',
         lines.join('\n') || '_No players._',
       ].join('\n'),
@@ -1346,6 +1349,16 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     return interaction.reply(payload);
   }
 
+  const starterPaid = await rupeeStore.spendTokens(interaction.guildId, interaction.user.id, BLACKJACK_MIN_BUY_IN);
+  if (!starterPaid) {
+    const payload = {
+      content: `You need at least ${formatCurrencyAmount(interaction.guildId, BLACKJACK_MIN_BUY_IN, { lowercase: true })} to start blackjack.`,
+      ephemeral: false,
+    };
+    if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
+    return interaction.reply(payload);
+  }
+
   const game = {
     type: 'blackjack',
     raceId: `${interaction.id}-${Date.now()}`,
@@ -1377,6 +1390,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       game.message = await interaction.fetchReply();
     }
   } catch (err) {
+    await rupeeStore.addTokens(interaction.guildId, interaction.user.id, BLACKJACK_MIN_BUY_IN).catch(() => {});
     activeGames.delete(key);
     throw err;
   }
@@ -1486,6 +1500,21 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
         }
 
         const amount = game.pendingBuyIns.get(componentInteraction.user.id) ?? game.buyIns.get(componentInteraction.user.id) ?? BLACKJACK_MIN_BUY_IN;
+        const previousAmount = game.buyIns.get(componentInteraction.user.id) ?? 0;
+        const delta = amount - previousAmount;
+        if (delta > 0) {
+          const paid = await rupeeStore.spendTokens(game.guildId, componentInteraction.user.id, delta);
+          if (!paid) {
+            await componentInteraction.reply({
+              content: `Not enough balance to register that buy-in (needs ${formatCurrencyAmount(game.guildId, delta, { lowercase: true })} more).`,
+              ephemeral: true,
+            });
+            return;
+          }
+        } else if (delta < 0) {
+          await rupeeStore.addTokens(game.guildId, componentInteraction.user.id, Math.abs(delta));
+        }
+
         game.pendingBuyIns.delete(componentInteraction.user.id);
         game.players.add(componentInteraction.user.id);
         game.playerNames.set(
@@ -1601,7 +1630,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
         let result = 'lose';
 
         if (playerBust) {
-          result = 'lose';
+          result = 'bust';
         } else if (playerBlackjack && !dealerBlackjack) {
           result = 'win';
         } else if (dealerBlackjack && !playerBlackjack) {
