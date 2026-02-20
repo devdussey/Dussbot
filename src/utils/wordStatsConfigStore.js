@@ -5,7 +5,7 @@ const STORE_FILE_NAME = 'word_stats_config.json';
 const WORD_TOKEN_REGEX = /[a-z0-9]+(?:['_-][a-z0-9]+)*/gi;
 const CUSTOM_EMOJI_REGEX = /<a?:[A-Za-z0-9_]+:\d+>/g;
 const IMAGE_ATTACHMENT_EXT_RE = /\.(png|jpe?g|webp|gif|bmp|tiff|apng|heic|avif|svg)(?:[?#].*)?$/i;
-const MAX_QUERY_LIMIT = 50;
+const MAX_QUERY_LIMIT = 100;
 const MAX_WORD_LENGTH = 48;
 const MAX_DEDUPED_MESSAGE_IDS = 10000;
 const BACKFILL_MESSAGE_ARRAY_KEYS = ['messages', 'messageLog', 'message_log', 'messageEntries', 'message_entries'];
@@ -1018,13 +1018,15 @@ function getTopMediaUsers(guildId, limit = 10) {
   };
 }
 
-function getTopWords(guildId, limit = 10) {
+function getTopWords(guildId, limit = 10, options = {}) {
   const normalizedLimit = normalizeLimit(limit);
+  const minWordLength = toNonNegativeInt(options?.minWordLength);
   const snapshot = getGuildSnapshot(guildId);
   const byWord = new Map();
 
   for (const user of snapshot.users) {
     for (const [word, rawCount] of Object.entries(user.words || {})) {
+      if (minWordLength > 0 && String(word).length < minWordLength) continue;
       const count = toNonNegativeInt(rawCount);
       if (count <= 0) continue;
 
@@ -1062,6 +1064,7 @@ function getTopWords(guildId, limit = 10) {
     uniqueWords: entries.length,
     totalWordUses: entries.reduce((sum, entry) => sum + entry.totalCount, 0),
     limit: normalizedLimit,
+    minWordLength,
   };
 }
 
@@ -1069,7 +1072,7 @@ function searchWordUsage(guildId, word, limit = 10) {
   const normalizedLimit = normalizeLimit(limit);
   const normalizedWord = normalizeWordToken(word);
   if (!normalizedWord) {
-    return { word: null, totalMatches: 0, users: [], limit: normalizedLimit };
+    return { word: null, totalMatches: 0, userCount: 0, users: [], limit: normalizedLimit };
   }
 
   const snapshot = getGuildSnapshot(guildId);
@@ -1089,21 +1092,23 @@ function searchWordUsage(guildId, word, limit = 10) {
   return {
     word: normalizedWord,
     totalMatches: users.reduce((sum, entry) => sum + entry.count, 0),
+    userCount: users.length,
     users: users.slice(0, normalizedLimit),
     limit: normalizedLimit,
   };
 }
 
-function getUserWordStats(guildId, userId, limit = 10) {
+function getUserWordStats(guildId, userId, limit = 10, options = {}) {
   if (!guildId || !userId) return null;
   const normalizedLimit = normalizeLimit(limit);
+  const minWordLength = toNonNegativeInt(options?.minWordLength);
   const snapshot = getGuildSnapshot(guildId);
   const user = snapshot.users.find((entry) => String(entry.userId) === String(userId));
   if (!user) return null;
 
   const topWords = Object.entries(user.words || {})
     .map(([word, rawCount]) => ({ word, count: toNonNegativeInt(rawCount) }))
-    .filter((entry) => entry.count > 0)
+    .filter((entry) => entry.count > 0 && (minWordLength <= 0 || String(entry.word).length >= minWordLength))
     .sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       return a.word.localeCompare(b.word);
@@ -1120,6 +1125,7 @@ function getUserWordStats(guildId, userId, limit = 10) {
     totalWordUses: topWords.reduce((sum, entry) => sum + entry.count, 0),
     topWords: topWords.slice(0, normalizedLimit),
     limit: normalizedLimit,
+    minWordLength,
   };
 }
 

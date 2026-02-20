@@ -483,3 +483,44 @@ test('legacy stored array-based word formats are normalized for word queries', a
   assert.equal(helloUsage.users[1].userId, 'u2');
   assert.equal(helloUsage.users[1].count, 1);
 });
+
+test('getTopWords supports minWordLength filtering and searchWordUsage exposes userCount', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wordstatscfg-'));
+  const prev = process.env.DISPHORIABOT_DATA_DIR;
+  process.env.DISPHORIABOT_DATA_DIR = tmp;
+  dataDir.resetDataDirCache();
+  seedIsolatedStoreFile(tmp);
+
+  t.after(() => {
+    if (typeof prev === 'string') process.env.DISPHORIABOT_DATA_DIR = prev;
+    else delete process.env.DISPHORIABOT_DATA_DIR;
+    dataDir.resetDataDirCache();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const store = freshStore();
+  await store.setTrackedChannel('g1', 'c1');
+
+  await store.recordTrackedMessage('g1', 'c1', 'u1', 'Alpha#0001', {
+    content: 'cat hello world',
+    attachments: new Map(),
+    stickers: new Map(),
+  });
+
+  await store.recordTrackedMessage('g1', 'c1', 'u2', 'Beta#0001', {
+    content: 'cat test',
+    attachments: new Map(),
+    stickers: new Map(),
+  });
+
+  const unfiltered = store.getTopWords('g1', 100);
+  assert.equal(unfiltered.entries[0].word, 'cat');
+
+  const filtered = store.getTopWords('g1', 100, { minWordLength: 4 });
+  assert.equal(filtered.entries.some((entry) => entry.word === 'cat'), false);
+  assert.equal(filtered.entries[0].word, 'hello');
+
+  const catUsage = store.searchWordUsage('g1', 'cat', 100);
+  assert.equal(catUsage.userCount, 2);
+  assert.equal(catUsage.totalMatches, 2);
+});

@@ -1,8 +1,18 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require('discord.js');
 const wordStatsStore = require('../utils/wordStatsConfigStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
-const MAX_ROWS = 10;
+const OVERVIEW_ROWS = 10;
+const FULL_VIEW_LIMIT = 100;
+const PAGE_SIZE = 10;
+const MIN_WORD_LENGTH = 4;
+const PAGER_TIMEOUT_MS = 180_000;
 
 function formatNumber(value) {
   return new Intl.NumberFormat('en-US').format(Math.max(0, Math.floor(Number(value) || 0)));
@@ -54,8 +64,8 @@ function buildNoDataEmbed(interaction, title, description) {
 }
 
 function buildOverviewEmbed(interaction) {
-  const topWords = wordStatsStore.getTopWords(interaction.guildId, MAX_ROWS);
-  const topUsers = wordStatsStore.getTopUsers(interaction.guildId, MAX_ROWS);
+  const topWords = wordStatsStore.getTopWords(interaction.guildId, OVERVIEW_ROWS, { minWordLength: MIN_WORD_LENGTH });
+  const topUsers = wordStatsStore.getTopUsers(interaction.guildId, OVERVIEW_ROWS);
   const hasWords = topWords.entries.length > 0;
   const hasUsers = topUsers.entries.length > 0;
 
@@ -70,16 +80,17 @@ function buildOverviewEmbed(interaction) {
   const wordLines = topWords.entries.map((entry, index) => (
     `${index + 1}. \`${entry.word}\` - ${formatNumber(entry.totalCount)} total | top: <@${entry.topUserId}> (${formatNumber(entry.topUserCount)})`
   ));
-  const userLines = topUsers.entries.map((entry, index) => (
-    `${index + 1}. ${formatUser(entry)} - ${formatNumber(entry.count)} total`
+
+  const messageLines = topUsers.entries.map((entry, index) => (
+    `${index + 1}. ${formatUser(entry)} - ${formatNumber(entry.count)} ${formatPlural(entry.count, 'message')}`
   ));
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x1abc9c))
     .setTitle('Word Stats Overview')
     .addFields(
-      { name: 'Top 10 Words', value: joinLines(wordLines, 'No words recorded yet.') },
-      { name: 'Top 10 Message Senders', value: joinLines(userLines, 'No tracked users yet.') },
+      { name: 'Top 10 Words (4+ letters)', value: joinLines(wordLines, 'No 4+ letter words recorded yet.') },
+      { name: 'Top 10 Message Senders', value: joinLines(messageLines, 'No tracked users yet.') },
     )
     .setFooter({
       text: [
@@ -90,107 +101,198 @@ function buildOverviewEmbed(interaction) {
     .setTimestamp();
 }
 
-function buildWordEmbed(interaction, normalizedWord, searchResult) {
+function buildWordSearchEmbed(interaction, normalizedWord, searchResult) {
   if (!searchResult.users.length) {
     return buildNoDataEmbed(
       interaction,
-      `Word Usage: "${normalizedWord}"`,
+      `Word Search: "${normalizedWord}"`,
       'No tracked users have used that word yet.',
     );
   }
 
-  const usageLines = searchResult.users.map((entry, index) => (
+  const topUser = searchResult.users[0];
+  const topUsersLines = searchResult.users.map((entry, index) => (
     `${index + 1}. ${formatUser(entry)} - ${formatNumber(entry.count)} ${formatPlural(entry.count, 'use')}`
   ));
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x3498db))
-    .setTitle(`Word Usage: "${normalizedWord}"`)
-    .setDescription(joinLines(usageLines, 'No data yet.', 4096))
+    .setTitle(`Word Search: "${normalizedWord}"`)
+    .addFields(
+      {
+        name: 'Summary',
+        value: [
+          `Most used by: ${formatUser(topUser)} (${formatNumber(topUser.count)})`,
+          `Total uses: ${formatNumber(searchResult.totalMatches)}`,
+          `Users who used it: ${formatNumber(searchResult.userCount)}`,
+        ].join('\n'),
+      },
+      {
+        name: `Top ${formatNumber(searchResult.users.length)} Users`,
+        value: joinLines(topUsersLines, 'No data yet.'),
+      },
+    )
     .setFooter({
-      text: [
-        `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
-        `Total matches: ${formatNumber(searchResult.totalMatches)}`,
-      ].join(' | '),
+      text: `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
     })
     .setTimestamp();
 }
 
-function buildMediaEmbed(interaction) {
-  const topMedia = wordStatsStore.getTopMediaUsers(interaction.guildId, MAX_ROWS);
-  if (!topMedia.entries.length) {
-    return buildNoDataEmbed(
-      interaction,
-      'Media Stats',
-      'No tracked media activity exists yet (images, stickers, or emojis).',
-    );
-  }
-
-  const lines = topMedia.entries.map((entry, index) => (
-    `${index + 1}. ${formatUser(entry)} - ${formatNumber(entry.mediaCount)} media messages | ${formatNumber(entry.mediaBreakdown.images)} images, ${formatNumber(entry.mediaBreakdown.stickers)} stickers, ${formatNumber(entry.mediaBreakdown.emojis)} emojis`
-  ));
-
-  return new EmbedBuilder()
-    .setColor(resolveEmbedColour(interaction.guildId, 0xe67e22))
-    .setTitle('Media Stats')
-    .setDescription(joinLines(lines, 'No data yet.', 4096))
-    .setFooter({
-      text: [
-        `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
-        `Total media messages: ${formatNumber(topMedia.totals.mediaMessages)}`,
-      ].join(' | '),
-    })
-    .setTimestamp();
-}
-
-function buildUserEmbed(interaction, user, stats) {
+function buildUserSearchEmbed(interaction, user, stats, mostUsedWord) {
   if (!stats) {
     return buildNoDataEmbed(
       interaction,
-      `Word Stats for ${user.username}`,
+      `User Word Stats: ${user.username}`,
       `No tracked data exists for <@${user.id}> yet.`,
     );
   }
 
-  const topWordLines = stats.topWords.map((entry, index) => (
-    `${index + 1}. \`${entry.word}\` - ${formatNumber(entry.count)}`
-  ));
+  const mostUsedWordText = mostUsedWord
+    ? `\`${mostUsedWord.word}\` (${formatNumber(mostUsedWord.count)} ${formatPlural(mostUsedWord.count, 'use')})`
+    : 'No tracked words yet.';
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x9b59b6))
-    .setTitle(`Word Stats for ${user.username}`)
+    .setTitle(`User Word Stats: ${user.username}`)
     .addFields(
       {
-        name: 'Message Counts',
-        value: [
-          `Total: ${formatNumber(stats.count)}`,
-          `Text: ${formatNumber(stats.textCount)}`,
-          `Media: ${formatNumber(stats.mediaCount)}`,
-        ].join('\n'),
-        inline: true,
-      },
-      {
-        name: 'Media Breakdown',
-        value: [
-          `Images: ${formatNumber(stats.mediaBreakdown.images)}`,
-          `Stickers: ${formatNumber(stats.mediaBreakdown.stickers)}`,
-          `Emojis: ${formatNumber(stats.mediaBreakdown.emojis)}`,
-        ].join('\n'),
-        inline: true,
-      },
-      {
-        name: 'Top 10 Words',
-        value: joinLines(topWordLines, 'No words recorded for this user yet.'),
+        name: 'Most Used Word',
+        value: mostUsedWordText,
         inline: false,
       },
+      {
+        name: 'Message Totals',
+        value: [
+          `Total messages: ${formatNumber(stats.count)}`,
+          `Text messages: ${formatNumber(stats.textCount)}`,
+          `Media messages: ${formatNumber(stats.mediaCount)}`,
+        ].join('\n'),
+        inline: true,
+      },
+      {
+        name: 'Vocabulary',
+        value: [
+          `Unique words: ${formatNumber(stats.uniqueWordCount)}`,
+          `Total word uses: ${formatNumber(stats.totalWordUses)}`,
+        ].join('\n'),
+        inline: true,
+      },
+    )
+    .setFooter({
+      text: `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
+    })
+    .setTimestamp();
+}
+
+function buildWordsViewEmbed(interaction, topWords, page, pageCount) {
+  const start = page * PAGE_SIZE;
+  const pageEntries = topWords.entries.slice(start, start + PAGE_SIZE);
+  const lines = pageEntries.map((entry, index) => (
+    `${start + index + 1}. \`${entry.word}\` - ${formatNumber(entry.totalCount)} total | top: <@${entry.topUserId}> (${formatNumber(entry.topUserCount)})`
+  ));
+
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(interaction.guildId, 0x1abc9c))
+    .setTitle('Top Word Stats')
+    .setDescription(`Top ${formatNumber(topWords.entries.length)} words with ${MIN_WORD_LENGTH}+ letters.`)
+    .addFields(
+      { name: 'Words', value: joinLines(lines, 'No words recorded yet.') },
     )
     .setFooter({
       text: [
         `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
-        `Unique words: ${formatNumber(stats.uniqueWordCount)}`,
+        `Page ${page + 1}/${pageCount}`,
+        `Total uses: ${formatNumber(topWords.totalWordUses)}`,
       ].join(' | '),
     })
     .setTimestamp();
+}
+
+function buildMessagesViewEmbed(interaction, topUsers, page, pageCount) {
+  const start = page * PAGE_SIZE;
+  const pageEntries = topUsers.entries.slice(start, start + PAGE_SIZE);
+  const lines = pageEntries.map((entry, index) => (
+    `${start + index + 1}. ${formatUser(entry)} - ${formatNumber(entry.count)} ${formatPlural(entry.count, 'message')}`
+  ));
+
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(interaction.guildId, 0xf39c12))
+    .setTitle('Top Message Stats')
+    .setDescription(`Top ${formatNumber(topUsers.entries.length)} users by tracked messages.`)
+    .addFields(
+      { name: 'Message Leaders', value: joinLines(lines, 'No tracked users yet.') },
+    )
+    .setFooter({
+      text: [
+        `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
+        `Page ${page + 1}/${pageCount}`,
+        `Total tracked messages: ${formatNumber(topUsers.totals.totalMessages)}`,
+      ].join(' | '),
+    })
+    .setTimestamp();
+}
+
+function buildPagerComponents(baseId, page, pageCount, disableAll = false) {
+  if (pageCount <= 1) return [];
+
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${baseId}:prev`)
+        .setEmoji('⬅️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disableAll || page <= 0),
+      new ButtonBuilder()
+        .setCustomId(`${baseId}:next`)
+        .setEmoji('➡️')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disableAll || page >= pageCount - 1),
+    ),
+  ];
+}
+
+async function runPagedReply(interaction, baseId, pageCount, buildPageEmbed) {
+  let page = 0;
+  await interaction.reply({
+    embeds: [buildPageEmbed(page)],
+    components: buildPagerComponents(baseId, page, pageCount),
+  });
+
+  if (pageCount <= 1) return;
+
+  const message = await interaction.fetchReply();
+  const prevId = `${baseId}:prev`;
+  const nextId = `${baseId}:next`;
+
+  const collector = message.createMessageComponentCollector({
+    time: PAGER_TIMEOUT_MS,
+    filter: (componentInteraction) => (
+      componentInteraction.customId === prevId || componentInteraction.customId === nextId
+    ),
+  });
+
+  collector.on('collect', async (componentInteraction) => {
+    if (componentInteraction.customId === prevId && page > 0) {
+      page -= 1;
+    } else if (componentInteraction.customId === nextId && page < pageCount - 1) {
+      page += 1;
+    }
+
+    try {
+      await componentInteraction.update({
+        embeds: [buildPageEmbed(page)],
+        components: buildPagerComponents(baseId, page, pageCount),
+      });
+    } catch (_) {}
+  });
+
+  collector.on('end', async () => {
+    try {
+      await message.edit({
+        components: buildPagerComponents(baseId, page, pageCount, true),
+      });
+    } catch (_) {}
+  });
 }
 
 module.exports = {
@@ -201,11 +303,19 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName('view')
-        .setDescription('Which stats view to show')
+        .setDescription('View a leaderboard list')
         .addChoices(
-          { name: 'overview', value: 'overview' },
+          { name: 'words', value: 'words' },
+          { name: 'messages', value: 'messages' },
+        )
+        .setRequired(false),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('search')
+        .setDescription('Search for a word or a user')
+        .addChoices(
           { name: 'word', value: 'word' },
-          { name: 'media', value: 'media' },
           { name: 'user', value: 'user' },
         )
         .setRequired(false),
@@ -213,13 +323,13 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName('word')
-        .setDescription('Word to search (used for the word view)')
+        .setDescription('Word to search (used for search:word)')
         .setRequired(false),
     )
     .addUserOption((option) =>
       option
         .setName('user')
-        .setDescription('User to inspect (used for the user view)')
+        .setDescription('User to inspect (used for search:user)')
         .setRequired(false),
     ),
 
@@ -229,52 +339,115 @@ module.exports = {
     }
 
     const requestedView = interaction.options.getString('view');
+    const requestedSearch = interaction.options.getString('search');
     const rawWord = interaction.options.getString('word');
     const requestedUser = interaction.options.getUser('user');
 
-    let view = requestedView || 'overview';
-    if (!requestedView) {
-      if (rawWord && requestedUser) {
-        return interaction.reply({ content: 'Choose either a word lookup or a user lookup, not both.', ephemeral: true });
+    if (requestedView && requestedSearch) {
+      return interaction.reply({ content: 'Use either `view` or `search`, not both in one command.', ephemeral: true });
+    }
+
+    if (requestedView) {
+      if (rawWord || requestedUser) {
+        return interaction.reply({ content: 'The `view` option only accepts `words` or `messages`.', ephemeral: true });
       }
-      if (rawWord) view = 'word';
-      else if (requestedUser) view = 'user';
+
+      if (requestedView === 'words') {
+        const topWords = wordStatsStore.getTopWords(interaction.guildId, FULL_VIEW_LIMIT, { minWordLength: MIN_WORD_LENGTH });
+        if (!topWords.entries.length) {
+          const embed = buildNoDataEmbed(
+            interaction,
+            'Top Word Stats',
+            `No ${MIN_WORD_LENGTH}+ letter words have been tracked yet.`,
+          );
+          return interaction.reply({ embeds: [embed] });
+        }
+
+        const pageCount = Math.ceil(topWords.entries.length / PAGE_SIZE);
+        const baseId = `wordstats:words:${interaction.id}`;
+        return runPagedReply(
+          interaction,
+          baseId,
+          pageCount,
+          (page) => buildWordsViewEmbed(interaction, topWords, page, pageCount),
+        );
+      }
+
+      if (requestedView === 'messages') {
+        const topUsers = wordStatsStore.getTopUsers(interaction.guildId, FULL_VIEW_LIMIT);
+        if (!topUsers.entries.length) {
+          const embed = buildNoDataEmbed(
+            interaction,
+            'Top Message Stats',
+            'No tracked users exist yet.',
+          );
+          return interaction.reply({ embeds: [embed] });
+        }
+
+        const pageCount = Math.ceil(topUsers.entries.length / PAGE_SIZE);
+        const baseId = `wordstats:messages:${interaction.id}`;
+        return runPagedReply(
+          interaction,
+          baseId,
+          pageCount,
+          (page) => buildMessagesViewEmbed(interaction, topUsers, page, pageCount),
+        );
+      }
+
+      return interaction.reply({ content: 'Unknown view option.', ephemeral: true });
     }
 
-    if (view === 'overview') {
-      const embed = buildOverviewEmbed(interaction);
-      return interaction.reply({ embeds: [embed] });
+    let searchMode = requestedSearch;
+    if (!searchMode) {
+      if (rawWord && requestedUser) {
+        return interaction.reply({ content: 'Choose either a word search or a user search, not both.', ephemeral: true });
+      }
+      if (rawWord) searchMode = 'word';
+      else if (requestedUser) searchMode = 'user';
     }
 
-    if (view === 'word') {
+    if (searchMode === 'word') {
+      if (requestedUser) {
+        return interaction.reply({ content: 'User input is only valid for `search:user`.', ephemeral: true });
+      }
       if (!rawWord) {
-        return interaction.reply({ content: 'Provide a word. Example: `/wordstats word hello`.', ephemeral: true });
+        return interaction.reply({ content: 'Provide a word. Example: `/wordstats search:word word:hello`.', ephemeral: true });
       }
       const normalizedWord = wordStatsStore.normalizeWordToken(rawWord);
       if (!normalizedWord) {
         return interaction.reply({ content: 'Please provide a valid word to search.', ephemeral: true });
       }
 
-      const result = wordStatsStore.searchWordUsage(interaction.guildId, normalizedWord, MAX_ROWS);
-      const embed = buildWordEmbed(interaction, normalizedWord, result);
+      const result = wordStatsStore.searchWordUsage(interaction.guildId, normalizedWord, OVERVIEW_ROWS);
+      const embed = buildWordSearchEmbed(interaction, normalizedWord, result);
       return interaction.reply({ embeds: [embed] });
     }
 
-    if (view === 'media') {
-      const embed = buildMediaEmbed(interaction);
-      return interaction.reply({ embeds: [embed] });
-    }
-
-    if (view === 'user') {
-      const user = requestedUser;
-      if (!user) {
-        return interaction.reply({ content: 'Provide a user. Example: `/wordstats user @member`.', ephemeral: true });
+    if (searchMode === 'user') {
+      if (rawWord) {
+        return interaction.reply({ content: 'Word input is only valid for `search:word`.', ephemeral: true });
       }
-      const stats = wordStatsStore.getUserWordStats(interaction.guildId, user.id, MAX_ROWS);
-      const embed = buildUserEmbed(interaction, user, stats);
+      if (!requestedUser) {
+        return interaction.reply({ content: 'Provide a user. Example: `/wordstats search:user user:@member`.', ephemeral: true });
+      }
+
+      const stats = wordStatsStore.getUserWordStats(interaction.guildId, requestedUser.id, OVERVIEW_ROWS);
+      const longWordStats = wordStatsStore.getUserWordStats(
+        interaction.guildId,
+        requestedUser.id,
+        1,
+        { minWordLength: MIN_WORD_LENGTH },
+      );
+      const mostUsedWord = longWordStats?.topWords?.[0] || stats?.topWords?.[0] || null;
+      const embed = buildUserSearchEmbed(interaction, requestedUser, stats, mostUsedWord);
       return interaction.reply({ embeds: [embed] });
     }
 
-    return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+    if (requestedSearch) {
+      return interaction.reply({ content: 'Unknown search option.', ephemeral: true });
+    }
+
+    const embed = buildOverviewEmbed(interaction);
+    return interaction.reply({ embeds: [embed] });
   },
 };
