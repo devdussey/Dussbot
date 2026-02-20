@@ -111,7 +111,7 @@ module.exports = {
       const fileName = `${baseName || 'image'}-${edit}-filter.${result.outputExt}`;
       const output = new AttachmentBuilder(result.buffer, { name: fileName });
       await interaction.editReply({
-        content: `Applied \`${edit}\` filter at ${result.width}x${result.height} (fixed output size).`,
+        content: `Take a \`${edit}\` off innit`,
         files: [output],
       });
     } catch (err) {
