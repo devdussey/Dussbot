@@ -13,6 +13,8 @@ const {
 const rupeeStore = require('../utils/rupeeStore');
 const rouletteResultStore = require('../utils/rouletteResultStore');
 const casinoStatsStore = require('../utils/casinoStatsStore');
+const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
+const logSender = require('../utils/logSender');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { formatCurrencyAmount, getCurrencyName } = require('../utils/currencyName');
 
@@ -127,6 +129,65 @@ function formatGameName(game) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ');
+}
+
+async function logCasinoRupeeEvent({
+  guildId,
+  client,
+  user = null,
+  userId = null,
+  eventType = 'spend',
+  amount = 0,
+  balance = null,
+  game = 'casino',
+  action = null,
+}) {
+  try {
+    const parsedAmount = Math.floor(Number(amount) || 0);
+    if (!guildId || !client || parsedAmount <= 0) return false;
+
+    const resolvedUserId = user?.id || userId || null;
+    const actor = user || (resolvedUserId ? `<@${resolvedUserId}>` : 'Unknown');
+    const mention = resolvedUserId ? `<@${resolvedUserId}>` : 'Unknown';
+    const safeEventType = eventType === 'earned' ? 'earned' : 'spend';
+    const gameLabel = formatGameName(game);
+    const actionLabel = action || (safeEventType === 'earned' ? 'Casino payout' : 'Casino entry');
+    const method = `/casino ${String(game || 'casino').toLowerCase()}`;
+    const resolvedBalance = Number.isFinite(Number(balance))
+      ? Number(balance)
+      : (resolvedUserId ? rupeeStore.getBalance(guildId, resolvedUserId) : null);
+    const amountText = formatCurrencyAmount(guildId, parsedAmount, { lowercase: true });
+    const description = safeEventType === 'earned'
+      ? `${mention} gained ${amountText} in ${gameLabel} (${actionLabel}).`
+      : `${mention} spent ${amountText} in ${gameLabel} (${actionLabel}).`;
+
+    const embed = buildRupeeEventEmbed({
+      guildId,
+      eventType: safeEventType,
+      actor,
+      target: actor,
+      amount: parsedAmount,
+      balance: resolvedBalance,
+      method,
+      itemLabel: actionLabel,
+      description,
+      extraFields: [
+        { name: 'Game', value: gameLabel, inline: true },
+        { name: 'Action', value: String(actionLabel).slice(0, 256), inline: true },
+      ],
+    });
+
+    await logSender.sendLog({
+      guildId,
+      logType: safeEventType === 'earned' ? 'rupee_earned' : 'rupee_spend',
+      embed,
+      client,
+    });
+    return true;
+  } catch (err) {
+    console.error('[Casino] Failed to send rupee log:', err?.message || err);
+    return false;
+  }
 }
 
 function getHorseLaneEmoji(index) {
@@ -760,13 +821,34 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
 
         const existing = game.bets.get(userId);
         if (existing) {
-          await rupeeStore.addTokens(game.guildId, userId, existing.totalCost);
+          const refundedBalance = await rupeeStore.addTokens(game.guildId, userId, existing.totalCost);
+          void logCasinoRupeeEvent({
+            guildId: game.guildId,
+            client: componentInteraction.client,
+            user: componentInteraction.user,
+            eventType: 'earned',
+            amount: existing.totalCost,
+            balance: refundedBalance,
+            game: 'roulette',
+            action: 'Roulette Bet Refund',
+          });
         }
 
         const paid = await rupeeStore.spendTokens(game.guildId, userId, totalCost);
         if (!paid) {
           if (existing) {
-            await rupeeStore.spendTokens(game.guildId, userId, existing.totalCost);
+            const restored = await rupeeStore.spendTokens(game.guildId, userId, existing.totalCost);
+            if (restored) {
+              void logCasinoRupeeEvent({
+                guildId: game.guildId,
+                client: componentInteraction.client,
+                user: componentInteraction.user,
+                eventType: 'spend',
+                amount: existing.totalCost,
+                game: 'roulette',
+                action: 'Roulette Bet Restore',
+              });
+            }
           }
           await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, `Not enough balance for this bet (needs ${formatCurrencyAmount(game.guildId, totalCost, { lowercase: true })}).`)], components: buildBetComponents(game, userId, draft) });
           return;
@@ -792,6 +874,15 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
           parity: draft.parity,
           parityName: draft.parityName,
           multiplier: draft.multiplier,
+        });
+        void logCasinoRupeeEvent({
+          guildId: game.guildId,
+          client: componentInteraction.client,
+          user: componentInteraction.user,
+          eventType: 'spend',
+          amount: totalCost,
+          game: 'roulette',
+          action: 'Roulette Bet',
         });
 
         await componentInteraction.update({ embeds: [buildBetEmbed(game, userId, draft, `Bet placed for ${formatCurrencyAmount(game.guildId, totalCost, { lowercase: true })}.`)], components: buildBetComponents(game, userId, draft) });
@@ -850,7 +941,17 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
           payout += bet.amountPerBet * (wb.odds + 1);
         }
         if (payout > 0) {
-          await rupeeStore.addTokens(game.guildId, bet.userId, payout);
+          const payoutBalance = await rupeeStore.addTokens(game.guildId, bet.userId, payout);
+          void logCasinoRupeeEvent({
+            guildId: game.guildId,
+            client: game.channel?.client,
+            userId: bet.userId,
+            eventType: 'earned',
+            amount: payout,
+            balance: payoutBalance,
+            game: 'roulette',
+            action: 'Roulette Win',
+          });
         }
 
         const net = payout - bet.totalCost;
@@ -1062,6 +1163,15 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         };
         game.participants.set(buttonInteraction.user.id, horse);
         game.entryPayments.add(buttonInteraction.user.id);
+        void logCasinoRupeeEvent({
+          guildId: game.guildId,
+          client: buttonInteraction.client,
+          user: buttonInteraction.user,
+          eventType: 'spend',
+          amount: HORSE_RACE_ENTRY_COST,
+          game: 'horserace',
+          action: 'Horse Race Entry',
+        });
 
         await buttonInteraction.reply({
           content: `You joined the race as ${horse.racerEmoji}. Entry fee paid: ${formatCurrencyAmount(game.guildId, HORSE_RACE_ENTRY_COST, { lowercase: true })}.`,
@@ -1084,7 +1194,17 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         game.participants.delete(buttonInteraction.user.id);
         normalizeHorseRaceLanes(game);
         if (game.entryPayments.has(buttonInteraction.user.id)) {
-          await rupeeStore.addTokens(game.guildId, buttonInteraction.user.id, HORSE_RACE_ENTRY_COST);
+          const refundBalance = await rupeeStore.addTokens(game.guildId, buttonInteraction.user.id, HORSE_RACE_ENTRY_COST);
+          void logCasinoRupeeEvent({
+            guildId: game.guildId,
+            client: buttonInteraction.client,
+            user: buttonInteraction.user,
+            eventType: 'earned',
+            amount: HORSE_RACE_ENTRY_COST,
+            balance: refundBalance,
+            game: 'horserace',
+            action: 'Horse Race Refund',
+          });
           game.entryPayments.delete(buttonInteraction.user.id);
         }
 
@@ -1132,7 +1252,17 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
 
       if (horses.length < HORSE_RACE_MIN_PLAYERS) {
         for (const userId of game.entryPayments) {
-          await rupeeStore.addTokens(game.guildId, userId, HORSE_RACE_ENTRY_COST);
+          const refundBalance = await rupeeStore.addTokens(game.guildId, userId, HORSE_RACE_ENTRY_COST);
+          void logCasinoRupeeEvent({
+            guildId: game.guildId,
+            client: game.channel?.client,
+            userId,
+            eventType: 'earned',
+            amount: HORSE_RACE_ENTRY_COST,
+            balance: refundBalance,
+            game: 'horserace',
+            action: 'Horse Race Refund',
+          });
         }
         game.entryPayments.clear();
 
@@ -1239,11 +1369,31 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
 
       const payoutsByUser = new Map();
       if (finishOrder[0] && firstPrize > 0) {
-        await rupeeStore.addTokens(game.guildId, finishOrder[0].userId, firstPrize);
+        const firstPlaceBalance = await rupeeStore.addTokens(game.guildId, finishOrder[0].userId, firstPrize);
+        void logCasinoRupeeEvent({
+          guildId: game.guildId,
+          client: game.channel?.client,
+          userId: finishOrder[0].userId,
+          eventType: 'earned',
+          amount: firstPrize,
+          balance: firstPlaceBalance,
+          game: 'horserace',
+          action: 'Horse Race 1st Place',
+        });
         payoutsByUser.set(finishOrder[0].userId, firstPrize);
       }
       if (finishOrder[1] && secondPrize > 0) {
-        await rupeeStore.addTokens(game.guildId, finishOrder[1].userId, secondPrize);
+        const secondPlaceBalance = await rupeeStore.addTokens(game.guildId, finishOrder[1].userId, secondPrize);
+        void logCasinoRupeeEvent({
+          guildId: game.guildId,
+          client: game.channel?.client,
+          userId: finishOrder[1].userId,
+          eventType: 'earned',
+          amount: secondPrize,
+          balance: secondPlaceBalance,
+          game: 'horserace',
+          action: 'Horse Race 2nd Place',
+        });
         payoutsByUser.set(finishOrder[1].userId, (payoutsByUser.get(finishOrder[1].userId) || 0) + secondPrize);
       }
 
@@ -1358,6 +1508,15 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
     return interaction.reply(payload);
   }
+  void logCasinoRupeeEvent({
+    guildId: interaction.guildId,
+    client: interaction.client,
+    user: interaction.user,
+    eventType: 'spend',
+    amount: BLACKJACK_MIN_BUY_IN,
+    game: 'blackjack',
+    action: 'Blackjack Buy-In',
+  });
 
   const game = {
     type: 'blackjack',
@@ -1390,7 +1549,19 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       game.message = await interaction.fetchReply();
     }
   } catch (err) {
-    await rupeeStore.addTokens(interaction.guildId, interaction.user.id, BLACKJACK_MIN_BUY_IN).catch(() => {});
+    try {
+      const refundBalance = await rupeeStore.addTokens(interaction.guildId, interaction.user.id, BLACKJACK_MIN_BUY_IN);
+      void logCasinoRupeeEvent({
+        guildId: interaction.guildId,
+        client: interaction.client,
+        user: interaction.user,
+        eventType: 'earned',
+        amount: BLACKJACK_MIN_BUY_IN,
+        balance: refundBalance,
+        game: 'blackjack',
+        action: 'Blackjack Refund',
+      });
+    } catch (_) {}
     activeGames.delete(key);
     throw err;
   }
@@ -1511,8 +1682,28 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
             });
             return;
           }
+          void logCasinoRupeeEvent({
+            guildId: game.guildId,
+            client: componentInteraction.client,
+            user: componentInteraction.user,
+            eventType: 'spend',
+            amount: delta,
+            game: 'blackjack',
+            action: 'Blackjack Buy-In Increase',
+          });
         } else if (delta < 0) {
-          await rupeeStore.addTokens(game.guildId, componentInteraction.user.id, Math.abs(delta));
+          const refundAmount = Math.abs(delta);
+          const refundBalance = await rupeeStore.addTokens(game.guildId, componentInteraction.user.id, refundAmount);
+          void logCasinoRupeeEvent({
+            guildId: game.guildId,
+            client: componentInteraction.client,
+            user: componentInteraction.user,
+            eventType: 'earned',
+            amount: refundAmount,
+            balance: refundBalance,
+            game: 'blackjack',
+            action: 'Blackjack Buy-In Refund',
+          });
         }
 
         game.pendingBuyIns.delete(componentInteraction.user.id);
@@ -1692,7 +1883,17 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
 
         if (payout > 0) {
           try {
-            await rupeeStore.addTokens(game.guildId, userId, payout);
+            const payoutBalance = await rupeeStore.addTokens(game.guildId, userId, payout);
+            void logCasinoRupeeEvent({
+              guildId: game.guildId,
+              client: game.channel?.client,
+              userId,
+              eventType: 'earned',
+              amount: payout,
+              balance: payoutBalance,
+              game: 'blackjack',
+              action: outcome.result === 'push' ? 'Blackjack Push' : 'Blackjack Win',
+            });
           } catch (error) {
             console.error('[Blackjack] Failed to pay out winner:', { guildId: game.guildId, userId, payout }, error);
           }

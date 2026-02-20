@@ -1,7 +1,7 @@
 {
-  "name": "disphoria",
-  "version": "1.0.0",
-  "description": "Disphoria Assist",
+  "name": "dussbot",
+  "version": "1.5.0",
+  "description": "Dussbot Disphoria Clone",
   "main": "src/index.js",
   "private": true,
   "scripts": {
@@ -14,7 +14,7 @@
   "keywords": [
     "discord",
     "bot",
-    "embeds",
+    "logging",
     "discord.js"
   ],
   "author": "",
