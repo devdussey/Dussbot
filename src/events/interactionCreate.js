@@ -275,7 +275,6 @@ function formatSacrificeCooldown(ms) {
 
 const COMMAND_CATEGORY_MAP = {
     // Logging
-    dmdiag: 'logging',
     logconfig: 'logging',
 
     // Moderation
@@ -366,7 +365,6 @@ const ADMIN_COMMANDS = new Set([
   'colour',
   'confessconfig',
   'debug',
-  'dmdiag',
   'embed',
   'giverupee',
   'logconfig',
@@ -1655,45 +1653,6 @@ module.exports = {
 
                 try { await interaction.reply({ content: 'Your suggestion has been submitted anonymously.', ephemeral: true }); } catch (_) {}
                 return;
-            }
-            // Welcome embed setup modal
-            if (typeof interaction.customId === 'string' && interaction.customId.startsWith('welcome:embed:')) {
-                if (!interaction.inGuild()) return;
-                const parts = interaction.customId.split(':');
-                const channelId = parts[2];
-                let channel = null;
-                try { channel = await interaction.guild.channels.fetch(channelId); } catch (_) {}
-                if (!channel) {
-                    try { await interaction.reply({ content: 'Saved channel not found. Re-run /welcome setup.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-
-                try {
-                    const { applyDefaultColour } = require('../utils/guildColourStore');
-                    const welcomeStore = require('../utils/welcomeStore');
-                    const embed = new EmbedBuilder();
-                    const title = interaction.fields.getTextInputValue('embedTitle');
-                    const description = interaction.fields.getTextInputValue('embedDescription');
-                    const color = interaction.fields.getTextInputValue('embedColor');
-                    const image = interaction.fields.getTextInputValue('embedImage');
-                    const footer = interaction.fields.getTextInputValue('embedFooter');
-
-                    if (title) embed.setTitle(title);
-                    if (description) embed.setDescription(description);
-                    if (image) embed.setImage(image);
-                    if (footer) embed.setFooter({ text: footer });
-                    try { applyDefaultColour(embed, interaction.guildId); } catch (_) {}
-                    if (color) { try { embed.setColor(color); } catch (_) {} }
-
-                    // Save configuration
-                    welcomeStore.set(interaction.guildId, { channelId, embed: embed.toJSON() });
-
-                    // Preview
-                    await channel.send({ content: `Welcome, <@${interaction.user.id}>!`, embeds: [embed] });
-                    return interaction.reply({ content: `Welcome message saved for ${channel}.`, ephemeral: true });
-                } catch (err) {
-                    return interaction.reply({ content: `Failed to save welcome: ${err.message}`, ephemeral: true });
-                }
             }
             if (interaction.customId === 'embedBuilderModal') {
                 await interaction.deferReply({ ephemeral: true });

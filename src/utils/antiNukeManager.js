@@ -158,7 +158,7 @@ async function buildConfigEmbed(guild, config) {
   if (config.streamAlerts) {
     const streamEnabled = await streamLogStore.getEnabled(guild.id, 'security');
     const streamChannel = await streamLogStore.getChannelForCategory(guild.id, 'security');
-    if (!streamEnabled || !streamChannel) warnings.push('• Stream alerts are on, but the `security` stream category or channel is not configured. Use `/logsecurityset` and `/logsecuritymode`.');
+    if (!streamEnabled || !streamChannel) warnings.push('• Stream alerts are on, but the `security` stream category or channel is not configured. Use `/logconfig` to configure security logging.');
   }
   if (!config.notifyOwners) warnings.push('• Owner DM alerts are disabled. Consider enabling them for escalations.');
 

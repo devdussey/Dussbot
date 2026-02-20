@@ -8,8 +8,7 @@
     "start": "node deploy-commands.js && node src/index.js",
     "dev": "node --watch src/index.js",
     "build": "node deploy-commands.js",
-    "test": "node --test",
-    "dashboard": "node dashboard/server.js"
+    "test": "node --test"
   },
   "keywords": [
     "discord",
