@@ -2,9 +2,57 @@ const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../src/utils/logger')('DeployCommands');
+const { getCurrencyName, getCurrencyPlural } = require('../src/utils/currencyName');
 require('dotenv').config();
 
 const GUILD_INSTALL_INTEGRATION_TYPE = 0;
+const COMMAND_DESCRIPTION_LIMIT = 100;
+
+function toSentenceCaseLower(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function trimDescription(value) {
+    const safe = String(value || '').trim();
+    if (safe.length <= COMMAND_DESCRIPTION_LIMIT) return safe;
+    return safe.slice(0, COMMAND_DESCRIPTION_LIMIT);
+}
+
+function applyGuildCurrencyOverrides(commandJson, guildId) {
+    if (!commandJson || !guildId) return commandJson;
+
+    const currencySingular = getCurrencyName(guildId);
+    const currencyPlural = getCurrencyPlural(currencySingular);
+    const pluralText = toSentenceCaseLower(currencyPlural);
+
+    if (commandJson.name === 'currencybalances') {
+        commandJson.description = trimDescription(`View the ${pluralText} leaderboard`);
+        return commandJson;
+    }
+
+    if (commandJson.name === 'givecurrency') {
+        commandJson.description = trimDescription(`Admins: grant ${pluralText} to a user`);
+
+        if (Array.isArray(commandJson.options)) {
+            for (const option of commandJson.options) {
+                if (option?.name === 'user') {
+                    option.description = trimDescription(`Member to receive ${pluralText}`);
+                } else if (option?.name === 'amount') {
+                    option.description = trimDescription(`How many ${pluralText} to grant (default 1)`);
+                }
+            }
+        }
+    }
+
+    return commandJson;
+}
+
+function buildGuildCommands(baseCommands, guildId) {
+    return baseCommands.map((commandJson) => {
+        const clone = JSON.parse(JSON.stringify(commandJson));
+        return applyGuildCurrencyOverrides(clone, guildId);
+    });
+}
 
 function getAllCommandFiles(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -77,16 +125,18 @@ const rest = new REST().setToken(token);
         }
 
         // Guild-scoped commands appear instantly, whereas global updates may take up to an hour to propagate.
-        const shouldDeployGuild = guildIds.length > 0 && (env === 'development' || deployBothScopes);
+        // If guild IDs are provided, always deploy guild commands so guild-specific text (currency names) can be applied.
+        const shouldDeployGuild = guildIds.length > 0;
         const shouldDeployGlobal = deployBothScopes || !(env === 'development' && guildIds.length > 0);
 
         if (shouldDeployGuild) {
             logger.info(`Target scope: guild (${guildIds.join(', ')})`);
             if (!isDryRun) {
                 for (const gid of guildIds) {
+                    const guildCommands = buildGuildCommands(commands, gid);
                     const data = await rest.put(
                         Routes.applicationGuildCommands(clientId, gid),
-                        { body: commands },
+                        { body: guildCommands },
                     );
                     logger.success(`Successfully reloaded ${data.length} guild application (/) commands for guild ${gid}.`);
                 }
