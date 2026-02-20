@@ -1,6 +1,6 @@
 // Bootstrap runner for Apollo/Pterodactyl: optional slash-command deploy, then start the bot
 // Configure via env:
-// - DEPLOY_CMDS_ON_START=true to run deploy-commands.js at startup
+// - DEPLOY_CMDS_ON_START=true to run scripts/deploy-commands.js at startup
 // - EXIT_ON_DEPLOY_FAIL=true to stop on deploy errors
 
 const { spawn } = require('node:child_process');
@@ -205,12 +205,12 @@ async function listLocalBranchNames() {
   const exitOnFail = String(process.env.EXIT_ON_DEPLOY_FAIL || '').toLowerCase() === 'true';
 
   if (deployOnStart) {
-    console.log('[runner] DEPLOY_CMDS_ON_START=true → running deploy-commands.js');
+    console.log('[runner] DEPLOY_CMDS_ON_START=true -> running scripts/deploy-commands.js');
     try {
-      await run(process.execPath, ['deploy-commands.js']);
-      console.log('[runner] deploy-commands.js finished successfully');
+      await run(process.execPath, ['scripts/deploy-commands.js']);
+      console.log('[runner] scripts/deploy-commands.js finished successfully');
     } catch (err) {
-      console.error('[runner] deploy-commands.js failed:', err?.message || err);
+      console.error('[runner] scripts/deploy-commands.js failed:', err?.message || err);
       if (exitOnFail) process.exit(1);
     }
   }

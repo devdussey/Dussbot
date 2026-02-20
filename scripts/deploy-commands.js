@@ -1,7 +1,7 @@
 const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const logger = require('./src/utils/logger')('DeployCommands');
+const logger = require('../src/utils/logger')('DeployCommands');
 require('dotenv').config();
 
 const GUILD_INSTALL_INTEGRATION_TYPE = 0;
@@ -17,7 +17,7 @@ function getAllCommandFiles(dir) {
     return files;
 }
 
-const commandsDir = process.env.COMMANDS_DIR || path.join(__dirname, 'src', 'commands');
+const commandsDir = process.env.COMMANDS_DIR || path.join(__dirname, '..', 'src', 'commands');
 const commands = [];
 const files = getAllCommandFiles(commandsDir);
 const nameToFile = new Map();

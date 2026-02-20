@@ -5,9 +5,9 @@
   "main": "src/index.js",
   "private": true,
   "scripts": {
-    "start": "node deploy-commands.js && node src/index.js",
+    "start": "node scripts/deploy-commands.js && node src/index.js",
     "dev": "node --watch src/index.js",
-    "build": "node deploy-commands.js",
+    "build": "node scripts/deploy-commands.js",
     "test": "node --test"
   },
   "keywords": [
