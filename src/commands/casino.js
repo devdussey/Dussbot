@@ -67,6 +67,15 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function shuffleArray(items) {
+  const next = [...items];
+  for (let i = next.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
+  return next;
+}
+
 function isDiscordUnknownMessageError(error) {
   const topLevelCode = Number(error?.code);
   const rawCode = Number(error?.rawError?.code);
@@ -191,9 +200,10 @@ async function logCasinoRupeeEvent({
   }
 }
 
-function getHorseLaneEmoji(index) {
-  if (!Number.isInteger(index) || index < 0) return HORSE_RACE_LANE_EMOJIS[0];
-  return HORSE_RACE_LANE_EMOJIS[index % HORSE_RACE_LANE_EMOJIS.length];
+function getHorseLaneEmoji(index, laneOrder = HORSE_RACE_LANE_EMOJIS) {
+  const lanes = Array.isArray(laneOrder) && laneOrder.length ? laneOrder : HORSE_RACE_LANE_EMOJIS;
+  if (!Number.isInteger(index) || index < 0) return lanes[0];
+  return lanes[index % lanes.length];
 }
 
 function toOrdinal(place) {
@@ -214,12 +224,35 @@ function renderHorseTrack(position, racerEmoji = HORSE_RACE_LANE_EMOJIS[0]) {
   return `${HORSE_RACE_TRACK_START}   ${arr.join('   ')}   ${HORSE_RACE_TRACK_FINISH}`;
 }
 
+function compareHorseRacePlacement(a, b) {
+  const aFinished = Boolean(a?.finished);
+  const bFinished = Boolean(b?.finished);
+  if (aFinished !== bFinished) return aFinished ? -1 : 1;
+
+  const aPosition = Number.isFinite(a?.position) ? a.position : 0;
+  const bPosition = Number.isFinite(b?.position) ? b.position : 0;
+
+  if (aFinished && bFinished) {
+    const aFinishTick = Number.isFinite(a?.finishTick) ? a.finishTick : Number.MAX_SAFE_INTEGER;
+    const bFinishTick = Number.isFinite(b?.finishTick) ? b.finishTick : Number.MAX_SAFE_INTEGER;
+    if (aFinishTick !== bFinishTick) return aFinishTick - bFinishTick;
+
+    const aBeforeFinish = Number.isFinite(a?.positionBeforeFinish) ? a.positionBeforeFinish : aPosition;
+    const bBeforeFinish = Number.isFinite(b?.positionBeforeFinish) ? b.positionBeforeFinish : bPosition;
+    if (aBeforeFinish !== bBeforeFinish) return bBeforeFinish - aBeforeFinish;
+  }
+
+  if (aPosition !== bPosition) return bPosition - aPosition;
+
+  const aTieBreaker = Number.isFinite(a?.raceTieBreaker) ? a.raceTieBreaker : Number.MAX_SAFE_INTEGER;
+  const bTieBreaker = Number.isFinite(b?.raceTieBreaker) ? b.raceTieBreaker : Number.MAX_SAFE_INTEGER;
+  if (aTieBreaker !== bTieBreaker) return aTieBreaker - bTieBreaker;
+
+  return String(a?.userId || '').localeCompare(String(b?.userId || ''));
+}
+
 function getHorseRacePlacementMap(horses) {
-  const ordered = [...horses].sort((a, b) => {
-    if (!!b.finished !== !!a.finished) return b.finished ? 1 : -1;
-    if ((b.position || 0) !== (a.position || 0)) return (b.position || 0) - (a.position || 0);
-    return (a.finishTick || Number.MAX_SAFE_INTEGER) - (b.finishTick || Number.MAX_SAFE_INTEGER);
-  });
+  const ordered = [...horses].sort(compareHorseRacePlacement);
 
   const placements = new Map();
   ordered.forEach((horse, index) => placements.set(horse.userId, index + 1));
@@ -230,10 +263,20 @@ function normalizeHorseRaceLanes(game) {
   const next = new Map();
   let lane = 0;
   for (const horse of game.participants.values()) {
-    horse.racerEmoji = getHorseLaneEmoji(lane);
+    horse.racerEmoji = getHorseLaneEmoji(lane, game.laneOrder);
     next.set(horse.userId, horse);
     lane += 1;
   }
+  game.participants = next;
+}
+
+function randomizeHorseRaceParticipants(game) {
+  const shuffled = shuffleArray([...game.participants.values()]);
+  const next = new Map();
+  shuffled.forEach((horse, lane) => {
+    horse.racerEmoji = getHorseLaneEmoji(lane, game.laneOrder);
+    next.set(horse.userId, horse);
+  });
   game.participants = next;
 }
 
@@ -241,7 +284,10 @@ function buildHorseRaceLobbyEmbed(game) {
   const competitorCount = game.participants.size;
   const competitors = game.participants.size
     ? [...game.participants.values()]
-      .map((horse) => `${horse.racerEmoji} - ${escapeMarkdown(horse.shortName || horse.displayName || 'Racer').slice(0, 32)}`)
+      .map((horse) => {
+        const record = casinoStatsStore.getUserGameRecord(game.guildId, horse.userId, 'horse_race') || { wins: 0, losses: 0 };
+        return `<@${horse.userId}> ${record.wins}-${record.losses}`;
+      })
       .join('\n')
     : '_No competitors yet._';
 
@@ -279,7 +325,7 @@ function buildHorseRaceRunningEmbed(game, horses, step) {
 function buildHorseRaceRunningContent(game, horses) {
   const placements = getHorseRacePlacementMap(horses);
   const lanes = horses.map((horse, index) => {
-    const track = renderHorseTrack(horse.position, horse.racerEmoji || getHorseLaneEmoji(index));
+    const track = renderHorseTrack(horse.position, horse.racerEmoji || getHorseLaneEmoji(index, game.laneOrder));
     const placeLabel = toOrdinal(placements.get(horse.userId) || (index + 1));
     const record = casinoStatsStore.getUserGameRecord(game.guildId, horse.userId, 'horse_race') || { wins: 0, losses: 0 };
     return `${track}   (${placeLabel}) (<@${horse.userId}> [${record.wins}-${record.losses}])`;
@@ -1061,6 +1107,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
     starterId: interaction.user.id,
     guildId: interaction.guildId,
     channel: interaction.channel,
+    laneOrder: shuffleArray(HORSE_RACE_LANE_EMOJIS),
     participants: new Map(),
     entryPayments: new Set(),
     isOpen: true,
@@ -1157,7 +1204,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
           userId: buttonInteraction.user.id,
           displayName,
           shortName: displayName,
-          racerEmoji: getHorseLaneEmoji(laneIndex),
+          racerEmoji: getHorseLaneEmoji(laneIndex, game.laneOrder),
           position: 0,
           finished: false,
           finishTick: Number.POSITIVE_INFINITY,
@@ -1242,13 +1289,18 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
     let gameDeleted = false;
 
     try {
+      if (game.participants.size >= HORSE_RACE_MIN_PLAYERS) {
+        randomizeHorseRaceParticipants(game);
+      }
       await updateLobbyMessage({ disabled: true });
 
-      const horses = [...game.participants.values()].map((horse) => ({
+      const horses = [...game.participants.values()].map((horse, index) => ({
         ...horse,
         position: 0,
         finished: false,
         finishTick: Number.POSITIVE_INFINITY,
+        positionBeforeFinish: Number.NEGATIVE_INFINITY,
+        raceTieBreaker: index,
       }));
 
       if (horses.length < HORSE_RACE_MIN_PLAYERS) {
@@ -1321,11 +1373,11 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         allowedMentions: { parse: [] },
       });
 
-      const finishOrder = [];
       for (let step = 1; step <= HORSE_RACE_PROGRESS_STEPS; step += 1) {
         await wait(HORSE_RACE_PROGRESS_UPDATE_MS);
         for (const horse of horses) {
           if (horse.finished) continue;
+          const previousPosition = horse.position;
           const remaining = Math.max(0, (HORSE_RACE_TRACK_SLOTS - 1) - horse.position);
           const stepsLeft = Math.max(1, HORSE_RACE_PROGRESS_STEPS - step + 1);
           let advance = 0;
@@ -1340,7 +1392,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
             horse.position = HORSE_RACE_TRACK_SLOTS - 1;
             horse.finished = true;
             horse.finishTick = step;
-            finishOrder.push(horse);
+            horse.positionBeforeFinish = previousPosition;
           }
         }
 
@@ -1351,11 +1403,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         });
       }
 
-      if (finishOrder.length < horses.length) {
-        const remaining = horses.filter((horse) => !finishOrder.includes(horse));
-        remaining.sort((a, b) => b.position - a.position);
-        finishOrder.push(...remaining);
-      }
+      const finishOrder = [...horses].sort(compareHorseRacePlacement);
 
       const totalPot = horses.length * HORSE_RACE_ENTRY_COST;
       let firstPrize = 0;
