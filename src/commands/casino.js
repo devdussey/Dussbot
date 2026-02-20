@@ -19,6 +19,10 @@ const { formatCurrencyAmount, getCurrencyName } = require('../utils/currencyName
 const JOIN_WINDOW_SECONDS = 30;
 const COUNTDOWN_STEP_SECONDS = 5;
 const SPIN_DURATION_MS = 10_000;
+const BLACKJACK_JOIN_WINDOW_SECONDS = 30;
+const BLACKJACK_COUNTDOWN_STEP_SECONDS = 5;
+const BLACKJACK_MIN_BUY_IN = 1;
+const BLACKJACK_MAX_PLAYERS = 4;
 const HORSE_RACE_JOIN_WINDOW_SECONDS = 60;
 const HORSE_RACE_COUNTDOWN_STEP_SECONDS = 5;
 const HORSE_RACE_PROGRESS_UPDATE_MS = 5_000;
@@ -236,6 +240,193 @@ function buildHorseRaceLobbyComponents(game, { disabled = false } = {}) {
       new ButtonBuilder().setCustomId(startId).setLabel('Start Race').setStyle(ButtonStyle.Primary).setDisabled(startDisabled),
     ),
   ];
+}
+
+function buildBlackjackLobbyEmbed(game) {
+  const players = [...game.players];
+  const playersText = players.length
+    ? players.map((userId) => `<@${userId}>`).join('\n')
+    : '_No players yet._';
+  const currency = getCurrencyName(game.guildId);
+
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
+    .setTitle('Blackjack Lobby')
+    .setDescription([
+      `${game.starterMention} has started a game of blackjack. Click "Join Lobby" to play.`,
+      '',
+      `**Players (1-${BLACKJACK_MAX_PLAYERS})**`,
+      playersText,
+      '',
+      `**Minimum ${BLACKJACK_MIN_BUY_IN} ${currency} Buy In**`,
+    ].join('\n'))
+    .setFooter({ text: `Game Starting in ${game.secondsLeft} Seconds` });
+}
+
+function buildBlackjackLobbyComponents(game, { disabled = false } = {}) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`blackjack-join-${game.raceId}`)
+        .setLabel('Join Lobby')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(disabled || !game.isOpen || game.players.size >= BLACKJACK_MAX_PLAYERS),
+    ),
+  ];
+}
+
+function buildBlackjackBuyInEmbed(game, userId, notice = null) {
+  const balance = rupeeStore.getBalance(game.guildId, userId);
+  const line = `Select an amount to buy in with. You currently have ${formatCurrencyAmount(game.guildId, balance, { lowercase: true })}.`;
+
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
+    .setTitle('Blackjack Lobby')
+    .setDescription(notice ? `${line}\n\n${notice}` : line);
+}
+
+function buildBlackjackBuyInComponents(game) {
+  const currency = getCurrencyName(game.guildId);
+  const buyInRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`blackjack-buyin-1-${game.raceId}`).setLabel(`1 (${currency})`).setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`blackjack-buyin-2-${game.raceId}`).setLabel(`2 (${currency})`).setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`blackjack-buyin-5-${game.raceId}`).setLabel(`5 ${currency}`).setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`blackjack-buyin-10-${game.raceId}`).setLabel(`10 ${currency}`).setStyle(ButtonStyle.Secondary),
+  );
+  return [buyInRow];
+}
+
+function createShuffledBlackjackDeck() {
+  const suits = ['♠', '♥', '♦', '♣'];
+  const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  const deck = [];
+
+  for (const suit of suits) {
+    for (const rank of ranks) {
+      deck.push({ suit, rank });
+    }
+  }
+
+  for (let i = deck.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+
+  return deck;
+}
+
+function drawBlackjackCard(game) {
+  if (!game.deck.length) game.deck = createShuffledBlackjackDeck();
+  return game.deck.pop();
+}
+
+function getBlackjackCardValue(card) {
+  if (!card) return 0;
+  if (card.rank === 'A') return 11;
+  if (card.rank === 'K' || card.rank === 'Q' || card.rank === 'J') return 10;
+  return Number(card.rank) || 0;
+}
+
+function getBlackjackHandValue(hand) {
+  let total = 0;
+  let aces = 0;
+
+  for (const card of hand) {
+    total += getBlackjackCardValue(card);
+    if (card.rank === 'A') aces += 1;
+  }
+
+  while (total > 21 && aces > 0) {
+    total -= 10;
+    aces -= 1;
+  }
+
+  return { total, isSoft: aces > 0 };
+}
+
+function isBlackjackHand(hand) {
+  return hand.length === 2 && getBlackjackHandValue(hand).total === 21;
+}
+
+function isBustHand(hand) {
+  return getBlackjackHandValue(hand).total > 21;
+}
+
+function formatBlackjackCard(card) {
+  if (!card) return '??';
+  return `${card.rank}${card.suit}`;
+}
+
+function formatBlackjackHand(hand, { hideHoleCard = false } = {}) {
+  if (!Array.isArray(hand) || hand.length === 0) return 'No cards';
+  if (!hideHoleCard) return hand.map((card) => formatBlackjackCard(card)).join(' ');
+  const shown = formatBlackjackCard(hand[0]);
+  return `${shown} ??`;
+}
+
+function buildBlackjackActionComponents(game, { disabled = false } = {}) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`blackjack-hit-${game.raceId}`).setLabel('Hit').setStyle(ButtonStyle.Success).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(`blackjack-stand-${game.raceId}`).setLabel('Stand').setStyle(ButtonStyle.Danger).setDisabled(disabled),
+    ),
+  ];
+}
+
+function buildBlackjackLiveEmbed(game, { revealDealer = false, note = null } = {}) {
+  const currentPlayerId = game.turnQueue[0] || null;
+  const currentHand = currentPlayerId ? (game.hands.get(currentPlayerId) || []) : [];
+  const currentTotal = currentHand.length ? getBlackjackHandValue(currentHand).total : 0;
+  const dealerTotal = revealDealer
+    ? getBlackjackHandValue(game.dealerHand).total
+    : getBlackjackCardValue(game.dealerHand[0]);
+
+  const embed = new EmbedBuilder()
+    .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
+    .setTitle('Blackjack - Live')
+    .setDescription(currentPlayerId ? `Current Player - <@${currentPlayerId}>` : 'Current Player - Dealer')
+    .addFields(
+      {
+        name: `Dealer's Hand (${dealerTotal})`,
+        value: revealDealer
+          ? formatBlackjackHand(game.dealerHand)
+          : `${formatBlackjackHand(game.dealerHand, { hideHoleCard: true })}\n(One Card Shown, Other Hidden)`,
+      },
+      {
+        name: currentPlayerId ? `<@${currentPlayerId}>'s Hand (${currentTotal})` : 'No Active Player',
+        value: currentPlayerId
+          ? `${formatBlackjackHand(currentHand)}\n(Show count of the current players hand)`
+          : 'All player turns are complete.',
+      },
+    );
+
+  if (note) embed.setFooter({ text: note });
+  return embed;
+}
+
+function buildBlackjackResultEmbed(game, outcomes) {
+  const dealerTotal = getBlackjackHandValue(game.dealerHand).total;
+  const dealerBust = dealerTotal > 21;
+  const dealerBlackjack = isBlackjackHand(game.dealerHand);
+  const dealerStatus = dealerBust ? 'BUST' : dealerBlackjack ? 'BLACKJACK' : 'STAND';
+  const lines = game.playerOrder.map((userId) => {
+    const hand = game.hands.get(userId) || [];
+    const total = getBlackjackHandValue(hand).total;
+    const outcome = outcomes.get(userId) || { result: 'lose' };
+    const resultLabel = outcome.result.toUpperCase();
+    return `• <@${userId}> - ${formatBlackjackHand(hand)} (${total}) - ${resultLabel}`;
+  });
+
+  return new EmbedBuilder()
+    .setColor(resolveEmbedColour(game.guildId, 0x22c55e))
+    .setTitle('Blackjack - Results')
+    .setDescription(
+      [
+        `Dealer - ${formatBlackjackHand(game.dealerHand)} (${dealerTotal}) - ${dealerStatus}`,
+        '',
+        lines.join('\n') || '_No players._',
+      ].join('\n'),
+    );
 }
 
 function buildPublicEmbed(game) {
@@ -1109,6 +1300,409 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
   });
 }
 
+async function runBlackjackGame(interaction, { initiatedByButton = false } = {}) {
+  if (!interaction.inGuild()) {
+    const payload = { content: 'Blackjack can only be played in a server channel.', ephemeral: true };
+    if (initiatedByButton) return interaction.reply(payload);
+    return interaction.reply(payload);
+  }
+
+  const key = gameKey(interaction.guildId, interaction.channelId);
+  if (activeGames.has(key)) {
+    const payload = { content: 'A casino game is already active in this channel.', ephemeral: true };
+    if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
+    return interaction.reply(payload);
+  }
+
+  const game = {
+    type: 'blackjack',
+    raceId: `${interaction.id}-${Date.now()}`,
+    guildId: interaction.guildId,
+    channel: interaction.channel,
+    starterMention: `<@${interaction.user.id}>`,
+    players: new Set([interaction.user.id]),
+    buyIns: new Map([[interaction.user.id, BLACKJACK_MIN_BUY_IN]]),
+    isOpen: true,
+    secondsLeft: BLACKJACK_JOIN_WINDOW_SECONDS,
+    message: null,
+  };
+  activeGames.set(key, game);
+
+  const startPayload = {
+    embeds: [buildBlackjackLobbyEmbed(game)],
+    components: buildBlackjackLobbyComponents(game),
+    allowedMentions: { parse: [] },
+  };
+
+  try {
+    if (interaction.deferred || interaction.replied) {
+      game.message = await interaction.followUp(startPayload);
+    } else {
+      await interaction.reply(startPayload);
+      game.message = await interaction.fetchReply();
+    }
+  } catch (err) {
+    activeGames.delete(key);
+    throw err;
+  }
+
+  const updateBlackjackLobbyMessage = async ({ disabled = false } = {}) => {
+    if (!game.message) return;
+    try {
+      await game.message.edit({
+        embeds: [buildBlackjackLobbyEmbed(game)],
+        components: buildBlackjackLobbyComponents(game, { disabled }),
+        allowedMentions: { parse: [] },
+      });
+    } catch (error) {
+      console.error('[Blackjack] Failed to update lobby message:', error);
+    }
+  };
+
+  const collector = game.channel.createMessageComponentCollector({
+    time: BLACKJACK_JOIN_WINDOW_SECONDS * 1000 + 5_000,
+    filter: (componentInteraction) => componentInteraction.customId.includes(game.raceId),
+  });
+
+  collector.on('collect', async (componentInteraction) => {
+    const id = componentInteraction.customId;
+
+    try {
+      if (id.startsWith('blackjack-join-')) {
+        if (!game.isOpen) {
+          await componentInteraction.reply({ content: 'This blackjack lobby is closed.', ephemeral: true });
+          return;
+        }
+
+        if (!game.players.has(componentInteraction.user.id)) {
+          if (game.players.size >= BLACKJACK_MAX_PLAYERS) {
+            await componentInteraction.reply({ content: 'This blackjack lobby is full.', ephemeral: true });
+            return;
+          }
+          game.players.add(componentInteraction.user.id);
+          game.buyIns.set(componentInteraction.user.id, BLACKJACK_MIN_BUY_IN);
+          await updateBlackjackLobbyMessage();
+        }
+
+        await componentInteraction.reply({
+          embeds: [buildBlackjackBuyInEmbed(game, componentInteraction.user.id)],
+          components: buildBlackjackBuyInComponents(game),
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (id.startsWith('blackjack-buyin-')) {
+        const amount = Number(id.split('-')[2] || 0);
+        if (game.players.has(componentInteraction.user.id) && [1, 2, 5, 10].includes(amount)) {
+          game.buyIns.set(componentInteraction.user.id, amount);
+        }
+        await componentInteraction.update({
+          embeds: [
+            buildBlackjackBuyInEmbed(
+              game,
+              componentInteraction.user.id,
+              Number.isFinite(amount) && amount > 0
+                ? `Selected buy-in: ${formatCurrencyAmount(game.guildId, amount, { lowercase: true })}.`
+                : null,
+            ),
+          ],
+          components: buildBlackjackBuyInComponents(game),
+        });
+      }
+    } catch (error) {
+      console.error('[Blackjack] Lobby interaction failed:', error);
+      const payload = { content: 'Blackjack action failed. Try again.', ephemeral: true };
+      if (componentInteraction.deferred || componentInteraction.replied) {
+        await componentInteraction.followUp(payload).catch(() => {});
+      } else {
+        await componentInteraction.reply(payload).catch(() => {});
+      }
+    }
+  });
+
+  const interval = setInterval(async () => {
+    if (!game.isOpen) return;
+    game.secondsLeft = Math.max(0, game.secondsLeft - BLACKJACK_COUNTDOWN_STEP_SECONDS);
+    await updateBlackjackLobbyMessage();
+    if (game.secondsLeft <= 0) {
+      game.isOpen = false;
+      collector.stop('countdown_complete');
+    }
+  }, BLACKJACK_COUNTDOWN_STEP_SECONDS * 1000);
+
+  collector.on('end', async () => {
+    clearInterval(interval);
+    game.isOpen = false;
+
+    try {
+      await updateBlackjackLobbyMessage({ disabled: true });
+    } catch (_) {}
+
+    const playerOrder = [...game.players];
+    if (!playerOrder.length) {
+      activeGames.delete(key);
+      return;
+    }
+
+    game.deck = createShuffledBlackjackDeck();
+    game.hands = new Map(playerOrder.map((userId) => [userId, []]));
+    game.dealerHand = [];
+    game.playerOrder = playerOrder;
+    game.turnQueue = [];
+    game.playerStates = new Map(playerOrder.map((userId) => [userId, 'playing']));
+    game.processingTurn = false;
+    game.phase = 'live';
+
+    for (const userId of playerOrder) {
+      game.hands.get(userId).push(drawBlackjackCard(game));
+    }
+    game.dealerHand.push(drawBlackjackCard(game));
+    for (const userId of playerOrder) {
+      game.hands.get(userId).push(drawBlackjackCard(game));
+    }
+    game.dealerHand.push(drawBlackjackCard(game));
+
+    const startIndex = Math.floor(Math.random() * playerOrder.length);
+    game.turnQueue = [
+      ...playerOrder.slice(startIndex),
+      ...playerOrder.slice(0, startIndex),
+    ];
+
+    const advanceAutoCompletedTurns = () => {
+      const notes = [];
+      while (game.turnQueue.length) {
+        const userId = game.turnQueue[0];
+        const hand = game.hands.get(userId) || [];
+        if (isBustHand(hand)) {
+          game.playerStates.set(userId, 'bust');
+          game.turnQueue.shift();
+          notes.push(`<@${userId}> busted.`);
+          continue;
+        }
+        if (isBlackjackHand(hand)) {
+          game.playerStates.set(userId, 'blackjack');
+          game.turnQueue.shift();
+          notes.push(`<@${userId}> has blackjack.`);
+          continue;
+        }
+        break;
+      }
+      return notes.join(' ');
+    };
+
+    const resolveDealerAndOutcomes = () => {
+      while (getBlackjackHandValue(game.dealerHand).total < 17) {
+        game.dealerHand.push(drawBlackjackCard(game));
+      }
+
+      const dealerValue = getBlackjackHandValue(game.dealerHand).total;
+      const dealerBust = dealerValue > 21;
+      const dealerBlackjack = isBlackjackHand(game.dealerHand);
+      const outcomes = new Map();
+
+      for (const userId of game.playerOrder) {
+        const hand = game.hands.get(userId) || [];
+        const playerValue = getBlackjackHandValue(hand).total;
+        const playerBust = playerValue > 21;
+        const playerBlackjack = isBlackjackHand(hand);
+        let result = 'lose';
+
+        if (playerBust) {
+          result = 'lose';
+        } else if (playerBlackjack && !dealerBlackjack) {
+          result = 'win';
+        } else if (dealerBlackjack && !playerBlackjack) {
+          result = 'lose';
+        } else if (dealerBust) {
+          result = 'win';
+        } else if (playerValue > dealerValue) {
+          result = 'win';
+        } else if (playerValue < dealerValue) {
+          result = 'lose';
+        } else {
+          result = 'push';
+        }
+
+        outcomes.set(userId, { result, playerValue });
+      }
+
+      return outcomes;
+    };
+
+    const finalizeBlackjackRound = async (outcomes) => {
+      const playAgainId = `blackjack-play-again-${Date.now()}`;
+      const playAgainComponents = [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(playAgainId).setLabel('Play Again').setStyle(ButtonStyle.Primary),
+        ),
+      ];
+
+      try {
+        await game.message.edit({
+          embeds: [buildBlackjackResultEmbed(game, outcomes)],
+          components: playAgainComponents,
+          allowedMentions: { parse: [] },
+        });
+      } catch (error) {
+        console.error('[Blackjack] Failed to post result message:', error);
+      }
+
+      activeGames.delete(key);
+
+      const playAgainCollector = game.message.createMessageComponentCollector({
+        time: 120_000,
+        max: 1,
+        filter: (buttonInteraction) => buttonInteraction.customId === playAgainId,
+      });
+
+      playAgainCollector.on('collect', async (buttonInteraction) => {
+        if (activeGames.has(gameKey(buttonInteraction.guildId, buttonInteraction.channelId))) {
+          await buttonInteraction.reply({ content: 'A casino game is already active in this channel.', ephemeral: true });
+          return;
+        }
+        await buttonInteraction.deferUpdate();
+        await runBlackjackGame(buttonInteraction, { initiatedByButton: true });
+      });
+
+      playAgainCollector.on('end', async () => {
+        try {
+          await game.message.edit({
+            components: [
+              new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(playAgainId).setLabel('Play Again').setStyle(ButtonStyle.Secondary).setDisabled(true),
+              ),
+            ],
+          });
+        } catch (_) {}
+      });
+    };
+
+    let kickoffNote = advanceAutoCompletedTurns();
+    if (!kickoffNote) {
+      kickoffNote = game.turnQueue.length
+        ? `Random start player: <@${game.turnQueue[0]}>`
+        : 'All players resolved before actions.';
+    }
+
+    try {
+      await game.message.edit({
+        embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note: kickoffNote })],
+        components: buildBlackjackActionComponents(game, { disabled: game.turnQueue.length === 0 }),
+        allowedMentions: { parse: [] },
+      });
+    } catch (error) {
+      console.error('[Blackjack] Failed to post live table:', error);
+      activeGames.delete(key);
+      return;
+    }
+
+    if (!game.turnQueue.length) {
+      const outcomes = resolveDealerAndOutcomes();
+      await finalizeBlackjackRound(outcomes);
+      return;
+    }
+
+    const liveCollector = game.channel.createMessageComponentCollector({
+      time: 10 * 60 * 1000,
+      filter: (componentInteraction) =>
+        componentInteraction.customId === `blackjack-hit-${game.raceId}` ||
+        componentInteraction.customId === `blackjack-stand-${game.raceId}`,
+    });
+
+    liveCollector.on('collect', async (componentInteraction) => {
+      try {
+        const currentPlayerId = game.turnQueue[0];
+        if (!currentPlayerId) {
+          await componentInteraction.reply({ content: 'This blackjack round has ended.', ephemeral: true });
+          return;
+        }
+
+        if (componentInteraction.user.id !== currentPlayerId) {
+          await componentInteraction.reply({ content: `It is currently <@${currentPlayerId}>'s turn.`, ephemeral: true });
+          return;
+        }
+
+        if (game.processingTurn) {
+          await componentInteraction.reply({ content: 'Please wait a moment, processing the turn.', ephemeral: true });
+          return;
+        }
+
+        game.processingTurn = true;
+        await componentInteraction.deferUpdate();
+
+        const actionIsHit = componentInteraction.customId === `blackjack-hit-${game.raceId}`;
+        const hand = game.hands.get(currentPlayerId) || [];
+        let actionNote = '';
+
+        if (actionIsHit) {
+          hand.push(drawBlackjackCard(game));
+          const value = getBlackjackHandValue(hand).total;
+          if (isBustHand(hand)) {
+            game.playerStates.set(currentPlayerId, 'bust');
+            game.turnQueue.shift();
+            actionNote = `<@${currentPlayerId}> hits and busts (${value}).`;
+          } else if (value === 21) {
+            game.playerStates.set(currentPlayerId, hand.length === 2 ? 'blackjack' : 'stood');
+            game.turnQueue.shift();
+            actionNote = hand.length === 2
+              ? `<@${currentPlayerId}> has blackjack.`
+              : `<@${currentPlayerId}> hits to 21 and stands.`;
+          } else {
+            actionNote = `<@${currentPlayerId}> hits (${value}).`;
+          }
+        } else {
+          game.playerStates.set(currentPlayerId, 'stood');
+          game.turnQueue.shift();
+          actionNote = `<@${currentPlayerId}> stands.`;
+        }
+
+        const autoNote = advanceAutoCompletedTurns();
+        const note = [actionNote, autoNote].filter(Boolean).join(' ');
+
+        if (!game.turnQueue.length) {
+          liveCollector.stop('round_complete');
+          const outcomes = resolveDealerAndOutcomes();
+          await finalizeBlackjackRound(outcomes);
+          game.processingTurn = false;
+          return;
+        }
+
+        await game.message.edit({
+          embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note })],
+          components: buildBlackjackActionComponents(game),
+          allowedMentions: { parse: [] },
+        });
+        game.processingTurn = false;
+      } catch (error) {
+        game.processingTurn = false;
+        console.error('[Blackjack] Live action failed:', error);
+        const payload = { content: 'Blackjack action failed. Try again.', ephemeral: true };
+        if (componentInteraction.deferred || componentInteraction.replied) {
+          await componentInteraction.followUp(payload).catch(() => {});
+        } else {
+          await componentInteraction.reply(payload).catch(() => {});
+        }
+      }
+    });
+
+    liveCollector.on('end', async (__, reason) => {
+      game.processingTurn = false;
+      if (reason === 'round_complete') {
+        return;
+      }
+
+      try {
+        await game.message.edit({
+          components: buildBlackjackActionComponents(game, { disabled: true }),
+          allowedMentions: { parse: [] },
+        });
+      } catch (_) {}
+      activeGames.delete(key);
+    });
+  });
+}
+
 async function runCasinoStats(interaction) {
   if (!interaction.inGuild()) {
     await interaction.reply({ content: 'Casino stats can only be viewed in a server channel.', ephemeral: true });
@@ -1167,6 +1761,10 @@ module.exports = {
         .setDescription('Start a horse race lobby with join and leave buttons.'))
     .addSubcommand((sub) =>
       sub
+        .setName('blackjack')
+        .setDescription('Start a blackjack lobby with join and buy-in buttons.'))
+    .addSubcommand((sub) =>
+      sub
         .setName('stats')
         .setDescription('View casino stats for this server.')),
 
@@ -1178,6 +1776,10 @@ module.exports = {
     }
     if (sub === 'horserace') {
       await runHorseRaceGame(interaction);
+      return;
+    }
+    if (sub === 'blackjack') {
+      await runBlackjackGame(interaction);
       return;
     }
     if (sub === 'stats') {
