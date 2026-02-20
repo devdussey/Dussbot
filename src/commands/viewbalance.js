@@ -34,15 +34,15 @@ function buildEmbed(guildId, entries, page) {
 function buildPagerComponents(total) {
   if (total <= 20) return [];
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('viewrupees:prev').setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(true),
-    new ButtonBuilder().setCustomId('viewrupees:next').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(true),
+    new ButtonBuilder().setCustomId('viewbalance:prev').setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(true),
+    new ButtonBuilder().setCustomId('viewbalance:next').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(true),
   );
   return [row];
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('viewrupees')
+    .setName('viewbalance')
     .setDescription('View currency balances for this server')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 

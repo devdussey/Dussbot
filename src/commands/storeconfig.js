@@ -1,4 +1,4 @@
-const cmdLogger = require('../utils/logger')('rupeestore');
+const cmdLogger = require('../utils/logger')('storeconfig');
 const {
   SlashCommandBuilder,
   EmbedBuilder,

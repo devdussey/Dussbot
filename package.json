@@ -8,7 +8,9 @@
     "start": "node scripts/deploy-commands.js && node src/index.js",
     "dev": "node --watch src/index.js",
     "build": "node scripts/deploy-commands.js",
-    "test": "node --test"
+    "test": "node --test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:watch": "tsc -p tsconfig.json --noEmit --watch"
   },
   "keywords": [
     "discord",
@@ -30,5 +32,9 @@
     "express-session": "^1.17.3",
     "mysql2": "^3.15.1",
     "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.9.3"
   }
 }

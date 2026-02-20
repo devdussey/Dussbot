@@ -13,7 +13,7 @@ const {
 const smiteConfigStore = require('../utils/smiteConfigStore');
 const logChannelTypeStore = require('../utils/logChannelTypeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
-const { SHOP_ITEMS } = require('./rupeestore');
+const { SHOP_ITEMS } = require('./storeconfig');
 const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
 
 const HORSE_RACE_WIN_RUPEES = 1;

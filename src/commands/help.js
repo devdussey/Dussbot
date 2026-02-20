@@ -1,3 +1,5 @@
+// @ts-check
+
 const {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -9,6 +11,10 @@ const { getSupportServerUrl } = require('../utils/supportServer');
 const SUPPORT_SERVER_LINE = `For more detailed help and updates, join the support server ${getSupportServerUrl()}`;
 const HELP_CATEGORY_ID_PREFIX = 'help-category';
 
+/** @typedef {{ cmd: string, desc: string, perm: string | null }} HelpCommand */
+/** @typedef {{ blurb?: string }} CategoryMeta */
+
+/** @type {Record<string, HelpCommand[]>} */
 const categories = {
   'Moderation': [
     { cmd: '/banlist', desc: 'List current bans in the server.', perm: 'Ban Members' },
@@ -38,7 +44,7 @@ const categories = {
     { cmd: '/webhooks', desc: 'List server webhooks and creators.', perm: 'Administrator' },
     { cmd: '/emoji add/edit/delete/clone', desc: 'Manage server emojis from uploads or media URLs.', perm: 'Manage Expressions' },
     { cmd: '/sticker add/edit/delete/clone', desc: 'Manage server stickers from uploads or media URLs.', perm: 'Manage Expressions' },
-    { cmd: '/giverupee', desc: 'Grant server currency directly to a user.', perm: 'Administrator' },
+    { cmd: '/givecurrency', desc: 'Grant server currency directly to a user.', perm: 'Administrator' },
     { cmd: '/massblessing', desc: 'Give every non-bot user server currency.', perm: 'Administrator' },
     { cmd: '/embed create/quick', desc: 'Build embeds through guided tools.', perm: 'Administrator' },
     { cmd: '/botsettings', desc: 'View bot settings and change default embed colour.', perm: 'Administrator' },
@@ -74,7 +80,7 @@ const categories = {
   ],
   'Economy System and Games': [
     { cmd: '/inventory', desc: 'View your coins and server currency.', perm: null },
-    { cmd: '/rupeeboard', desc: 'View the server currency leaderboard.', perm: null },
+    { cmd: '/currencybalances', desc: 'View the server currency leaderboard.', perm: null },
     { cmd: 'Store Panels', desc: 'Spend currency using the configured store panel messages.', perm: null },
     { cmd: '/storeconfig add/remove/post', desc: 'Enable or remove specific store items, and post enabled item panels.', perm: 'Administrator' },
     { cmd: '/economyconfig', desc: 'Configure economy rewards, currency name, store prices, immunity role, and economy channels.', perm: 'Manage Server' },
@@ -93,6 +99,7 @@ const categories = {
   ],
 };
 
+/** @type {Record<string, CategoryMeta>} */
 const categoryMeta = {
   'Moderation': { blurb: 'Basic Moderation Commands and Clear Logging' },
   Administration: { blurb: 'Commands to make administration tasks simple and easy. Also includes bot feature configurations.' },
@@ -102,6 +109,12 @@ const categoryMeta = {
   'Utilities and Bot Info': { blurb: 'Quick Commands for bot information and utilities.' },
 };
 
+/**
+ * @param {string | null} categoryName
+ * @param {string | null} guildId
+ * @param {import('discord.js').ClientUser | null | undefined} botUser
+ * @returns {import('discord.js').EmbedBuilder}
+ */
 function buildEmbed(categoryName, guildId, botUser) {
   const embed = new EmbedBuilder()
     .setTitle('Command Categories')
@@ -149,6 +162,11 @@ function buildEmbed(categoryName, guildId, botUser) {
   return embed;
 }
 
+/**
+ * @param {string | null} selectedCategory
+ * @param {string} ownerUserId
+ * @returns {import('discord.js').ActionRowBuilder<import('discord.js').StringSelectMenuBuilder>[]}
+ */
 function buildHelpComponents(selectedCategory, ownerUserId) {
   const options = Object.keys(categories).map((name) => {
     const meta = categoryMeta[name] || {};
@@ -161,7 +179,9 @@ function buildHelpComponents(selectedCategory, ownerUserId) {
     .setCustomId(`${HELP_CATEGORY_ID_PREFIX}:${ownerUserId}`)
     .setPlaceholder('Browse a command category')
     .addOptions(options);
-  const row = new ActionRowBuilder().addComponents(menu);
+  const row = /** @type {import('discord.js').ActionRowBuilder<import('discord.js').StringSelectMenuBuilder>} */ (
+    new ActionRowBuilder().addComponents(menu)
+  );
   return [row];
 }
 
@@ -173,6 +193,9 @@ module.exports = {
     .setName('help')
     .setDescription('Get help with the bot'),
 
+  /**
+   * @param {import('discord.js').ChatInputCommandInteraction} interaction
+   */
   async execute(interaction) {
     const embed = buildEmbed(null, interaction.guildId, interaction.client.user);
     const components = buildHelpComponents(null, interaction.user.id);

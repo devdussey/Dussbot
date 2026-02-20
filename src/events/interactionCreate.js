@@ -18,7 +18,7 @@ const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const { setDefaultColour, toHex6 } = require('../utils/guildColourStore');
 const vanityRoleCommand = require('../commands/vanityrole');
 const helpCommand = require('../commands/help');
-const rupeeStoreCommand = require('../commands/rupeestore');
+const storeConfigCommand = require('../commands/storeconfig');
 const autorespondCommand = require('../commands/autorespond');
 const roleCleanManager = require('../utils/roleCleanManager');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
@@ -297,7 +297,7 @@ const COMMAND_CATEGORY_MAP = {
     debug: 'admin',
     emoji: 'admin',
     embed: 'admin',
-    giverupee: 'admin',
+    givecurrency: 'admin',
     massblessing: 'admin',
     purge: 'admin',
     sacrificeconfig: 'admin',
@@ -310,9 +310,9 @@ const COMMAND_CATEGORY_MAP = {
     // Economy
     inventory: 'economy',
     economyconfig: 'economy',
-    rupeeboard: 'economy',
+    currencybalances: 'economy',
     storeconfig: 'economy',
-    viewrupees: 'economy',
+    viewbalance: 'economy',
 
     // Games
     blessing: 'games',
@@ -367,7 +367,7 @@ const ADMIN_COMMANDS = new Set([
   'confessconfig',
   'debug',
   'embed',
-  'giverupee',
+  'givecurrency',
   'logconfig',
   'massblessing',
   'purge',
@@ -381,7 +381,7 @@ const ADMIN_COMMANDS = new Set([
   'transcribe',
   'transriptconfig',
   'vanityrole',
-  'viewrupees',
+  'viewbalance',
   'webhooks',
   'wordrush',
 ]);
@@ -555,7 +555,7 @@ module.exports = {
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
                 try {
-                    const handled = await rupeeStoreCommand.handleStoreStringSelect(interaction);
+                    const handled = await storeConfigCommand.handleStoreStringSelect(interaction);
                     if (handled) return;
                 } catch (err) {
                     console.error('Failed to handle store string select:', err);
@@ -984,7 +984,7 @@ module.exports = {
         if (interaction.isUserSelectMenu()) {
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
                 try {
-                    const handled = await rupeeStoreCommand.handleStoreUserSelect(interaction);
+                    const handled = await storeConfigCommand.handleStoreUserSelect(interaction);
                     if (handled) return;
                 } catch (err) {
                     console.error('Failed to handle store user select:', err);
@@ -1129,7 +1129,7 @@ module.exports = {
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
                 try {
-                    const handled = await rupeeStoreCommand.handleStoreButton(interaction);
+                    const handled = await storeConfigCommand.handleStoreButton(interaction);
                     if (handled) return;
                 } catch (err) {
                     console.error('Failed to handle store button:', err);
@@ -1416,7 +1416,7 @@ module.exports = {
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
                 try {
-                    const handled = await rupeeStoreCommand.handleStoreModalSubmit(interaction);
+                    const handled = await storeConfigCommand.handleStoreModalSubmit(interaction);
                     if (handled) return;
                 } catch (err) {
                     console.error('Failed to handle store modal submit:', err);

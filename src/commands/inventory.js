@@ -64,7 +64,7 @@ function buildInventoryEmbed({
         name: `💎 ${currencyPlural}`,
         value: `**Owned:** ${rupeeBalance}\n**Cost:** ${formatCoins(
           rupeeCost
-        )} coins each\n${currencyPlural} unlock the powerful /analysis command, can be granted by admins using /giverupee, and are spent in the configured store panel channel.`,
+        )} coins each\n${currencyPlural} unlock the powerful /analysis command, can be granted by admins using /givecurrency, and are spent in the configured store panel channel.`,
       }
     );
 

@@ -64,7 +64,7 @@ test('inventory shows coin balance, item counts, and prayer status', async () =>
     assert.match(judgementField.value, /Owned:\*\* 1/);
     assert.match(judgementField.value, /Cost:\*\* 500/);
     assert.match(judgementField.value, /unlock the powerful \/analysis command/);
-    assert.match(judgementField.value, /\/giverupee/);
+    assert.match(judgementField.value, /\/givecurrency/);
 
     assert(prayerField, 'expected prayer field');
     assert.match(prayerField.value, /Already blessed. You can pray again in 1 hour\./);
