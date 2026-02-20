@@ -297,7 +297,7 @@ const COMMAND_CATEGORY_MAP = {
     debug: 'admin',
     emoji: 'admin',
     embed: 'admin',
-    givecurrency: 'admin',
+    donate: 'admin',
     massblessing: 'admin',
     purge: 'admin',
     sacrificeconfig: 'admin',
@@ -310,7 +310,7 @@ const COMMAND_CATEGORY_MAP = {
     // Economy
     inventory: 'economy',
     economyconfig: 'economy',
-    currencybalances: 'economy',
+    balance: 'economy',
     storeconfig: 'economy',
     viewbalance: 'economy',
 
@@ -367,7 +367,7 @@ const ADMIN_COMMANDS = new Set([
   'confessconfig',
   'debug',
   'embed',
-  'givecurrency',
+  'donate',
   'logconfig',
   'massblessing',
   'purge',

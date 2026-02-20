@@ -76,7 +76,7 @@ function buildPagerRow({ pageIndex, totalPages, prevId, nextId }) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('currencybalances')
+    .setName('balance')
     .setDescription('View the currency leaderboard')
     .setDMPermission(false),
 
@@ -91,8 +91,8 @@ module.exports = {
     const perPage = 10;
     let pageIndex = 0;
 
-    const prevId = `currencybalances:prev:${interaction.id}`;
-    const nextId = `currencybalances:next:${interaction.id}`;
+    const prevId = `balance:prev:${interaction.id}`;
+    const nextId = `balance:next:${interaction.id}`;
 
     const initial = await buildLeaderboardEmbed({
       guild: interaction.guild,

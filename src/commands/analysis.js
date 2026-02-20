@@ -262,7 +262,7 @@ module.exports = {
         : 'coins';
       const balanceText = `${Number(coinsAvailable).toLocaleString(undefined, { maximumFractionDigits: 2 })} coin${coinsAvailable === 1 ? '' : 's'}`;
       return interaction.editReply({
-        content: `You do not have any ${currencyPlural}. You need ${costText} to buy one. Current balance: ${balanceText}. Ask an admin to use /givecurrency if needed.`,
+        content: `You do not have any ${currencyPlural}. You need ${costText} to buy one. Current balance: ${balanceText}. Ask an admin to use /donate if needed.`,
       });
     }
 

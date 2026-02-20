@@ -1,4 +1,4 @@
-const cmdLogger = require('../utils/logger')('givecurrency');
+const cmdLogger = require('../utils/logger')('donate');
 const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
@@ -8,7 +8,7 @@ const { formatCurrencyAmount, formatCurrencyWord, getCurrencyPlural } = require(
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('givecurrency')
+    .setName('donate')
     .setDescription('Admins: grant economy currency to a user')
     .addUserOption(opt =>
       opt
@@ -73,7 +73,7 @@ module.exports = {
         target,
         amount,
         balance: total,
-        method: '/givecurrency',
+        method: '/donate',
         extraFields: reason ? [{ name: 'Reason', value: reason, inline: false }] : [],
       });
       await logSender.sendLog({
@@ -83,7 +83,7 @@ module.exports = {
         client: interaction.client,
       });
     } catch (err) {
-      cmdLogger.error('Failed to send givecurrency log:', err);
+      cmdLogger.error('Failed to send donate log:', err);
     }
 
     return interaction.reply({ embeds: [embed] });

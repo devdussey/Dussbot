@@ -10,7 +10,10 @@
     "build": "node scripts/deploy-commands.js",
     "test": "node --test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "typecheck:watch": "tsc -p tsconfig.json --noEmit --watch"
+    "typecheck:watch": "tsc -p tsconfig.json --noEmit --watch",
+    "build:ts": "tsc -p tsconfig.build.json",
+    "start:ts": "npm run build:ts && node scripts/deploy-commands.js && node dist/index.js",
+    "dev:ts": "npm run build:ts && node dist/index.js"
   },
   "keywords": [
     "discord",

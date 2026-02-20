@@ -44,7 +44,7 @@ const categories = {
     { cmd: '/webhooks', desc: 'List server webhooks and creators.', perm: 'Administrator' },
     { cmd: '/emoji add/edit/delete/clone', desc: 'Manage server emojis from uploads or media URLs.', perm: 'Manage Expressions' },
     { cmd: '/sticker add/edit/delete/clone', desc: 'Manage server stickers from uploads or media URLs.', perm: 'Manage Expressions' },
-    { cmd: '/givecurrency', desc: 'Grant server currency directly to a user.', perm: 'Administrator' },
+    { cmd: '/donate', desc: 'Grant server currency directly to a user.', perm: 'Administrator' },
     { cmd: '/massblessing', desc: 'Give every non-bot user server currency.', perm: 'Administrator' },
     { cmd: '/embed create/quick', desc: 'Build embeds through guided tools.', perm: 'Administrator' },
     { cmd: '/botsettings', desc: 'View bot settings and change default embed colour.', perm: 'Administrator' },
@@ -80,7 +80,7 @@ const categories = {
   ],
   'Economy System and Games': [
     { cmd: '/inventory', desc: 'View your coins and server currency.', perm: null },
-    { cmd: '/currencybalances', desc: 'View the server currency leaderboard.', perm: null },
+    { cmd: '/balance', desc: 'View the server currency leaderboard.', perm: null },
     { cmd: 'Store Panels', desc: 'Spend currency using the configured store panel messages.', perm: null },
     { cmd: '/storeconfig add/remove/post', desc: 'Enable or remove specific store items, and post enabled item panels.', perm: 'Administrator' },
     { cmd: '/economyconfig', desc: 'Configure economy rewards, currency name, store prices, immunity role, and economy channels.', perm: 'Manage Server' },
