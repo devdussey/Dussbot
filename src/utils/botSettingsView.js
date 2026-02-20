@@ -1,7 +1,8 @@
 const {
   EmbedBuilder,
   ActionRowBuilder,
-  StringSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -15,12 +16,10 @@ const {
 } = require('./guildColourStore');
 const premiumManager = require('./premiumManager');
 
-const BOTSETTINGS_ACTION_SELECT_ID = 'botsettings:action';
+const BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR_ID = 'botsettings:change_embed_colour';
+const BOTSETTINGS_ACTION_REFRESH_ID = 'botsettings:refresh';
 const BOTSETTINGS_COLOUR_MODAL_ID = 'botsettings:colour';
 const BOTSETTINGS_COLOUR_INPUT_ID = 'botsettings:colour_input';
-
-const BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR = 'change_embed_colour';
-const BOTSETTINGS_ACTION_REFRESH = 'refresh';
 
 function hasValue(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -70,25 +69,19 @@ function buildBotSettingsView(guild) {
     .setColor(resolveEmbedColour(guildId, DEFAULT_EMBED_COLOUR))
     .setTimestamp(new Date());
 
-  const actionSelect = new StringSelectMenuBuilder()
-    .setCustomId(BOTSETTINGS_ACTION_SELECT_ID)
-    .setPlaceholder('Choose an action')
-    .addOptions(
-      {
-        label: 'Change Embed Colour',
-        description: 'Set a server-specific default embed colour.',
-        value: BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR,
-      },
-      {
-        label: 'Refresh',
-        description: 'Refresh this settings view.',
-        value: BOTSETTINGS_ACTION_REFRESH,
-      },
-    );
+  const changeEmbedColourButton = new ButtonBuilder()
+    .setCustomId(BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR_ID)
+    .setLabel('Change Embed Colour')
+    .setStyle(ButtonStyle.Primary);
+
+  const refreshButton = new ButtonBuilder()
+    .setCustomId(BOTSETTINGS_ACTION_REFRESH_ID)
+    .setLabel('Refresh')
+    .setStyle(ButtonStyle.Secondary);
 
   return {
     embed,
-    components: [new ActionRowBuilder().addComponents(actionSelect)],
+    components: [new ActionRowBuilder().addComponents(changeEmbedColourButton, refreshButton)],
   };
 }
 
@@ -111,11 +104,10 @@ function buildEmbedColourModal(guildId) {
 }
 
 module.exports = {
-  BOTSETTINGS_ACTION_SELECT_ID,
+  BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR_ID,
+  BOTSETTINGS_ACTION_REFRESH_ID,
   BOTSETTINGS_COLOUR_MODAL_ID,
   BOTSETTINGS_COLOUR_INPUT_ID,
-  BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR,
-  BOTSETTINGS_ACTION_REFRESH,
   buildBotSettingsView,
   buildEmbedColourModal,
 };

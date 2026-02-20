@@ -49,14 +49,6 @@ module.exports = {
       console.warn('Failed to start automessage scheduler:', e?.message || e);
     }
 
-    // Start autobump scheduler for listing-site bump commands
-    try {
-      const autoBumpScheduler = require('../utils/autoBumpScheduler');
-      await autoBumpScheduler.startAll(client);
-    } catch (e) {
-      console.warn('Failed to start autobump scheduler:', e?.message || e);
-    }
-
     // Start CarpetSurf scheduler for periodic image puzzle rounds
     try {
       const carpetSurfManager = require('../utils/carpetSurfManager');

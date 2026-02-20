@@ -321,7 +321,6 @@ const COMMAND_CATEGORY_MAP = {
     wordrush: 'games',
 
     // Automations
-    autobumpreminder: 'automations',
     automessage: 'automations',
     autorespond: 'automations',
     autoroles: 'automations',
@@ -355,7 +354,6 @@ const OWNER_COMMANDS = new Set([]);
 const ADMIN_COMMANDS = new Set([
   'analysis',
   'antinuke',
-  'autobumpreminder',
   'automessage',
   'autoroles',
   'autorespond',
@@ -366,7 +364,6 @@ const ADMIN_COMMANDS = new Set([
   'carpetsurfconfig',
   'channel',
   'chat',
-  'colour',
   'confessconfig',
   'debug',
   'embed',
@@ -377,7 +374,6 @@ const ADMIN_COMMANDS = new Set([
   'reactionrole',
   'role',
   'sacrificeconfig',
-  'setdefaultcolour',
   'say',
   'stickymessage',
   'storeconfig',
@@ -581,27 +577,6 @@ module.exports = {
                 } catch (err) {
                     console.error('Failed to update help view via select menu:', err);
                     try { await interaction.reply({ content: 'Failed to update help. Please try again.', ephemeral: true }); } catch (_) {}
-                }
-                return;
-            }
-            if (typeof interaction.customId === 'string' && interaction.customId === botSettingsView.BOTSETTINGS_ACTION_SELECT_ID) {
-                if (!interaction.inGuild()) return;
-                if (!canManageBotSettings(interaction)) {
-                    try { await interaction.reply({ content: 'Administrator or server owner access is required to edit bot settings.', ephemeral: true }); } catch (_) {}
-                    return;
-                }
-                try {
-                    const action = interaction.values?.[0] || null;
-                    if (action === botSettingsView.BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR) {
-                        const modal = botSettingsView.buildEmbedColourModal(interaction.guildId);
-                        await interaction.showModal(modal);
-                        return;
-                    }
-                    const view = botSettingsView.buildBotSettingsView(interaction.guild);
-                    await interaction.update({ embeds: [view.embed], components: view.components });
-                } catch (err) {
-                    console.error('Failed to handle bot settings select menu action:', err);
-                    try { await interaction.followUp({ content: 'Failed to update bot settings. Please try again.', ephemeral: true }); } catch (_) {}
                 }
                 return;
             }
@@ -1122,6 +1097,36 @@ module.exports = {
 
         // Handle Verify button
         if (interaction.isButton()) {
+            if (typeof interaction.customId === 'string' && interaction.customId === botSettingsView.BOTSETTINGS_ACTION_CHANGE_EMBED_COLOUR_ID) {
+                if (!interaction.inGuild()) return;
+                if (!canManageBotSettings(interaction)) {
+                    try { await interaction.reply({ content: 'Administrator or server owner access is required to edit bot settings.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                try {
+                    const modal = botSettingsView.buildEmbedColourModal(interaction.guildId);
+                    await interaction.showModal(modal);
+                } catch (err) {
+                    console.error('Failed to open bot settings colour modal:', err);
+                    try { await interaction.reply({ content: 'Failed to open the colour modal. Please try again.', ephemeral: true }); } catch (_) {}
+                }
+                return;
+            }
+            if (typeof interaction.customId === 'string' && interaction.customId === botSettingsView.BOTSETTINGS_ACTION_REFRESH_ID) {
+                if (!interaction.inGuild()) return;
+                if (!canManageBotSettings(interaction)) {
+                    try { await interaction.reply({ content: 'Administrator or server owner access is required to edit bot settings.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                try {
+                    const view = botSettingsView.buildBotSettingsView(interaction.guild);
+                    await interaction.update({ embeds: [view.embed], components: view.components });
+                } catch (err) {
+                    console.error('Failed to refresh bot settings view:', err);
+                    try { await interaction.reply({ content: 'Failed to refresh bot settings. Please try again.', ephemeral: true }); } catch (_) {}
+                }
+                return;
+            }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
                 try {
                     const handled = await rupeeStoreCommand.handleStoreButton(interaction);

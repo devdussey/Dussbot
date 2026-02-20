@@ -9,7 +9,7 @@ const CATEGORY_DEFINITIONS = [
   { key: 'games', label: 'Games', description: 'Games and community engagement commands.' },
   { key: 'admin', label: 'Admin / Owner', description: 'Administrative and owner-only utilities.' },
   { key: 'economy', label: 'Economy', description: 'Currency and economy commands.' },
-  { key: 'automations', label: 'Automations', description: 'Automations such as autobumpreminder, automessage, autorespond, and autoroles.' },
+  { key: 'automations', label: 'Automations', description: 'Automations such as automessage, autorespond, and autoroles.' },
   { key: 'images', label: 'Images', description: 'Image utilities such as /image enlarge, /image removebg, and /image resize.' },
   { key: 'utility', label: 'Utility', description: 'Utility and general helper commands.' },
 ];
