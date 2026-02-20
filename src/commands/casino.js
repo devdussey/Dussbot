@@ -1346,14 +1346,34 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     throw err;
   }
 
+  const setBlackjackMessage = async (payload, context = 'update') => {
+    if (game.message) {
+      try {
+        game.message = await game.message.edit(payload);
+        return game.message;
+      } catch (error) {
+        const isUnknownMessage = error?.code === 10008 || error?.rawError?.code === 10008;
+        if (!isUnknownMessage) throw error;
+        console.warn('[Blackjack] Message missing during edit; posting a new table message.', {
+          context,
+          guildId: game.guildId,
+          channelId: game.channel?.id,
+          raceId: game.raceId,
+        });
+      }
+    }
+
+    game.message = await game.channel.send(payload);
+    return game.message;
+  };
+
   const updateBlackjackLobbyMessage = async ({ disabled = false } = {}) => {
-    if (!game.message) return;
     try {
-      await game.message.edit({
+      await setBlackjackMessage({
         embeds: [buildBlackjackLobbyEmbed(game)],
         components: buildBlackjackLobbyComponents(game, { disabled }),
         allowedMentions: { parse: [] },
-      });
+      }, 'lobby');
     } catch (error) {
       console.error('[Blackjack] Failed to update lobby message:', error);
     }
@@ -1538,11 +1558,11 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       ];
 
       try {
-        await game.message.edit({
+        await setBlackjackMessage({
           embeds: [buildBlackjackResultEmbed(game, outcomes)],
           components: playAgainComponents,
           allowedMentions: { parse: [] },
-        });
+        }, 'results');
       } catch (error) {
         console.error('[Blackjack] Failed to post result message:', error);
       }
@@ -1585,11 +1605,11 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     }
 
     try {
-      await game.message.edit({
+      await setBlackjackMessage({
         embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note: kickoffNote })],
         components: buildBlackjackActionComponents(game, { disabled: game.turnQueue.length === 0 }),
         allowedMentions: { parse: [] },
-      });
+      }, 'live-start');
     } catch (error) {
       console.error('[Blackjack] Failed to post live table:', error);
       activeGames.delete(key);
@@ -1671,6 +1691,14 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
           embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note })],
           components: buildBlackjackActionComponents(game),
           allowedMentions: { parse: [] },
+        }).catch(async (error) => {
+          const isUnknownMessage = error?.code === 10008 || error?.rawError?.code === 10008;
+          if (!isUnknownMessage) throw error;
+          await setBlackjackMessage({
+            embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note })],
+            components: buildBlackjackActionComponents(game),
+            allowedMentions: { parse: [] },
+          }, 'live-turn');
         });
         game.processingTurn = false;
       } catch (error) {
