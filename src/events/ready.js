@@ -57,5 +57,13 @@ module.exports = {
       console.warn('Failed to start autobump scheduler:', e?.message || e);
     }
 
+    // Start CarpetSurf scheduler for periodic image puzzle rounds
+    try {
+      const carpetSurfManager = require('../utils/carpetSurfManager');
+      await carpetSurfManager.startAll(client);
+    } catch (e) {
+      console.warn('Failed to start CarpetSurf scheduler:', e?.message || e);
+    }
+
   },
 };

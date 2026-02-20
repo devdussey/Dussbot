@@ -316,6 +316,7 @@ const COMMAND_CATEGORY_MAP = {
 
     // Games
     blessing: 'games',
+    carpetsurfconfig: 'games',
     casino: 'games',
     wordrush: 'games',
 
@@ -362,6 +363,7 @@ const ADMIN_COMMANDS = new Set([
   'botconfig',
   'botlook',
   'botsettings',
+  'carpetsurfconfig',
   'channel',
   'chat',
   'colour',
