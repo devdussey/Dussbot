@@ -22,23 +22,31 @@ const commands = [];
 const files = getAllCommandFiles(commandsDir);
 const nameToFile = new Map();
 for (const filePath of files) {
-    const command = require(filePath);
-    if ('data' in command && 'execute' in command) {
-        const json = command.data.toJSON();
-        if (!Array.isArray(json.integration_types) || !json.integration_types.length) {
-            // Prevent Discord user-install command cap issues by defaulting unspecified commands to guild install only.
-            json.integration_types = [GUILD_INSTALL_INTEGRATION_TYPE];
-        }
-        if (nameToFile.has(json.name)) {
-            const firstPath = nameToFile.get(json.name);
-            logger.warn(`[WARNING] Duplicate slash command name '${json.name}' in ${filePath}; skipping (already defined in ${firstPath}).`);
-            continue;
-        }
-        nameToFile.set(json.name, filePath);
-        commands.push(json);
-    } else {
-        logger.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+    let command;
+    try {
+        command = require(filePath);
+    } catch (error) {
+        logger.error(`[ERROR] Failed to load command at ${filePath}: ${error.message}`);
+        continue;
     }
+
+    if (!('data' in command) || !('execute' in command)) {
+        logger.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+        continue;
+    }
+
+    const json = command.data.toJSON();
+    if (!Array.isArray(json.integration_types) || !json.integration_types.length) {
+        // Prevent Discord user-install command cap issues by defaulting unspecified commands to guild install only.
+        json.integration_types = [GUILD_INSTALL_INTEGRATION_TYPE];
+    }
+    if (nameToFile.has(json.name)) {
+        const firstPath = nameToFile.get(json.name);
+        logger.warn(`[WARNING] Duplicate slash command name '${json.name}' in ${filePath}; skipping (already defined in ${firstPath}).`);
+        continue;
+    }
+    nameToFile.set(json.name, filePath);
+    commands.push(json);
 }
 logger.info('Commands to deploy: ' + (Array.from(nameToFile.keys()).join(', ') || '(none)'));
 
