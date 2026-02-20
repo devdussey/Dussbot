@@ -1408,13 +1408,13 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     try {
       if (id.startsWith('blackjack-join-')) {
         if (!game.isOpen) {
-          await componentInteraction.reply({ content: 'This blackjack lobby is closed.', ephemeral: false });
+          await componentInteraction.reply({ content: 'This blackjack lobby is closed.', ephemeral: true });
           return;
         }
 
         if (!game.players.has(componentInteraction.user.id)) {
           if (game.players.size >= BLACKJACK_MAX_PLAYERS) {
-            await componentInteraction.reply({ content: 'This blackjack lobby is full.', ephemeral: false });
+            await componentInteraction.reply({ content: 'This blackjack lobby is full.', ephemeral: true });
             return;
           }
           game.players.add(componentInteraction.user.id);
@@ -1425,7 +1425,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
         await componentInteraction.reply({
           embeds: [buildBlackjackBuyInEmbed(game, componentInteraction.user.id)],
           components: buildBlackjackBuyInComponents(game),
-          ephemeral: false,
+          ephemeral: true,
         });
         return;
       }
