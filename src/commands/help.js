@@ -62,7 +62,7 @@ const categories = {
     { cmd: '/botsettings', desc: 'View bot settings and change default embed colour.', perm: 'Administrator' },
     { cmd: '/economyconfig', desc: 'Configure economy rewards, currency name, store prices, immunity role, and economy channels.', perm: 'Manage Server' },
     { cmd: '/storeconfig add/remove/post', desc: 'Enable or remove specific store items, and post enabled item panels.', perm: 'Administrator' },
-    { cmd: '/wordstatsconfig', desc: 'Configure tracked channels/users and data retention for word stats.', perm: 'Manage Server' },
+    { cmd: '/wordstatsconfig set/view/reset/scan/resume', desc: 'Configure live tracking and run resumable channel scan exports for word stats.', perm: 'Manage Server' },
   ],
   'AI': [
     { cmd: '/chat', desc: 'Chat with the AI assistant.', perm: null },
