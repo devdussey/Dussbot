@@ -17,10 +17,11 @@ function canUserManageRole(member, role) {
 
 async function collectEmptyRoles(guild, requester) {
   await guild.roles.fetch();
+  let usedCachedMembers = false;
   try {
     await guild.members.fetch();
   } catch (_) {
-    throw new Error('Could not load members. Enable the Server Members Intent to safely check empty roles.');
+    usedCachedMembers = true;
   }
 
   const me = guild.members.me || await guild.members.fetchMe();
@@ -37,7 +38,7 @@ async function collectEmptyRoles(guild, requester) {
   }
 
   roles.sort((a, b) => b.position - a.position || a.id.localeCompare(b.id));
-  return roles;
+  return { roles, usedCachedMembers };
 }
 
 function buildRoleListField(roles) {
@@ -74,20 +75,31 @@ function buildComponents(emptyRoles, ownerId) {
   return components;
 }
 
-function buildEmbed(guildId, emptyRoles) {
+function buildEmbed(guildId, emptyRoles, options = {}) {
+  const usedCachedMembers = Boolean(options.usedCachedMembers);
+  const description = emptyRoles.length
+    ? 'These roles have no members. Delete them individually or wipe them all.'
+    : 'No empty roles that I can manage were found.';
+  const warning = usedCachedMembers
+    ? 'Member fetch is unavailable, so this list is based on cached members and may be incomplete.'
+    : null;
+  const footerParts = [];
+  if (emptyRoles.length > MAX_ROLE_BUTTONS) {
+    footerParts.push(`Showing first ${MAX_ROLE_BUTTONS} roles. Delete All affects every empty role I can manage.`);
+  }
+  if (usedCachedMembers) {
+    footerParts.push('Enable Server Members Intent for the most accurate role-empty checks.');
+  }
+
   const embed = new EmbedBuilder()
     .setTitle('Role Cleanup')
-    .setDescription(emptyRoles.length
-      ? 'These roles have no members. Delete them individually or wipe them all.'
-      : 'No empty roles that I can manage were found.')
+    .setDescription(warning ? `${description}\n\n${warning}` : description)
     .addFields({
       name: emptyRoles.length ? `Empty roles (${Math.min(emptyRoles.length, MAX_ROLE_BUTTONS)} shown)` : 'Status',
       value: buildRoleListField(emptyRoles.slice(0, MAX_ROLE_BUTTONS)),
     })
     .setFooter({
-      text: emptyRoles.length > MAX_ROLE_BUTTONS
-        ? `Showing first ${MAX_ROLE_BUTTONS} roles. Delete All affects every empty role I can manage.`
-        : ' ',
+      text: footerParts.join(' ') || ' ',
     })
     .setTimestamp();
 
@@ -96,9 +108,9 @@ function buildEmbed(guildId, emptyRoles) {
 }
 
 async function buildView(guild, requester) {
-  const emptyRoles = await collectEmptyRoles(guild, requester);
+  const { roles: emptyRoles, usedCachedMembers } = await collectEmptyRoles(guild, requester);
   return {
-    embed: buildEmbed(guild.id, emptyRoles),
+    embed: buildEmbed(guild.id, emptyRoles, { usedCachedMembers }),
     components: buildComponents(emptyRoles, requester.id),
     emptyRoles,
   };
@@ -107,6 +119,13 @@ async function buildView(guild, requester) {
 async function refreshView(interaction) {
   const view = await buildView(interaction.guild, interaction.member);
   await interaction.editReply({ embeds: [view.embed], components: view.components });
+}
+
+async function notifyRefreshError(interaction, err) {
+  const message = err?.message ? `Could not refresh empty roles: ${err.message}` : 'Could not refresh empty roles.';
+  try {
+    await interaction.followUp({ content: message, ephemeral: true });
+  } catch (_) {}
 }
 
 async function handleDeleteOne(interaction, ownerId, roleId) {
@@ -147,7 +166,7 @@ async function handleDeleteOne(interaction, ownerId, roleId) {
   try {
     await refreshView(interaction);
   } catch (err) {
-    await interaction.editReply({ content: err.message || 'Failed to refresh empty roles.', components: [] });
+    await notifyRefreshError(interaction, err);
   }
 }
 
@@ -169,9 +188,10 @@ async function handleDeleteAll(interaction, ownerId) {
 
   let emptyRoles = [];
   try {
-    emptyRoles = await collectEmptyRoles(interaction.guild, interaction.member);
+    const result = await collectEmptyRoles(interaction.guild, interaction.member);
+    emptyRoles = result.roles;
   } catch (err) {
-    await interaction.editReply({ content: err.message || 'Could not fetch roles.', components: [] });
+    await notifyRefreshError(interaction, err);
     return;
   }
 
@@ -195,7 +215,7 @@ async function handleDeleteAll(interaction, ownerId) {
   try {
     await refreshView(interaction);
   } catch (err) {
-    await interaction.editReply({ content: err.message || 'Failed to refresh empty roles.', components: [] });
+    await notifyRefreshError(interaction, err);
   }
 }
 
@@ -217,7 +237,7 @@ async function handleRefresh(interaction, ownerId) {
   try {
     await refreshView(interaction);
   } catch (err) {
-    await interaction.editReply({ content: err.message || 'Failed to refresh empty roles.', components: [] });
+    await notifyRefreshError(interaction, err);
   }
 }
 
