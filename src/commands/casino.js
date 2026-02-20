@@ -283,7 +283,7 @@ function buildBlackjackLobbyComponents(game, { disabled = false } = {}) {
 
 function buildBlackjackBuyInEmbed(game, userId, notice = null) {
   const balance = rupeeStore.getBalance(game.guildId, userId);
-  const line = `Select an amount to buy in with. You currently have ${formatCurrencyAmount(game.guildId, balance, { lowercase: true })}.`;
+  const line = `Select an amount to buy in with, then click Confirm Bet to register. You currently have ${formatCurrencyAmount(game.guildId, balance, { lowercase: true })}.`;
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
@@ -291,15 +291,28 @@ function buildBlackjackBuyInEmbed(game, userId, notice = null) {
     .setDescription(notice ? `${line}\n\n${notice}` : line);
 }
 
-function buildBlackjackBuyInComponents(game) {
+function buildBlackjackBuyInComponents(game, userId) {
   const currency = getCurrencyName(game.guildId);
-  const buyInRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`blackjack-buyin-1-${game.raceId}`).setLabel(`1 (${currency})`).setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`blackjack-buyin-2-${game.raceId}`).setLabel(`2 (${currency})`).setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`blackjack-buyin-5-${game.raceId}`).setLabel(`5 ${currency}`).setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`blackjack-buyin-10-${game.raceId}`).setLabel(`10 ${currency}`).setStyle(ButtonStyle.Secondary),
+  const selectedAmount = game.pendingBuyIns.get(userId) ?? game.buyIns.get(userId) ?? BLACKJACK_MIN_BUY_IN;
+  const buyInSelectRow = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`blackjack-buyin-select-${game.raceId}`)
+      .setPlaceholder('Select buy-in amount')
+      .addOptions(
+        [1, 2, 5, 10].map((amount) => ({
+          label: `${amount} ${currency}`,
+          value: String(amount),
+          default: amount === selectedAmount,
+        })),
+      ),
   );
-  return [buyInRow];
+  const confirmRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`blackjack-buyin-confirm-${game.raceId}`)
+      .setLabel('Confirm Bet')
+      .setStyle(ButtonStyle.Success),
+  );
+  return [buyInSelectRow, confirmRow];
 }
 
 function createShuffledBlackjackDeck() {
@@ -363,11 +376,22 @@ function formatBlackjackCard(card) {
   return `${card.rank}${card.suit}`;
 }
 
+function formatBlackjackCardBlock(card) {
+  return `\`${formatBlackjackCard(card)}\``;
+}
+
+function getBlackjackPlayerName(game, userId) {
+  if (!userId) return 'Dealer';
+  const mapped = game.playerNames?.get(userId);
+  if (mapped) return mapped;
+  const member = game.channel?.guild?.members?.cache?.get(userId);
+  return member?.displayName || member?.user?.globalName || member?.user?.username || 'Player';
+}
+
 function formatBlackjackHand(hand, { hideHoleCard = false } = {}) {
   if (!Array.isArray(hand) || hand.length === 0) return 'No cards';
-  if (!hideHoleCard) return hand.map((card) => formatBlackjackCard(card)).join(' ');
-  const shown = formatBlackjackCard(hand[0]);
-  return `${shown} ??`;
+  if (!hideHoleCard) return hand.map((card) => formatBlackjackCardBlock(card)).join(' ');
+  return `${formatBlackjackCardBlock(hand[0])} \`??\``;
 }
 
 function buildBlackjackActionComponents(game, { disabled = false } = {}) {
@@ -381,8 +405,8 @@ function buildBlackjackActionComponents(game, { disabled = false } = {}) {
 
 function buildBlackjackLiveEmbed(game, { revealDealer = false, note = null } = {}) {
   const currentPlayerId = game.turnQueue[0] || null;
+  const currentPlayerName = getBlackjackPlayerName(game, currentPlayerId);
   const currentHand = currentPlayerId ? (game.hands.get(currentPlayerId) || []) : [];
-  const currentTotal = currentHand.length ? getBlackjackHandValue(currentHand).total : 0;
   const dealerTotal = revealDealer
     ? getBlackjackHandValue(game.dealerHand).total
     : getBlackjackCardValue(game.dealerHand[0]);
@@ -390,23 +414,22 @@ function buildBlackjackLiveEmbed(game, { revealDealer = false, note = null } = {
   const embed = new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
     .setTitle('Blackjack - Live')
-    .setDescription(currentPlayerId ? `Current Player - <@${currentPlayerId}>` : 'Current Player - Dealer')
     .addFields(
       {
         name: `Dealer's Hand (${dealerTotal})`,
         value: revealDealer
           ? formatBlackjackHand(game.dealerHand)
-          : `${formatBlackjackHand(game.dealerHand, { hideHoleCard: true })}\n(One Card Shown, Other Hidden)`,
+          : formatBlackjackHand(game.dealerHand, { hideHoleCard: true }),
       },
       {
-        name: currentPlayerId ? `<@${currentPlayerId}>'s Hand (${currentTotal})` : 'No Active Player',
+        name: currentPlayerId ? `${currentPlayerName}'s Hand` : 'No Active Player',
         value: currentPlayerId
-          ? `${formatBlackjackHand(currentHand)}\n(Show count of the current players hand)`
+          ? formatBlackjackHand(currentHand)
           : 'All player turns are complete.',
       },
     );
 
-  if (note) embed.setFooter({ text: note });
+  embed.setFooter({ text: currentPlayerId ? `${currentPlayerName}'s turn` : 'Dealer turn' });
   return embed;
 }
 
@@ -1327,7 +1350,9 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     channel: interaction.channel,
     starterMention: `<@${interaction.user.id}>`,
     players: new Set([interaction.user.id]),
+    playerNames: new Map([[interaction.user.id, interaction.member?.displayName || interaction.user.globalName || interaction.user.username]]),
     buyIns: new Map([[interaction.user.id, BLACKJACK_MIN_BUY_IN]]),
+    pendingBuyIns: new Map(),
     isOpen: true,
     secondsLeft: BLACKJACK_JOIN_WINDOW_SECONDS,
     message: null,
@@ -1412,28 +1437,23 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
           return;
         }
 
-        if (!game.players.has(componentInteraction.user.id)) {
-          if (game.players.size >= BLACKJACK_MAX_PLAYERS) {
-            await componentInteraction.reply({ content: 'This blackjack lobby is full.', ephemeral: true });
-            return;
-          }
-          game.players.add(componentInteraction.user.id);
-          game.buyIns.set(componentInteraction.user.id, BLACKJACK_MIN_BUY_IN);
-          await updateBlackjackLobbyMessage();
+        if (!game.players.has(componentInteraction.user.id) && game.players.size >= BLACKJACK_MAX_PLAYERS) {
+          await componentInteraction.reply({ content: 'This blackjack lobby is full.', ephemeral: true });
+          return;
         }
 
         await componentInteraction.reply({
           embeds: [buildBlackjackBuyInEmbed(game, componentInteraction.user.id)],
-          components: buildBlackjackBuyInComponents(game),
+          components: buildBlackjackBuyInComponents(game, componentInteraction.user.id),
           ephemeral: true,
         });
         return;
       }
 
-      if (id.startsWith('blackjack-buyin-')) {
-        const amount = Number(id.split('-')[2] || 0);
-        if (game.players.has(componentInteraction.user.id) && [1, 2, 5, 10].includes(amount)) {
-          game.buyIns.set(componentInteraction.user.id, amount);
+      if (id.startsWith('blackjack-buyin-select-')) {
+        const amount = Number(componentInteraction.values?.[0] || 0);
+        if ([1, 2, 5, 10].includes(amount)) {
+          game.pendingBuyIns.set(componentInteraction.user.id, amount);
         }
         await componentInteraction.update({
           embeds: [
@@ -1441,11 +1461,46 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
               game,
               componentInteraction.user.id,
               Number.isFinite(amount) && amount > 0
-                ? `Selected buy-in: ${formatCurrencyAmount(game.guildId, amount, { lowercase: true })}.`
+                ? `Selected buy-in: ${formatCurrencyAmount(game.guildId, amount, { lowercase: true })}. Click Confirm Bet to register in the lobby.`
                 : null,
             ),
           ],
-          components: buildBlackjackBuyInComponents(game),
+          components: buildBlackjackBuyInComponents(game, componentInteraction.user.id),
+        });
+        return;
+      }
+
+      if (id.startsWith('blackjack-buyin-confirm-')) {
+        if (!game.isOpen) {
+          await componentInteraction.reply({ content: 'This blackjack lobby is closed.', ephemeral: true });
+          return;
+        }
+
+        const alreadyJoined = game.players.has(componentInteraction.user.id);
+        if (!alreadyJoined && game.players.size >= BLACKJACK_MAX_PLAYERS) {
+          await componentInteraction.reply({ content: 'This blackjack lobby is full.', ephemeral: true });
+          return;
+        }
+
+        const amount = game.pendingBuyIns.get(componentInteraction.user.id) ?? game.buyIns.get(componentInteraction.user.id) ?? BLACKJACK_MIN_BUY_IN;
+        game.pendingBuyIns.delete(componentInteraction.user.id);
+        game.players.add(componentInteraction.user.id);
+        game.playerNames.set(
+          componentInteraction.user.id,
+          componentInteraction.member?.displayName || componentInteraction.user.globalName || componentInteraction.user.username,
+        );
+        game.buyIns.set(componentInteraction.user.id, amount);
+        await updateBlackjackLobbyMessage();
+
+        await componentInteraction.update({
+          embeds: [
+            buildBlackjackBuyInEmbed(
+              game,
+              componentInteraction.user.id,
+              `Registered with ${formatCurrencyAmount(game.guildId, amount, { lowercase: true })}.`,
+            ),
+          ],
+          components: buildBlackjackBuyInComponents(game, componentInteraction.user.id),
         });
       }
     } catch (error) {
@@ -1616,6 +1671,31 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       });
     };
 
+    const postBlackjackTurnMessage = async (note = null, { disablePrevious = false } = {}) => {
+      if (disablePrevious && game.message) {
+        try {
+          await game.message.edit({
+            components: buildBlackjackActionComponents(game, { disabled: true }),
+            allowedMentions: { parse: [] },
+          });
+        } catch (_) {}
+      }
+
+      const currentPlayerId = game.turnQueue[0];
+      if (currentPlayerId) {
+        await game.channel.send({
+          content: `<@${currentPlayerId}> it is your turn.`,
+          allowedMentions: { users: [currentPlayerId] },
+        });
+      }
+
+      game.message = await game.channel.send({
+        embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note })],
+        components: buildBlackjackActionComponents(game, { disabled: game.turnQueue.length === 0 }),
+        allowedMentions: { parse: [] },
+      });
+    };
+
     let kickoffNote = advanceAutoCompletedTurns();
     if (!kickoffNote) {
       kickoffNote = game.turnQueue.length
@@ -1624,11 +1704,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     }
 
     try {
-      await setBlackjackMessage({
-        embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note: kickoffNote })],
-        components: buildBlackjackActionComponents(game, { disabled: game.turnQueue.length === 0 }),
-        allowedMentions: { parse: [] },
-      }, 'live-start');
+      await postBlackjackTurnMessage(kickoffNote);
     } catch (error) {
       console.error('[Blackjack] Failed to post live table:', error);
       activeGames.delete(key);
@@ -1706,18 +1782,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
           return;
         }
 
-        await game.message.edit({
-          embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note })],
-          components: buildBlackjackActionComponents(game),
-          allowedMentions: { parse: [] },
-        }).catch(async (error) => {
-          if (!isDiscordUnknownMessageError(error)) throw error;
-          await setBlackjackMessage({
-            embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note })],
-            components: buildBlackjackActionComponents(game),
-            allowedMentions: { parse: [] },
-          }, 'live-turn');
-        });
+        await postBlackjackTurnMessage(note, { disablePrevious: true });
         game.processingTurn = false;
       } catch (error) {
         game.processingTurn = false;
