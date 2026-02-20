@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('giverupee');
 const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require('discord.js');
 const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
@@ -82,9 +83,10 @@ module.exports = {
         client: interaction.client,
       });
     } catch (err) {
-      console.error('Failed to send giverupee log:', err);
+      cmdLogger.error('Failed to send giverupee log:', err);
     }
 
     return interaction.reply({ embeds: [embed] });
   },
 };
+

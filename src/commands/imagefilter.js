@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('imagefilter');
 const {
   ApplicationIntegrationType,
   AttachmentBuilder,
@@ -21,7 +22,7 @@ async function safeRespond(interaction, message) {
     }
     await interaction.reply(payload);
   } catch (err) {
-    console.error('[imagefilter] Failed to send response:', err);
+    cmdLogger.error('[imagefilter] Failed to send response:', err);
   }
 }
 
@@ -98,8 +99,9 @@ module.exports = {
         files: [output],
       });
     } catch (err) {
-      console.error('[imagefilter] Command failed:', err);
+      cmdLogger.error('[imagefilter] Command failed:', err);
       await safeRespond(interaction, `Could not apply that filter: ${err?.message || 'Unknown error'}`);
     }
   },
 };
+

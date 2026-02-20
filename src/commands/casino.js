@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('casino');
 const fs = require('fs');
 const path = require('path');
 const {
@@ -185,7 +186,7 @@ async function logCasinoRupeeEvent({
     });
     return true;
   } catch (err) {
-    console.error('[Casino] Failed to send rupee log:', err?.message || err);
+    cmdLogger.error('[Casino] Failed to send rupee log:', err?.message || err);
     return false;
   }
 }
@@ -596,7 +597,7 @@ function logRouletteInteractionError(error, interaction, context) {
     deferred: interaction?.deferred ?? null,
     replied: interaction?.replied ?? null,
   };
-  console.error('[Roulette] Interaction error', details, error);
+  cmdLogger.error('[Roulette] Interaction error', details, error);
 }
 
 async function replyRouletteInteractionFailure(interaction) {
@@ -670,7 +671,7 @@ async function updateLobbyMessage(game) {
       content: rouletteBoardText(),
     });
   } catch (err) {
-    console.error('Failed to update roulette lobby:', err);
+    cmdLogger.error('Failed to update roulette lobby:', err);
   }
 }
 
@@ -989,7 +990,7 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
       try {
         casinoStatsStore.recordRound(game.guildId, 'roulette', roundStats);
       } catch (statsError) {
-        console.error('[Roulette] Failed to record casino stats', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, statsError);
+        cmdLogger.error('[Roulette] Failed to record casino stats', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, statsError);
       }
 
       const resultEmbed = new EmbedBuilder()
@@ -1033,7 +1034,7 @@ async function runRouletteGame(interaction, { initiatedByButton = false } = {}) 
         } catch (_) {}
       });
     } catch (error) {
-      console.error('[Roulette] Round close flow failed', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, error);
+      cmdLogger.error('[Roulette] Round close flow failed', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, error);
     } finally {
       activeGames.delete(key);
     }
@@ -1097,7 +1098,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         allowedMentions: { parse: [] },
       });
     } catch (err) {
-      console.error('[Horse Race] Failed to update lobby message:', err);
+      cmdLogger.error('[Horse Race] Failed to update lobby message:', err);
     }
   };
 
@@ -1215,7 +1216,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         await updateLobbyMessage();
       }
     } catch (error) {
-      console.error('[Horse Race] Lobby interaction failed:', error);
+      cmdLogger.error('[Horse Race] Lobby interaction failed:', error);
       const payload = { content: 'Horse race action failed. Try again.', ephemeral: true };
       if (buttonInteraction.deferred || buttonInteraction.replied) {
         await buttonInteraction.followUp(payload).catch(() => {});
@@ -1411,7 +1412,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
       try {
         casinoStatsStore.recordRound(game.guildId, 'horse_race', roundStats);
       } catch (statsError) {
-        console.error('[Horse Race] Failed to record casino stats:', statsError);
+        cmdLogger.error('[Horse Race] Failed to record casino stats:', statsError);
       }
 
       const resultLines = [];
@@ -1476,7 +1477,7 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
         } catch (_) {}
       });
     } catch (error) {
-      console.error('[Horse Race] Round close flow failed', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, error);
+      cmdLogger.error('[Horse Race] Round close flow failed', { guildId: game.guildId, channelId: game.channel?.id, raceId: game.raceId }, error);
     } finally {
       if (!gameDeleted) {
         activeGames.delete(key);
@@ -1573,7 +1574,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
         return game.message;
       } catch (error) {
         if (!isDiscordUnknownMessageError(error)) throw error;
-        console.warn('[Blackjack] Message missing during edit; posting a new table message.', {
+        cmdLogger.warn('[Blackjack] Message missing during edit; posting a new table message.', {
           context,
           guildId: game.guildId,
           channelId: game.channel?.id,
@@ -1602,11 +1603,11 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
           await setBlackjackMessage(payload, 'lobby-recreate');
           return;
         } catch (retryError) {
-          console.error('[Blackjack] Failed to recreate lobby message:', retryError);
+          cmdLogger.error('[Blackjack] Failed to recreate lobby message:', retryError);
           return;
         }
       }
-      console.error('[Blackjack] Failed to update lobby message:', error);
+      cmdLogger.error('[Blackjack] Failed to update lobby message:', error);
     }
   };
 
@@ -1727,7 +1728,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
         });
       }
     } catch (error) {
-      console.error('[Blackjack] Lobby interaction failed:', error);
+      cmdLogger.error('[Blackjack] Lobby interaction failed:', error);
       const payload = { content: 'Blackjack action failed. Try again.', ephemeral: false };
       if (componentInteraction.deferred || componentInteraction.replied) {
         await componentInteraction.followUp(payload).catch(() => {});
@@ -1895,7 +1896,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
               action: outcome.result === 'push' ? 'Blackjack Push' : 'Blackjack Win',
             });
           } catch (error) {
-            console.error('[Blackjack] Failed to pay out winner:', { guildId: game.guildId, userId, payout }, error);
+            cmdLogger.error('[Blackjack] Failed to pay out winner:', { guildId: game.guildId, userId, payout }, error);
           }
         }
       }
@@ -1914,7 +1915,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
           allowedMentions: { parse: [] },
         }, 'results');
       } catch (error) {
-        console.error('[Blackjack] Failed to post result message:', error);
+        cmdLogger.error('[Blackjack] Failed to post result message:', error);
       }
 
       activeGames.delete(key);
@@ -1982,7 +1983,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     try {
       await postBlackjackTurnMessage(kickoffNote);
     } catch (error) {
-      console.error('[Blackjack] Failed to post live table:', error);
+      cmdLogger.error('[Blackjack] Failed to post live table:', error);
       activeGames.delete(key);
       return;
     }
@@ -2064,7 +2065,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
         game.processingTurn = false;
       } catch (error) {
         game.processingTurn = false;
-        console.error('[Blackjack] Live action failed:', error);
+        cmdLogger.error('[Blackjack] Live action failed:', error);
         const payload = { content: 'Blackjack action failed. Try again.', ephemeral: false };
         if (componentInteraction.deferred || componentInteraction.replied) {
           await componentInteraction.followUp(payload).catch(() => {});
@@ -2175,3 +2176,4 @@ module.exports = {
     }
   },
 };
+

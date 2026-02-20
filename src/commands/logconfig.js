@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('logconfig');
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const { buildLogConfigView } = require('../utils/logConfigView');
 const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('../utils/botConfigStore');
@@ -38,8 +39,9 @@ module.exports = {
       const view = await buildLogConfigView(guild, null);
       await interaction.editReply({ embeds: [view.embed], components: view.components });
     } catch (err) {
-      console.error('Failed to build logging configuration view:', err);
+      cmdLogger.error('Failed to build logging configuration view:', err);
       await interaction.editReply({ content: 'Failed to open the logging configuration. Please try again later.' });
     }
   },
 };
+

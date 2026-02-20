@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('botlist');
 const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField, AuditLogEvent } = require('discord.js');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 
@@ -80,7 +81,7 @@ module.exports = {
             await guild.members.fetch();
         } catch (err) {
             refreshed = false;
-            console.warn('Bot list: failed to refresh member cache', err);
+            cmdLogger.warn('Bot list: failed to refresh member cache', err);
         }
 
         const botMembers = [...guild.members.cache.values()]
@@ -105,7 +106,7 @@ module.exports = {
                 botAddMap = await loadBotAddAuditEntries(guild, botIds);
             } catch (err) {
                 auditLogError = true;
-                console.warn('Bot list: failed to fetch audit logs', err);
+                cmdLogger.warn('Bot list: failed to fetch audit logs', err);
             }
         }
 
@@ -157,3 +158,4 @@ module.exports = {
         return interaction.editReply({ embeds });
     },
 };
+

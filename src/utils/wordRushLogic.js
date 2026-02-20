@@ -89,7 +89,7 @@ function pickLetters(count = 3) {
   const target = Number.isInteger(count) ? count : 3;
   const letters = [];
   for (let i = 0; i < target; i += 1) {
-    const idx = Math.floor(Math.random() * LETTER_POOL.length);
+    const idx = Math.min(LETTER_POOL.length - 1, Math.floor(Math.random() * LETTER_POOL.length));
     letters.push(LETTER_POOL[idx]);
   }
   return letters;
@@ -107,15 +107,16 @@ function pickPlayableLetters() {
       const clean = String(seed || '').toUpperCase().replace(/[^A-Z]/g, '');
       if (clean.length < 3) continue;
 
-      const i = Math.floor(Math.random() * (clean.length - 2));
-      const j = i + 1 + Math.floor(Math.random() * (clean.length - i - 1));
-      const k = j + 1 + Math.floor(Math.random() * (clean.length - j - 1));
+      const i = Math.min(clean.length - 3, Math.floor(Math.random() * (clean.length - 2)));
+      const j = i + 1 + Math.min(clean.length - i - 2, Math.floor(Math.random() * (clean.length - i - 1)));
+      const k = j + 1 + Math.min(clean.length - j - 2, Math.floor(Math.random() * (clean.length - j - 1)));
       return [clean[i], clean[j], clean[k]];
     }
   }
 
   if (PLAYABLE_TRIPLETS.length) {
-    const triplet = PLAYABLE_TRIPLETS[Math.floor(Math.random() * PLAYABLE_TRIPLETS.length)];
+    const idx = Math.min(PLAYABLE_TRIPLETS.length - 1, Math.floor(Math.random() * PLAYABLE_TRIPLETS.length));
+    const triplet = PLAYABLE_TRIPLETS[idx];
     return triplet.split('');
   }
 

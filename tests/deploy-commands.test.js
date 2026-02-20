@@ -37,9 +37,10 @@ test('duplicate commands are ignored', async () => {
   try {
     const run = runDeploy(commandsDir);
     assert.strictEqual(run.status, 0);
-    assert.ok(run.stdout.includes("Duplicate slash command name 'duptest'"), 'missing duplicate warning');
-    assert.ok(run.stdout.includes('b-duptest.js'), 'missing file path for skipped command');
-    const match = run.stdout.match(/Preparing to refresh (\d+) application/);
+    const output = `${run.stdout}\n${run.stderr || ''}`;
+    assert.ok(output.includes("Duplicate slash command name 'duptest'"), 'missing duplicate warning');
+    assert.ok(output.includes('b-duptest.js'), 'missing file path for skipped command');
+    const match = output.match(/Preparing to refresh (\d+) application/);
     assert.ok(match, 'could not parse command count');
     const count = Number(match[1]);
     assert.strictEqual(count, baseCount + 1);

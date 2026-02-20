@@ -3,7 +3,8 @@ const rupeeStore = require('../utils/rupeeStore');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
 const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
 const logSender = require('../utils/logSender');
-const { formatCurrencyAmount, getCurrencyPlural, formatCurrencyWord } = require('../utils/currencyName');
+
+const cmdLogger = require('../utils/logger')('massblessing');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -42,7 +43,7 @@ module.exports = {
         awarded += 1;
       }
     } catch (err) {
-      console.error('Failed to mass bless:', err);
+      cmdLogger.error('Failed to mass bless:', err);
       return interaction.editReply({ content: 'Failed to bless everyone. Please try again.' });
     }
 
@@ -79,7 +80,7 @@ module.exports = {
         client: interaction.client,
       });
     } catch (err) {
-      console.error('Failed to send massblessing log:', err);
+      cmdLogger.error('Failed to send massblessing log:', err);
     }
 
     try {
@@ -90,3 +91,4 @@ module.exports = {
     } catch (_) {}
   },
 };
+

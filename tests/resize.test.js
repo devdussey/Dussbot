@@ -1,13 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const resize = require('../src/commands/resize');
+const image = require('../src/commands/image');
 
 function createInteraction({ attachment = null, url = null, percentage = null, pixels = null } = {}) {
   let deferred = false;
   let reply = null;
   return {
     options: {
+      getSubcommandGroup() {
+        return null;
+      },
+      getSubcommand() {
+        return 'resize';
+      },
       getAttachment(name) {
         if (name === 'image') return attachment;
         return null;
@@ -32,14 +38,16 @@ function createInteraction({ attachment = null, url = null, percentage = null, p
   };
 }
 
-test('resize command is configured as a third-party app command', () => {
-  const json = resize.data.toJSON();
-  assert.equal(json.name, 'resize');
-  assert.deepEqual(json.integration_types, [0, 1]);
+test('image resize command is configured as an app command subcommand', () => {
+  const json = image.data.toJSON();
+  assert.equal(json.name, 'image');
+  assert.deepEqual(json.integration_types, [0]);
   assert.deepEqual(json.contexts, [0, 1, 2]);
+  const resizeSubcommand = json.options.find(opt => opt.type === 1 && opt.name === 'resize');
+  assert.ok(resizeSubcommand, 'missing image resize subcommand');
 });
 
-test('resize rejects using percentage and pixels together', async () => {
+test('image resize rejects using percentage and pixels together', async () => {
   const interaction = createInteraction({
     attachment: {
       url: 'https://cdn.example.com/image.png',
@@ -50,7 +58,7 @@ test('resize rejects using percentage and pixels together', async () => {
     pixels: '64x64',
   });
 
-  await resize.execute(interaction);
+  await image.execute(interaction);
   const state = interaction.getState();
   assert.equal(state.deferred, true);
   assert.equal(state.reply, 'Choose either `percentage` or `pixels`, not both.');

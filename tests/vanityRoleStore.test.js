@@ -39,6 +39,7 @@ test('upsertUserRecord creates record and persists values', async () => {
     primary: '#FFFFFF',
     secondary: '#000000',
     active: 'secondary',
+    hoist: false,
   });
 
   assert.deepEqual(getUserRecord('g1', 'u1'), saved);
@@ -60,6 +61,7 @@ test('upsertUserRecord sanitizes invalid types', async () => {
     primary: null,
     secondary: null,
     active: 'primary',
+    hoist: false,
   });
 });
 

@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('blessing');
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const coinStore = require('../utils/coinStore');
 const rupeeStore = require('../utils/rupeeStore');
@@ -67,7 +68,7 @@ module.exports = {
         client: interaction.client,
       });
     } catch (err) {
-      console.error('Failed to send blessing rupee log:', err);
+      cmdLogger.error('Failed to send blessing rupee log:', err);
     }
 
     return interaction.editReply({
@@ -75,3 +76,4 @@ module.exports = {
     });
   },
 };
+

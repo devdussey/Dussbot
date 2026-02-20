@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('rupeestore');
 const {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -196,7 +197,7 @@ function scheduleMuzzleLift(client, guildId, userId, durationMs, reason) {
         await member.voice.setMute(false, reason);
       }
     } catch (err) {
-      console.error('Failed to lift muzzle:', err?.message || err);
+      cmdLogger.error('Failed to lift muzzle:', err?.message || err);
     }
   }, durationMs);
   muzzleTimers.set(key, timer);
@@ -220,12 +221,12 @@ async function logRupeeStorePurchase({ interaction, itemLabel, cost, target, bal
       client: interaction.client,
     });
   } catch (err) {
-    console.error('Failed to send rupee spend log:', err?.message || err);
+    cmdLogger.error('Failed to send rupee spend log:', err?.message || err);
   }
 }
 
 function logStorePurchaseError(interaction, reason, extra = {}) {
-  console.error('Rupee store purchase error', {
+  cmdLogger.error('Rupee store purchase error', {
     guildId: interaction?.guildId || null,
     userId: interaction?.user?.id || null,
     reason,
@@ -792,7 +793,7 @@ async function sendStoreTargetAnnouncement({
 
     await channel.send({ embeds: [embed] });
   } catch (err) {
-    console.error('Failed to send store purchase announcement:', err?.message || err);
+    cmdLogger.error('Failed to send store purchase announcement:', err?.message || err);
   }
 }
 
@@ -1369,3 +1370,4 @@ module.exports = {
     await interaction.editReply({ content: `Posted ${sent} enabled store item panel messages in ${channel}.` });
   },
 };
+

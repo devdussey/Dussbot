@@ -62,8 +62,8 @@ test('viewrupees shows rupee leaderboard for admins', async () => {
 
     const leaderboardField = embed.fields.find(f => f.name === 'Leaderboard');
     assert(leaderboardField, 'expected leaderboard field');
-    assert.match(leaderboardField.value, /1\. <@u2> — \*\*5\*\* rupees/);
-    assert.match(leaderboardField.value, /2\. <@u1> — \*\*2\*\* rupees/);
+    assert.match(leaderboardField.value, /1\. <@u2> — \*\*5 rupees\*\*/);
+    assert.match(leaderboardField.value, /2\. <@u1> — \*\*2 rupees\*\*/);
   } finally {
     rupeeStore.listUserBalances = originalList;
   }

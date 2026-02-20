@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('botconfig');
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const { buildBotConfigView } = require('../utils/botConfigView');
 const { shouldReplyEphemeral } = require('../utils/botConfigStore');
@@ -24,8 +25,9 @@ module.exports = {
       const view = await buildBotConfigView(interaction.guild, null);
       await interaction.editReply({ embeds: [view.embed], components: view.components });
     } catch (err) {
-      console.error('Failed to build bot configuration view:', err);
+      cmdLogger.error('Failed to build bot configuration view:', err);
       await interaction.editReply({ content: 'Failed to open the bot configuration. Please try again later.' });
     }
   },
 };
+

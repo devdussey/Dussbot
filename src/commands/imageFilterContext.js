@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('imageFilterContext');
 const {
   ApplicationCommandType,
   ApplicationIntegrationType,
@@ -23,7 +24,7 @@ async function safeRespond(interaction, message) {
     }
     await interaction.reply(payload);
   } catch (err) {
-    console.error('[Load context] Failed to send response:', err);
+    cmdLogger.error('[Load context] Failed to send response:', err);
   }
 }
 
@@ -69,8 +70,9 @@ module.exports = {
         files: [output],
       });
     } catch (err) {
-      console.error('[Load context] Command failed:', err);
+      cmdLogger.error('[Load context] Command failed:', err);
       await safeRespond(interaction, `Could not apply that filter: ${err?.message || 'Unknown error'}`);
     }
   },
 };
+

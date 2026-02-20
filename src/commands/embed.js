@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('embed');
 const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
 const { createEmbedModal } = require('../utils/embedBuilder');
 const { parseColorInput } = require('../utils/colorParser');
@@ -143,7 +144,7 @@ module.exports = {
                 });
 
             } catch (error) {
-                console.error('embed quick failed:', error);
+                cmdLogger.error('embed quick failed:', error);
                 await interaction.editReply({
                     content: '❌ Error creating embed. Please check your inputs (especially URLs and color format).'
                 });
@@ -151,3 +152,4 @@ module.exports = {
         }
     },
 };
+

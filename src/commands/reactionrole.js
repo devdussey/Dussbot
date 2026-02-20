@@ -1,3 +1,4 @@
+const cmdLogger = require('../utils/logger')('reactionrole');
 const {
   SlashCommandBuilder,
   PermissionsBitField,
@@ -170,7 +171,7 @@ async function handleCreate(interaction) {
         allowedMentions: { parse: [] },
       });
     } catch (err) {
-      console.error('Failed to send reaction role message:', err);
+      cmdLogger.error('Failed to send reaction role message:', err);
       return interaction.editReply({ content: 'Failed to create the reaction roles message.' });
     }
   }
@@ -215,7 +216,7 @@ async function handleCreate(interaction) {
       createdBy: interaction.user.id,
     });
   } catch (err) {
-    console.error('Failed to create reaction role panel:', err);
+    cmdLogger.error('Failed to create reaction role panel:', err);
     return interaction.editReply({ content: 'Failed to create the reaction role panel.' });
   }
 
@@ -244,7 +245,7 @@ async function handleCreate(interaction) {
     await targetMessage.edit(editPayload);
   } catch (err) {
     reactionRoleStore.removePanel(interaction.guildId, panel.id);
-    console.error('Failed to attach reaction role menu:', err);
+    cmdLogger.error('Failed to attach reaction role menu:', err);
     return interaction.editReply({ content: 'Failed to attach the reaction role menu to the message.' });
   }
 
@@ -485,7 +486,7 @@ async function handleEdit(interaction) {
   try {
     await targetMessage.edit(editPayload);
   } catch (err) {
-    console.error('Failed to edit reaction role message:', err);
+    cmdLogger.error('Failed to edit reaction role message:', err);
     return interaction.editReply({ content: 'Failed to update the reaction role message.' });
   }
 
@@ -808,3 +809,4 @@ module.exports = {
     return interaction.reply({ content: 'Unknown reaction role subcommand.', ephemeral: true });
   },
 };
+

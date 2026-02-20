@@ -25,6 +25,7 @@ const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
 const rupeeStore = require('../utils/rupeeStore');
 const { isOwner } = require('../utils/ownerIds');
 const { formatCurrencyAmount } = require('../utils/currencyName');
+const { executeCommandSafely } = require('../utils/commandExecutionGuard');
 
 const MAX_ERROR_STACK = 3500;
 const COMMAND_FAILURE_ALERT_CHANNEL_ID = (process.env.COMMAND_FAILURE_ALERT_CHANNEL_ID || '').trim();
@@ -517,39 +518,29 @@ module.exports = {
                 }
             }
 
-            try {
-                await command.execute(interaction);
-                await logCommandUsage(interaction, 'Used', 'Command executed successfully', 0x57f287);
-            } catch (error) {
+            const success = await executeCommandSafely({
+                interaction,
+                command,
+                onSuccess: async () => {
+                    await logCommandUsage(interaction, 'Used', 'Command executed successfully', 0x57f287);
+                },
+                onFailure: async (error) => {
                 const code = error?.code || error?.status;
                 const msg = (error?.message || '').toLowerCase();
                 // Ignore common race/expiry cases to prevent noisy logs and dupes
                 if (code === 40060 || code === 10062 || msg.includes('already been acknowledged') || msg.includes('unknown interaction')) {
                     console.warn(`Interaction for /${interaction.commandName} expired or was handled elsewhere (code ${code}).`);
-                    return;
+                    return false;
                 }
 
                 console.error(`Error executing ${interaction.commandName}:`, error);
-
-                const errorMessage = 'There was an error while executing this command!';
-
-                // Try to notify the user via the interaction first (best-effort)
-                try {
-                    if (interaction.replied) {
-                        await interaction.followUp({ content: errorMessage, ephemeral: true });
-                    } else if (interaction.deferred) {
-                        await interaction.editReply({ content: errorMessage });
-                    } else {
-                        await interaction.reply({ content: errorMessage, ephemeral: true });
-                    }
-                } catch (replyError) {
-                    const rcode = replyError?.code;
-                    console.warn('Failed to send error via interaction API:', rcode, replyError?.message);
-                }
                 await logCommandUsage(interaction, 'Failed', error?.message || 'Unknown error', 0xed4245);
                 await logCommandError(interaction, error, 'Command execution threw an error.');
                 await notifyCommandFailureAlert(interaction, error, 'Command execution threw an error.');
-            }
+                    return true;
+                },
+            });
+            if (success === false) return;
         }
 
         // Handle select menus
