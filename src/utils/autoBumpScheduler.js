@@ -87,9 +87,21 @@ async function runJob(client, guildId, job) {
   }
 
   try {
+    const allowedRoleIds = job.allowMentions
+      ? Array.from(
+        new Set(
+          String(content || '')
+            .match(/<@&(\d{15,25})>/g)
+            ?.map(token => token.replace(/[^\d]/g, ''))
+            .filter(Boolean) || [],
+        ),
+      )
+      : [];
     await channel.send({
       content,
-      allowedMentions: job.allowMentions ? undefined : { parse: [] },
+      allowedMentions: allowedRoleIds.length
+        ? { parse: [], roles: allowedRoleIds }
+        : { parse: [] },
     });
     await store.markRunSuccess(guildId, job.id);
   } catch (err) {

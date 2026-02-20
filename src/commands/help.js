@@ -29,6 +29,7 @@ const categories = {
     { cmd: '/sacrificeconfig', desc: 'Post the communal sacrifice panel.', perm: 'Administrator' },
     { cmd: '/autorespond toggle/add/remove/list', desc: 'Configure keyword-based automated replies.', perm: 'Administrator' },
     { cmd: '/automessage create/delete/list', desc: 'Schedule recurring server messages.', perm: 'Manage Server' },
+    { cmd: '/autobumpreminder config/status/disable', desc: 'Post bump reminder messages for Discadia, Discodus, and Disboard.', perm: 'Administrator' },
     { cmd: '/stickymessage set/clear/view', desc: 'Configure delayed sticky messages per channel.', perm: 'Administrator' },
     { cmd: '/say', desc: 'Send a custom bot message to a selected channel.', perm: 'Administrator' },
     { cmd: '/logconfig', desc: 'Configure logging channels and toggle events.', perm: 'Administrator' },
@@ -54,6 +55,7 @@ const categories = {
     { cmd: '/sacrificeconfig', desc: 'Post the communal sacrifice panel.', perm: 'Administrator' },
     { cmd: '/autorespond toggle/add/remove/list', desc: 'Configure keyword-based automated replies.', perm: 'Administrator' },
     { cmd: '/automessage create/delete/list', desc: 'Schedule recurring server messages.', perm: 'Manage Server' },
+    { cmd: '/autobumpreminder config/status/disable', desc: 'Post bump reminder messages for Discadia, Discodus, and Disboard.', perm: 'Administrator' },
     { cmd: '/stickymessage set/clear/view', desc: 'Configure delayed sticky messages per channel.', perm: 'Administrator' },
     { cmd: '/logconfig', desc: 'Configure logging channels and toggle events.', perm: 'Administrator' },
     { cmd: '/antinuke config', desc: 'Configure anti-nuke detections and thresholds.', perm: 'Manage Server' },
@@ -184,3 +186,4 @@ module.exports = {
     });
   },
 };
+

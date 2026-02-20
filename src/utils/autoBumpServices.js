@@ -14,6 +14,13 @@ const SERVICE_DEFINITIONS = [
     description: 'Sends the Discadia bump command (default `!bump`) every 2 hours.',
   },
   {
+    key: 'discodus',
+    name: 'Discodus',
+    defaultCommand: '!bump',
+    defaultIntervalMinutes: 120,
+    description: 'Sends the Discodus bump command (default `!bump`) every 2 hours.',
+  },
+  {
     key: 'discords',
     name: 'Discords.com',
     defaultCommand: '!bump',

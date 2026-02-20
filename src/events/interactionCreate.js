@@ -320,6 +320,7 @@ const COMMAND_CATEGORY_MAP = {
     wordrush: 'games',
 
     // Automations
+    autobumpreminder: 'automations',
     automessage: 'automations',
     autorespond: 'automations',
     autoroles: 'automations',
@@ -353,6 +354,7 @@ const OWNER_COMMANDS = new Set([]);
 const ADMIN_COMMANDS = new Set([
   'analysis',
   'antinuke',
+  'autobumpreminder',
   'automessage',
   'autoroles',
   'autorespond',
