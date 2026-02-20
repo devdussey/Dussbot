@@ -74,7 +74,7 @@ const categories = {
     { cmd: '/image removebg image/gif', desc: 'Remove image background (non-premium servers: 1 use/day).', perm: 'Premium server for unlimited' },
     { cmd: '/image enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
     { cmd: '/image resize', desc: 'Resize an image by percentage or fixed pixel presets.', perm: null },
-    { cmd: '/imagefilter', desc: 'Apply a GIF filter edit (currently: Load) to an uploaded image or URL.', perm: null },
+    { cmd: '/imagefilter', desc: 'Apply a GIF filter edit (currently: Load) to an uploaded image, URL, or user avatar.', perm: null },
   ],
   'Economy System and Games': [
     { cmd: '/inventory', desc: 'View your coins and server currency.', perm: null },

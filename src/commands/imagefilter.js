@@ -61,6 +61,12 @@ module.exports = {
         .setName('image_url')
         .setDescription('Direct image URL to filter')
         .setRequired(false)
+    )
+    .addUserOption(option =>
+      option
+        .setName('user')
+        .setDescription('Use this user\'s avatar (when no image or image_url is provided)')
+        .setRequired(false)
     ),
 
   async execute(interaction) {
@@ -69,11 +75,19 @@ module.exports = {
 
       const attachmentInput = interaction.options.getAttachment('image');
       const urlInput = interaction.options.getString('image_url');
+      const userInput = interaction.options.getUser('user');
       const edit = interaction.options.getString('edits', true);
-      const sourceUrl = attachmentInput?.url || urlInput;
+      const avatarUrl = userInput
+        ? userInput.displayAvatarURL({
+          size: 4096,
+          extension: userInput.avatar?.startsWith('a_') ? 'gif' : 'png',
+          forceStatic: false,
+        })
+        : null;
+      const sourceUrl = attachmentInput?.url || urlInput || avatarUrl;
 
       if (!sourceUrl) {
-        await safeRespond(interaction, 'Please upload an image or provide an image URL.');
+        await safeRespond(interaction, 'Please upload an image, provide an image URL, or choose a user avatar.');
         return;
       }
 
@@ -91,7 +105,9 @@ module.exports = {
       const result = await applyImageFilter(sourceBuffer, edit);
       const baseName = attachmentInput?.name
         ? deriveBaseName(attachmentInput.name)
-        : deriveBaseName(sourceUrl);
+        : (userInput && sourceUrl === avatarUrl
+          ? deriveBaseName(userInput.username || userInput.id)
+          : deriveBaseName(sourceUrl));
       const fileName = `${baseName || 'image'}-${edit}-filter.${result.outputExt}`;
       const output = new AttachmentBuilder(result.buffer, { name: fileName });
       await interaction.editReply({
