@@ -183,11 +183,12 @@ test('parseBackfillPayload dedupes message IDs in arrays and keeps media/word de
     users: {
       u1: {
         messages: [
-          { id: 'm1', content: 'hello hello' },
-          { id: 'm1', content: 'hello hello' },
+          { id: 'm1', content: 'hello hello', createdTimestamp: '2026-02-01T00:00:00.000Z' },
+          { id: 'm1', content: 'hello hello', createdTimestamp: '2026-02-01T00:00:00.000Z' },
           {
             id: 'm2',
             content: '<:wave:1234567890>',
+            createdTimestamp: '2026-02-05T00:00:00.000Z',
             attachments: [{ name: 'photo.png', contentType: 'image/png' }],
             stickers: [],
           },
@@ -204,6 +205,8 @@ test('parseBackfillPayload dedupes message IDs in arrays and keeps media/word de
   assert.equal(entries[0].mediaBreakdown.images, 1);
   assert.equal(entries[0].mediaBreakdown.emojis, 1);
   assert.equal(entries[0].words.hello, 2);
+  assert.equal(entries[0].firstMessageAt, Date.parse('2026-02-01T00:00:00.000Z'));
+  assert.equal(entries[0].lastMessageAt, Date.parse('2026-02-05T00:00:00.000Z'));
 
   const imported = await store.importBackfill('g1', entries);
   assert.equal(imported.importedMessages, 2);
@@ -333,21 +336,27 @@ test('recordTrackedMessage stores word usage and media breakdowns for queries', 
 
   const store = freshStore();
   await store.setTrackedChannel('g1', 'c1');
+  const tsU1 = Date.parse('2026-02-01T12:00:00.000Z');
+  const tsU2Early = Date.parse('2026-02-02T10:00:00.000Z');
+  const tsU2Late = Date.parse('2026-02-03T16:30:00.000Z');
 
   await store.recordTrackedMessage('g1', 'c1', 'u1', 'Alpha#0001', {
     content: 'hello hello world',
+    createdTimestamp: tsU1,
     attachments: new Map(),
     stickers: new Map(),
   });
 
   await store.recordTrackedMessage('g1', 'c1', 'u2', 'Beta#0001', {
     content: 'check this 😀 <:wave:1234567890>',
+    createdTimestamp: tsU2Early,
     attachments: new Map([['a1', { name: 'photo.png', contentType: 'image/png' }]]),
     stickers: new Map(),
   });
 
   await store.recordTrackedMessage('g1', 'c1', 'u2', 'Beta#0001', {
     content: '',
+    createdTimestamp: tsU2Late,
     attachments: new Map(),
     stickers: new Map([['s1', { id: 'sticker1', name: 'Sticker One' }]]),
   });
@@ -381,6 +390,12 @@ test('recordTrackedMessage stores word usage and media breakdowns for queries', 
   assert.equal(u1Stats.count, 1);
   assert.equal(u1Stats.topWords[0].word, 'hello');
   assert.equal(u1Stats.topWords[0].count, 2);
+  assert.equal(u1Stats.firstMessageAt, tsU1);
+  assert.equal(u1Stats.lastMessageAt, tsU1);
+
+  const u2Stats = store.getUserWordStats('g1', 'u2');
+  assert.equal(u2Stats.firstMessageAt, tsU2Early);
+  assert.equal(u2Stats.lastMessageAt, tsU2Late);
 });
 
 test('parseBackfillPayload + importBackfill keep enriched media and word stats', async (t) => {

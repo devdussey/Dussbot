@@ -79,6 +79,54 @@ function normalizeMessageId(value) {
   return id || null;
 }
 
+function normalizeTimestampMs(value) {
+  if (value === null || value === undefined) return null;
+
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) && ms > 0 ? Math.floor(ms) : null;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    let ms = value;
+    if (ms > 0 && ms < 1e11) ms *= 1000;
+    return ms > 0 ? Math.floor(ms) : null;
+  }
+
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    if (!raw) return null;
+
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) {
+      let ms = numeric;
+      if (ms > 0 && ms < 1e11) ms *= 1000;
+      return ms > 0 ? Math.floor(ms) : null;
+    }
+
+    const parsed = Date.parse(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  }
+
+  return null;
+}
+
+function minTimestampMs(previous, incoming) {
+  const a = normalizeTimestampMs(previous);
+  const b = normalizeTimestampMs(incoming);
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
+}
+
+function maxTimestampMs(previous, incoming) {
+  const a = normalizeTimestampMs(previous);
+  const b = normalizeTimestampMs(incoming);
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.max(a, b);
+}
+
 function normalizeWordToken(value) {
   if (value === null || value === undefined) return null;
   const raw = String(value).trim().toLowerCase();
@@ -145,6 +193,22 @@ function normalizeUserRecord(record) {
   const lastKnownTag = normalizeTag(record?.lastKnownTag);
   let textCount = toNonNegativeInt(record?.textCount ?? record?.textMessages ?? record?.text_messages);
   let mediaCount = toNonNegativeInt(record?.mediaCount ?? record?.mediaMessages ?? record?.media_messages);
+  let firstMessageAt = normalizeTimestampMs(
+    record?.firstMessageAt
+    ?? record?.first_message_at
+    ?? record?.firstMessageTimestamp
+    ?? record?.first_message_timestamp
+    ?? record?.firstSeenAt
+    ?? record?.first_seen_at,
+  );
+  let lastMessageAt = normalizeTimestampMs(
+    record?.lastMessageAt
+    ?? record?.last_message_at
+    ?? record?.lastMessageTimestamp
+    ?? record?.last_message_timestamp
+    ?? record?.lastSeenAt
+    ?? record?.last_seen_at,
+  );
   const mediaBreakdown = normalizeMediaBreakdown(
     record?.mediaBreakdown ?? record?.media_breakdown ?? record?.mediaStats ?? record?.media_stats ?? record?.media,
   );
@@ -166,12 +230,19 @@ function normalizeUserRecord(record) {
 
   const classifiedTotal = textCount + mediaCount;
   if (count < classifiedTotal) count = classifiedTotal;
+  if (firstMessageAt === null && lastMessageAt !== null && count > 0) firstMessageAt = lastMessageAt;
+  if (lastMessageAt === null && firstMessageAt !== null && count > 0) lastMessageAt = firstMessageAt;
+  if (firstMessageAt !== null && lastMessageAt !== null && firstMessageAt > lastMessageAt) {
+    [firstMessageAt, lastMessageAt] = [lastMessageAt, firstMessageAt];
+  }
 
   return {
     count,
     lastKnownTag,
     textCount,
     mediaCount,
+    firstMessageAt,
+    lastMessageAt,
     mediaBreakdown,
     words,
   };
@@ -269,6 +340,18 @@ function extractWordMapFromText(content) {
   return words;
 }
 
+function extractMessageTimestampMs(message) {
+  if (!message || typeof message !== 'object') return null;
+  return normalizeTimestampMs(
+    message.createdTimestamp
+    ?? message.createdAt
+    ?? message.created_at
+    ?? message.timestamp
+    ?? message.sentAt
+    ?? message.sent_at,
+  );
+}
+
 function extractMessageStats(message) {
   if (!message || typeof message !== 'object') {
     return {
@@ -276,6 +359,7 @@ function extractMessageStats(message) {
       mediaCount: 0,
       mediaBreakdown: { images: 0, stickers: 0, emojis: 0 },
       words: {},
+      createdAtMs: null,
     };
   }
 
@@ -295,6 +379,7 @@ function extractMessageStats(message) {
       emojis: emojiCount,
     },
     words,
+    createdAtMs: extractMessageTimestampMs(message),
   };
 }
 
@@ -339,6 +424,8 @@ async function recordTrackedMessage(guildId, channelId, userId, userTag, message
       lastKnownTag: null,
       textCount: 0,
       mediaCount: 0,
+      firstMessageAt: null,
+      lastMessageAt: null,
       mediaBreakdown: { images: 0, stickers: 0, emojis: 0 },
       words: {},
     };
@@ -352,6 +439,10 @@ async function recordTrackedMessage(guildId, channelId, userId, userTag, message
   entry.mediaBreakdown.images += messageStats.mediaBreakdown.images;
   entry.mediaBreakdown.stickers += messageStats.mediaBreakdown.stickers;
   entry.mediaBreakdown.emojis += messageStats.mediaBreakdown.emojis;
+  if (messageStats.createdAtMs !== null) {
+    entry.firstMessageAt = minTimestampMs(entry.firstMessageAt, messageStats.createdAtMs);
+    entry.lastMessageAt = maxTimestampMs(entry.lastMessageAt, messageStats.createdAtMs);
+  }
   mergeWordMaps(entry.words, messageStats.words);
   if (userTag) entry.lastKnownTag = normalizeTag(userTag);
   guild.users[userId] = entry;
@@ -376,6 +467,22 @@ function parseBackfillPayload(payload, guildId) {
   const TEXT_COUNT_KEYS = ['textCount', 'text_count', 'textMessages', 'text_messages', 'plainTextMessages', 'plain_text_messages'];
   const MEDIA_COUNT_KEYS = ['mediaCount', 'media_count', 'mediaMessages', 'media_messages'];
   const WORD_KEYS = ['words', 'wordCounts', 'word_counts', 'topWords', 'top_words'];
+  const FIRST_MESSAGE_AT_KEYS = [
+    'firstMessageAt',
+    'first_message_at',
+    'firstMessageTimestamp',
+    'first_message_timestamp',
+    'firstSeenAt',
+    'first_seen_at',
+  ];
+  const LAST_MESSAGE_AT_KEYS = [
+    'lastMessageAt',
+    'last_message_at',
+    'lastMessageTimestamp',
+    'last_message_timestamp',
+    'lastSeenAt',
+    'last_seen_at',
+  ];
   const TAG_KEYS = ['lastKnownTag', 'authorTag', 'userTag', 'tag', 'username', 'globalName', 'name'];
   const USER_ID_KEYS = ['userId', 'user_id', 'id', 'memberId', 'member_id', 'discordId', 'discord_id', 'uid', 'user'];
   const RESERVED_TOP_LEVEL_KEYS = new Set([
@@ -446,6 +553,11 @@ function parseBackfillPayload(payload, guildId) {
     found,
   });
 
+  const normalizeTimestampResult = (value, found = false) => ({
+    value: normalizeTimestampMs(value),
+    found,
+  });
+
   const extractCountByKeys = (value, keys) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return normalizeCountResult(0, false);
     for (const key of keys) {
@@ -459,6 +571,21 @@ function parseBackfillPayload(payload, guildId) {
       }
     }
     return normalizeCountResult(0, false);
+  };
+
+  const extractTimestampByKeys = (value, keys) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return normalizeTimestampResult(null, false);
+    for (const key of keys) {
+      if (!(key in value)) continue;
+      return normalizeTimestampResult(value[key], true);
+    }
+    if (value.stats && typeof value.stats === 'object') {
+      for (const key of keys) {
+        if (!(key in value.stats)) continue;
+        return normalizeTimestampResult(value.stats[key], true);
+      }
+    }
+    return normalizeTimestampResult(null, false);
   };
 
   const extractCount = (value) => {
@@ -667,6 +794,8 @@ function parseBackfillPayload(payload, guildId) {
       count: 0,
       textCount: 0,
       mediaCount: 0,
+      firstMessageAt: null,
+      lastMessageAt: null,
       mediaBreakdown: { images: 0, stickers: 0, emojis: 0 },
       words: {},
     };
@@ -689,6 +818,10 @@ function parseBackfillPayload(payload, guildId) {
       summary.mediaBreakdown.images += stats.mediaBreakdown.images;
       summary.mediaBreakdown.stickers += stats.mediaBreakdown.stickers;
       summary.mediaBreakdown.emojis += stats.mediaBreakdown.emojis;
+      if (stats.createdAtMs !== null) {
+        summary.firstMessageAt = minTimestampMs(summary.firstMessageAt, stats.createdAtMs);
+        summary.lastMessageAt = maxTimestampMs(summary.lastMessageAt, stats.createdAtMs);
+      }
       mergeWordMaps(summary.words, stats.words);
     }
 
@@ -705,6 +838,8 @@ function parseBackfillPayload(payload, guildId) {
     let count = extractCount(value);
     let textCountResult = extractCountByKeys(value, TEXT_COUNT_KEYS);
     let mediaCountResult = extractCountByKeys(value, MEDIA_COUNT_KEYS);
+    let firstMessageAtResult = extractTimestampByKeys(value, FIRST_MESSAGE_AT_KEYS);
+    let lastMessageAtResult = extractTimestampByKeys(value, LAST_MESSAGE_AT_KEYS);
     let mediaBreakdown = extractMediaBreakdown(value);
     let words = extractWordMap(value);
 
@@ -726,6 +861,12 @@ function parseBackfillPayload(payload, guildId) {
 
       if (!Object.keys(words).length) {
         words = { ...messageSummary.words };
+      }
+      if (!firstMessageAtResult.found && messageSummary.firstMessageAt !== null) {
+        firstMessageAtResult = normalizeTimestampResult(messageSummary.firstMessageAt, true);
+      }
+      if (!lastMessageAtResult.found && messageSummary.lastMessageAt !== null) {
+        lastMessageAtResult = normalizeTimestampResult(messageSummary.lastMessageAt, true);
       }
     }
 
@@ -749,6 +890,8 @@ function parseBackfillPayload(payload, guildId) {
         lastKnownTag: null,
         textCount: 0,
         mediaCount: 0,
+        firstMessageAt: null,
+        lastMessageAt: null,
         mediaBreakdown: { images: 0, stickers: 0, emojis: 0 },
         words: {},
       };
@@ -774,6 +917,25 @@ function parseBackfillPayload(payload, guildId) {
     target[id].mediaBreakdown.stickers += mediaBreakdown.stickers;
     target[id].mediaBreakdown.emojis += mediaBreakdown.emojis;
     mergeWordMaps(target[id].words, words);
+    if (firstMessageAtResult.value !== null) {
+      target[id].firstMessageAt = minTimestampMs(target[id].firstMessageAt, firstMessageAtResult.value);
+    }
+    if (lastMessageAtResult.value !== null) {
+      target[id].lastMessageAt = maxTimestampMs(target[id].lastMessageAt, lastMessageAtResult.value);
+    }
+    if (target[id].firstMessageAt === null && target[id].lastMessageAt !== null) {
+      target[id].firstMessageAt = target[id].lastMessageAt;
+    }
+    if (target[id].lastMessageAt === null && target[id].firstMessageAt !== null) {
+      target[id].lastMessageAt = target[id].firstMessageAt;
+    }
+    if (
+      target[id].firstMessageAt !== null
+      && target[id].lastMessageAt !== null
+      && target[id].firstMessageAt > target[id].lastMessageAt
+    ) {
+      [target[id].firstMessageAt, target[id].lastMessageAt] = [target[id].lastMessageAt, target[id].firstMessageAt];
+    }
 
     const tag = extractTag(value);
     if (tag && !target[id].lastKnownTag) {
@@ -896,6 +1058,8 @@ async function importBackfill(guildId, entries = []) {
         lastKnownTag: null,
         textCount: 0,
         mediaCount: 0,
+        firstMessageAt: null,
+        lastMessageAt: null,
         mediaBreakdown: { images: 0, stickers: 0, emojis: 0 },
         words: {},
       };
@@ -907,6 +1071,18 @@ async function importBackfill(guildId, entries = []) {
     normalized.mediaBreakdown.images += incoming.mediaBreakdown.images;
     normalized.mediaBreakdown.stickers += incoming.mediaBreakdown.stickers;
     normalized.mediaBreakdown.emojis += incoming.mediaBreakdown.emojis;
+    if (incoming.firstMessageAt !== null) {
+      normalized.firstMessageAt = minTimestampMs(normalized.firstMessageAt, incoming.firstMessageAt);
+    }
+    if (incoming.lastMessageAt !== null) {
+      normalized.lastMessageAt = maxTimestampMs(normalized.lastMessageAt, incoming.lastMessageAt);
+    }
+    if (normalized.firstMessageAt === null && normalized.lastMessageAt !== null) {
+      normalized.firstMessageAt = normalized.lastMessageAt;
+    }
+    if (normalized.lastMessageAt === null && normalized.firstMessageAt !== null) {
+      normalized.lastMessageAt = normalized.firstMessageAt;
+    }
     mergeWordMaps(normalized.words, incoming.words);
 
     if (entry.lastKnownTag && !normalized.lastKnownTag) {
@@ -1120,6 +1296,8 @@ function getUserWordStats(guildId, userId, limit = 10, options = {}) {
     count: user.count,
     textCount: user.textCount,
     mediaCount: user.mediaCount,
+    firstMessageAt: user.firstMessageAt ?? null,
+    lastMessageAt: user.lastMessageAt ?? null,
     mediaBreakdown: user.mediaBreakdown,
     uniqueWordCount: topWords.length,
     totalWordUses: topWords.reduce((sum, entry) => sum + entry.count, 0),

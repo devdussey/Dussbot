@@ -12,6 +12,7 @@ const OVERVIEW_ROWS = 10;
 const FULL_VIEW_LIMIT = 100;
 const PAGE_SIZE = 10;
 const MIN_WORD_LENGTH = 4;
+const USER_SEARCH_TOP_WORDS = 20;
 const PAGER_TIMEOUT_MS = 180_000;
 
 function formatNumber(value) {
@@ -30,6 +31,11 @@ function formatUser(entry) {
 function formatConfiguredChannel(guildId) {
   const config = wordStatsStore.getConfig(guildId);
   return config.trackedChannelId ? `<#${config.trackedChannelId}>` : 'Not configured';
+}
+
+function formatDiscordTimestamp(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return 'Unknown';
+  return `<t:${Math.floor(ms / 1000)}:f>`;
 }
 
 function joinLines(lines, fallback = 'No data yet.', limit = 1024) {
@@ -138,7 +144,44 @@ function buildWordSearchEmbed(interaction, normalizedWord, searchResult) {
     .setTimestamp();
 }
 
-function buildUserSearchEmbed(interaction, user, stats, mostUsedWord) {
+function buildTopWordFields(topWords) {
+  if (!Array.isArray(topWords) || !topWords.length) {
+    return [
+      {
+        name: 'Top Words',
+        value: 'No words recorded for this user yet.',
+        inline: false,
+      },
+    ];
+  }
+
+  const firstTen = topWords.slice(0, 10).map((entry, index) => (
+    `${index + 1}. \`${entry.word}\` (${formatNumber(entry.count)})`
+  ));
+
+  const fields = [
+    {
+      name: `Top ${Math.min(10, topWords.length)} Words`,
+      value: joinLines(firstTen, 'No data yet.'),
+      inline: false,
+    },
+  ];
+
+  if (topWords.length > 10) {
+    const nextTen = topWords.slice(10, 20).map((entry, index) => (
+      `${index + 11}. \`${entry.word}\` (${formatNumber(entry.count)})`
+    ));
+    fields.push({
+      name: `Top ${Math.min(20, topWords.length)} Words`,
+      value: joinLines(nextTen, 'No additional words.'),
+      inline: false,
+    });
+  }
+
+  return fields;
+}
+
+function buildUserSearchEmbed(interaction, user, stats) {
   if (!stats) {
     return buildNoDataEmbed(
       interaction,
@@ -147,9 +190,11 @@ function buildUserSearchEmbed(interaction, user, stats, mostUsedWord) {
     );
   }
 
+  const mostUsedWord = stats.topWords?.[0] || null;
   const mostUsedWordText = mostUsedWord
     ? `\`${mostUsedWord.word}\` (${formatNumber(mostUsedWord.count)} ${formatPlural(mostUsedWord.count, 'use')})`
     : 'No tracked words yet.';
+  const topWordFields = buildTopWordFields(stats.topWords);
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(interaction.guildId, 0x9b59b6))
@@ -177,6 +222,15 @@ function buildUserSearchEmbed(interaction, user, stats, mostUsedWord) {
         ].join('\n'),
         inline: true,
       },
+      {
+        name: 'Message Dates',
+        value: [
+          `First tracked: ${formatDiscordTimestamp(stats.firstMessageAt)}`,
+          `Last tracked: ${formatDiscordTimestamp(stats.lastMessageAt)}`,
+        ].join('\n'),
+        inline: false,
+      },
+      ...topWordFields,
     )
     .setFooter({
       text: `Tracked channel: ${formatConfiguredChannel(interaction.guildId)}`,
@@ -431,15 +485,8 @@ module.exports = {
         return interaction.reply({ content: 'Provide a user. Example: `/wordstats search:user user:@member`.', ephemeral: true });
       }
 
-      const stats = wordStatsStore.getUserWordStats(interaction.guildId, requestedUser.id, OVERVIEW_ROWS);
-      const longWordStats = wordStatsStore.getUserWordStats(
-        interaction.guildId,
-        requestedUser.id,
-        1,
-        { minWordLength: MIN_WORD_LENGTH },
-      );
-      const mostUsedWord = longWordStats?.topWords?.[0] || stats?.topWords?.[0] || null;
-      const embed = buildUserSearchEmbed(interaction, requestedUser, stats, mostUsedWord);
+      const stats = wordStatsStore.getUserWordStats(interaction.guildId, requestedUser.id, USER_SEARCH_TOP_WORDS);
+      const embed = buildUserSearchEmbed(interaction, requestedUser, stats);
       return interaction.reply({ embeds: [embed] });
     }
 
