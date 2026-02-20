@@ -431,6 +431,7 @@ function buildBlackjackLiveEmbed(game, { revealDealer = false, note = null } = {
       },
     );
 
+  if (note) embed.setDescription(note);
   embed.setFooter({ text: currentPlayerId ? `${currentPlayerName}'s turn` : 'Dealer turn' });
   return embed;
 }
@@ -1586,11 +1587,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       return notes.join(' ');
     };
 
-    const resolveDealerAndOutcomes = () => {
-      while (getBlackjackHandValue(game.dealerHand).total < 17) {
-        game.dealerHand.push(drawBlackjackCard(game));
-      }
-
+    const resolveBlackjackOutcomes = () => {
       const dealerValue = getBlackjackHandValue(game.dealerHand).total;
       const dealerBust = dealerValue > 21;
       const dealerBlackjack = isBlackjackHand(game.dealerHand);
@@ -1623,6 +1620,36 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       }
 
       return outcomes;
+    };
+
+    const playDealerTurn = async () => {
+      const postDealerState = async (dealerNote) => {
+        await setBlackjackMessage({
+          embeds: [buildBlackjackLiveEmbed(game, { revealDealer: true, note: dealerNote })],
+          components: buildBlackjackActionComponents(game, { disabled: true }),
+          allowedMentions: { parse: [] },
+        }, 'dealer-turn');
+      };
+
+      let dealerTotal = getBlackjackHandValue(game.dealerHand).total;
+      await postDealerState(`All player turns are complete. Dealer reveals (${dealerTotal}).`);
+      await wait(1200);
+
+      while (dealerTotal < 17) {
+        game.dealerHand.push(drawBlackjackCard(game));
+        dealerTotal = getBlackjackHandValue(game.dealerHand).total;
+        if (dealerTotal > 21) {
+          await postDealerState(`Dealer hits and busts (${dealerTotal}).`);
+          return;
+        }
+        await postDealerState(`Dealer hits (${dealerTotal}).`);
+        await wait(1200);
+      }
+
+      const standNote = isBlackjackHand(game.dealerHand)
+        ? 'Dealer has blackjack.'
+        : `Dealer stands (${dealerTotal}).`;
+      await postDealerState(standNote);
     };
 
     const finalizeBlackjackRound = async (outcomes) => {
@@ -1714,7 +1741,8 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     }
 
     if (!game.turnQueue.length) {
-      const outcomes = resolveDealerAndOutcomes();
+      await playDealerTurn();
+      const outcomes = resolveBlackjackOutcomes();
       await finalizeBlackjackRound(outcomes);
       return;
     }
@@ -1778,7 +1806,8 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
 
         if (!game.turnQueue.length) {
           liveCollector.stop('round_complete');
-          const outcomes = resolveDealerAndOutcomes();
+          await playDealerTurn();
+          const outcomes = resolveBlackjackOutcomes();
           await finalizeBlackjackRound(outcomes);
           game.processingTurn = false;
           return;
