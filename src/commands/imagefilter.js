@@ -71,7 +71,7 @@ module.exports = {
 
   async execute(interaction) {
     try {
-      await interaction.deferReply();
+      await interaction.deferReply({ ephemeral: false });
 
       const attachmentInput = interaction.options.getAttachment('image');
       const urlInput = interaction.options.getString('image_url');
