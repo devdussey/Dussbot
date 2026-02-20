@@ -35,6 +35,7 @@ const HORSE_RACE_ENTRY_COST = 1;
 const HORSE_RACE_TRACK_START = '▀▄';
 const HORSE_RACE_TRACK_CELL = '⬩';
 const HORSE_RACE_TRACK_FINISH = ':checkered_flag:';
+const BLACKJACK_EMOJI = '<:blackjack:1474202296135975013>';
 const HORSE_RACE_LANE_EMOJIS = [
   '<:PintoHorse:1474174941606711408>',
   '<:WhiteHorse:1474174916768043172>',
@@ -257,7 +258,7 @@ function buildBlackjackLobbyEmbed(game) {
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
-    .setTitle('Blackjack Lobby')
+    .setTitle(`${BLACKJACK_EMOJI} Blackjack Lobby`)
     .setDescription([
       `${game.starterMention} has started a game of blackjack. Click "Join Lobby" to play.`,
       '',
@@ -287,7 +288,7 @@ function buildBlackjackBuyInEmbed(game, userId, notice = null) {
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
-    .setTitle('Blackjack Lobby')
+    .setTitle(`${BLACKJACK_EMOJI} Blackjack Lobby`)
     .setDescription(notice ? `${line}\n\n${notice}` : line);
 }
 
@@ -407,13 +408,14 @@ function buildBlackjackLiveEmbed(game, { revealDealer = false, note = null } = {
   const currentPlayerId = game.turnQueue[0] || null;
   const currentPlayerName = getBlackjackPlayerName(game, currentPlayerId);
   const currentHand = currentPlayerId ? (game.hands.get(currentPlayerId) || []) : [];
+  const currentPlayerTotal = currentPlayerId ? getBlackjackHandValue(currentHand).total : null;
   const dealerTotal = revealDealer
     ? getBlackjackHandValue(game.dealerHand).total
     : getBlackjackCardValue(game.dealerHand[0]);
 
   const embed = new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x00f0ff))
-    .setTitle('Blackjack - Live')
+    .setTitle(`${BLACKJACK_EMOJI} Blackjack - Live`)
     .addFields(
       {
         name: `Dealer's Hand (${dealerTotal})`,
@@ -422,7 +424,7 @@ function buildBlackjackLiveEmbed(game, { revealDealer = false, note = null } = {
           : formatBlackjackHand(game.dealerHand, { hideHoleCard: true }),
       },
       {
-        name: currentPlayerId ? `${currentPlayerName}'s Hand` : 'No Active Player',
+        name: currentPlayerId ? `${currentPlayerName}'s Hand (${currentPlayerTotal})` : 'No Active Player',
         value: currentPlayerId
           ? formatBlackjackHand(currentHand)
           : 'All player turns are complete.',
@@ -448,7 +450,7 @@ function buildBlackjackResultEmbed(game, outcomes) {
 
   return new EmbedBuilder()
     .setColor(resolveEmbedColour(game.guildId, 0x22c55e))
-    .setTitle('Blackjack - Results')
+    .setTitle(`${BLACKJACK_EMOJI} Blackjack - Results`)
     .setDescription(
       [
         `Dealer - ${formatBlackjackHand(game.dealerHand)} (${dealerTotal}) - ${dealerStatus}`,
