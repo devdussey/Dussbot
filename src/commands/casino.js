@@ -1682,6 +1682,23 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     };
 
     const finalizeBlackjackRound = async (outcomes) => {
+      for (const userId of game.playerOrder) {
+        const outcome = outcomes.get(userId) || { result: 'lose' };
+        const buyIn = game.buyIns.get(userId) ?? BLACKJACK_MIN_BUY_IN;
+        let payout = 0;
+
+        if (outcome.result === 'win') payout = buyIn * 2;
+        if (outcome.result === 'push') payout = buyIn;
+
+        if (payout > 0) {
+          try {
+            await rupeeStore.addTokens(game.guildId, userId, payout);
+          } catch (error) {
+            console.error('[Blackjack] Failed to pay out winner:', { guildId: game.guildId, userId, payout }, error);
+          }
+        }
+      }
+
       const playAgainId = `blackjack-play-again-${Date.now()}`;
       const playAgainComponents = [
         new ActionRowBuilder().addComponents(
