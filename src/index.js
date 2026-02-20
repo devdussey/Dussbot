@@ -41,7 +41,7 @@ process.on('unhandledRejection', error => {
     logger.error('Unhandled promise rejection:', error);
 });
 
-client.once('ready', () => {
+client.once('clientReady', () => {
     logger.success(`Logged in as ${client.user?.tag || client.user?.id || 'discord bot'}`);
 });
 
