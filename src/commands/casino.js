@@ -63,6 +63,12 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isDiscordUnknownMessageError(error) {
+  const topLevelCode = Number(error?.code);
+  const rawCode = Number(error?.rawError?.code);
+  return topLevelCode === 10008 || rawCode === 10008;
+}
+
 function getNumberColour(label) {
   if (label === '0' || label === '00') return '🟩 Green';
   const num = Number(label);
@@ -1302,14 +1308,14 @@ async function runHorseRaceGame(interaction, { initiatedByButton = false } = {})
 
 async function runBlackjackGame(interaction, { initiatedByButton = false } = {}) {
   if (!interaction.inGuild()) {
-    const payload = { content: 'Blackjack can only be played in a server channel.' };
+    const payload = { content: 'Blackjack can only be played in a server channel.', ephemeral: false };
     if (initiatedByButton) return interaction.reply(payload);
     return interaction.reply(payload);
   }
 
   const key = gameKey(interaction.guildId, interaction.channelId);
   if (activeGames.has(key)) {
-    const payload = { content: 'A casino game is already active in this channel.' };
+    const payload = { content: 'A casino game is already active in this channel.', ephemeral: false };
     if (interaction.deferred || interaction.replied) return interaction.followUp(payload);
     return interaction.reply(payload);
   }
@@ -1332,6 +1338,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     embeds: [buildBlackjackLobbyEmbed(game)],
     components: buildBlackjackLobbyComponents(game),
     allowedMentions: { parse: [] },
+    ephemeral: false,
   };
 
   try {
@@ -1352,8 +1359,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
         game.message = await game.message.edit(payload);
         return game.message;
       } catch (error) {
-        const isUnknownMessage = error?.code === 10008 || error?.rawError?.code === 10008;
-        if (!isUnknownMessage) throw error;
+        if (!isDiscordUnknownMessageError(error)) throw error;
         console.warn('[Blackjack] Message missing during edit; posting a new table message.', {
           context,
           guildId: game.guildId,
@@ -1368,13 +1374,25 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
   };
 
   const updateBlackjackLobbyMessage = async ({ disabled = false } = {}) => {
+    const payload = {
+      embeds: [buildBlackjackLobbyEmbed(game)],
+      components: buildBlackjackLobbyComponents(game, { disabled }),
+      allowedMentions: { parse: [] },
+    };
+
     try {
-      await setBlackjackMessage({
-        embeds: [buildBlackjackLobbyEmbed(game)],
-        components: buildBlackjackLobbyComponents(game, { disabled }),
-        allowedMentions: { parse: [] },
-      }, 'lobby');
+      await setBlackjackMessage(payload, 'lobby');
     } catch (error) {
+      if (isDiscordUnknownMessageError(error)) {
+        try {
+          game.message = null;
+          await setBlackjackMessage(payload, 'lobby-recreate');
+          return;
+        } catch (retryError) {
+          console.error('[Blackjack] Failed to recreate lobby message:', retryError);
+          return;
+        }
+      }
       console.error('[Blackjack] Failed to update lobby message:', error);
     }
   };
@@ -1390,13 +1408,13 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
     try {
       if (id.startsWith('blackjack-join-')) {
         if (!game.isOpen) {
-          await componentInteraction.reply({ content: 'This blackjack lobby is closed.' });
+          await componentInteraction.reply({ content: 'This blackjack lobby is closed.', ephemeral: false });
           return;
         }
 
         if (!game.players.has(componentInteraction.user.id)) {
           if (game.players.size >= BLACKJACK_MAX_PLAYERS) {
-            await componentInteraction.reply({ content: 'This blackjack lobby is full.' });
+            await componentInteraction.reply({ content: 'This blackjack lobby is full.', ephemeral: false });
             return;
           }
           game.players.add(componentInteraction.user.id);
@@ -1407,6 +1425,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
         await componentInteraction.reply({
           embeds: [buildBlackjackBuyInEmbed(game, componentInteraction.user.id)],
           components: buildBlackjackBuyInComponents(game),
+          ephemeral: false,
         });
         return;
       }
@@ -1431,7 +1450,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       }
     } catch (error) {
       console.error('[Blackjack] Lobby interaction failed:', error);
-      const payload = { content: 'Blackjack action failed. Try again.' };
+      const payload = { content: 'Blackjack action failed. Try again.', ephemeral: false };
       if (componentInteraction.deferred || componentInteraction.replied) {
         await componentInteraction.followUp(payload).catch(() => {});
       } else {
@@ -1577,7 +1596,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
 
       playAgainCollector.on('collect', async (buttonInteraction) => {
         if (activeGames.has(gameKey(buttonInteraction.guildId, buttonInteraction.channelId))) {
-          await buttonInteraction.reply({ content: 'A casino game is already active in this channel.' });
+          await buttonInteraction.reply({ content: 'A casino game is already active in this channel.', ephemeral: false });
           return;
         }
         await buttonInteraction.deferUpdate();
@@ -1633,17 +1652,17 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       try {
         const currentPlayerId = game.turnQueue[0];
         if (!currentPlayerId) {
-          await componentInteraction.reply({ content: 'This blackjack round has ended.' });
+          await componentInteraction.reply({ content: 'This blackjack round has ended.', ephemeral: false });
           return;
         }
 
         if (componentInteraction.user.id !== currentPlayerId) {
-          await componentInteraction.reply({ content: `It is currently <@${currentPlayerId}>'s turn.` });
+          await componentInteraction.reply({ content: `It is currently <@${currentPlayerId}>'s turn.`, ephemeral: false });
           return;
         }
 
         if (game.processingTurn) {
-          await componentInteraction.reply({ content: 'Please wait a moment, processing the turn.' });
+          await componentInteraction.reply({ content: 'Please wait a moment, processing the turn.', ephemeral: false });
           return;
         }
 
@@ -1692,8 +1711,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
           components: buildBlackjackActionComponents(game),
           allowedMentions: { parse: [] },
         }).catch(async (error) => {
-          const isUnknownMessage = error?.code === 10008 || error?.rawError?.code === 10008;
-          if (!isUnknownMessage) throw error;
+          if (!isDiscordUnknownMessageError(error)) throw error;
           await setBlackjackMessage({
             embeds: [buildBlackjackLiveEmbed(game, { revealDealer: false, note })],
             components: buildBlackjackActionComponents(game),
@@ -1704,7 +1722,7 @@ async function runBlackjackGame(interaction, { initiatedByButton = false } = {})
       } catch (error) {
         game.processingTurn = false;
         console.error('[Blackjack] Live action failed:', error);
-        const payload = { content: 'Blackjack action failed. Try again.' };
+        const payload = { content: 'Blackjack action failed. Try again.', ephemeral: false };
         if (componentInteraction.deferred || componentInteraction.replied) {
           await componentInteraction.followUp(payload).catch(() => {});
         } else {
