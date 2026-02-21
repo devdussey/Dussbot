@@ -94,11 +94,20 @@ module.exports = {
 
       // Log the member removal
       const actionLabel = departure.type === 'kick' ? 'User Kicked' : 'User Left';
+      const leaveStats = joinLeaveStore.getUserStats(guild.id, member.id);
+      const leaveCount = leaveStats?.leaves || 1;
+      const reasonLabel = departure.type === 'kick'
+        ? 'User Kicked'
+        : departure.type === 'ban'
+          ? 'User Banned'
+          : 'User Left';
       const logEmbed = buildMemberLogEmbed({
         action: actionLabel,
         user: member.user || { id: member.id },
         color: 0xed4245,
         extraFields: [
+          { name: 'Total Leaves', value: `This person has left (${leaveCount}) time${leaveCount === 1 ? '' : 's'} now.`, inline: false },
+          { name: 'Reason', value: reasonLabel, inline: true },
           { name: 'Departure type', value: departure.type, inline: true },
           departure.executorId
             ? { name: 'Executor', value: departure.executorTag ? `${departure.executorTag} (${departure.executorId})` : `<@${departure.executorId}>`, inline: true }

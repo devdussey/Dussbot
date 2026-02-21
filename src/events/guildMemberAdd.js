@@ -43,28 +43,6 @@ module.exports = {
             console.error('AutoRoles error:', err);
         }
 
-        // Log the member join to the member log channel
-        try {
-            const embed = buildMemberLogEmbed({
-                action: 'User Joined',
-                user: member.user,
-                color: 0x2ecc71,
-                extraFields: [
-                    { name: 'Account created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
-                    { name: 'Guild', value: `${member.guild.name} (${member.guild.id})`, inline: true },
-                ],
-            });
-
-            await logSender.sendLog({
-                guildId: member.guild.id,
-                logType: 'member_join',
-                embed,
-                client: member.client,
-            });
-        } catch (err) {
-            console.error('Failed to log member join:', err);
-        }
-
         let joinStats = null;
         try {
             joinLeaveStore.addEvent(member.guild.id, member.id, 'join', Date.now());
@@ -85,6 +63,37 @@ module.exports = {
             usedInvite = await inviteTracker.handleMemberJoin(member);
         } catch (err) {
             console.error('Failed to detect invite usage:', err);
+        }
+
+        // Log the member join to the member log channel
+        try {
+            const inviteLink = usedInvite?.url
+                || (usedInvite?.code ? `https://discord.gg/${usedInvite.code}` : null)
+                || (vanityInfo?.used && vanityInfo?.code ? `https://discord.gg/${vanityInfo.code}` : 'Unknown');
+            const joinAt = member.joinedTimestamp || Date.now();
+            const joinCount = joinStats?.joins || 1;
+            const joinLine = `<@${member.id}> joined at <t:${Math.floor(joinAt / 1000)}:f> via invite link: ${inviteLink}`;
+
+            const embed = buildMemberLogEmbed({
+                action: 'User Joined',
+                user: member.user,
+                color: 0x2ecc71,
+                extraFields: [
+                    { name: 'Join', value: joinLine.slice(0, 1024), inline: false },
+                    { name: 'Total Joins', value: `This person has joined (${joinCount}) time${joinCount === 1 ? '' : 's'} now.`, inline: false },
+                    { name: 'Account created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+                    { name: 'Guild', value: `${member.guild.name} (${member.guild.id})`, inline: true },
+                ],
+            });
+
+            await logSender.sendLog({
+                guildId: member.guild.id,
+                logType: 'member_join',
+                embed,
+                client: member.client,
+            });
+        } catch (err) {
+            console.error('Failed to log member join:', err);
         }
 
         try {

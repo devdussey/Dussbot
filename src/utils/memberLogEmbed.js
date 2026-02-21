@@ -9,9 +9,12 @@ function formatUser(user) {
 
 function resolveAvatar(user) {
   if (typeof user?.displayAvatarURL === 'function') {
-    return user.displayAvatarURL({ size: 256 });
+    return user.displayAvatarURL({ extension: 'png', size: 256 }) || user.defaultAvatarURL || null;
   }
-  return null;
+  if (typeof user?.avatarURL === 'function') {
+    return user.avatarURL({ extension: 'png', size: 256 }) || user.defaultAvatarURL || null;
+  }
+  return user?.defaultAvatarURL || null;
 }
 
 function buildMemberLogEmbed({
@@ -46,6 +49,7 @@ function buildMemberLogEmbed({
 
   embed.setFooter({
     text: `Date & time of action: ${new Date(timestamp).toLocaleString()}`,
+    iconURL: avatar || undefined,
   });
 
   return embed;
