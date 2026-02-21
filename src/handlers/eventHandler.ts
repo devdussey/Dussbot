@@ -23,24 +23,59 @@ function invokeHandler(eventName: string, file: string, execute: (...args: any[]
   }
 }
 
-function resolveDefaultEventsPath() {
+function resolveDefaultEventRoots() {
   const distPath = path.join(__dirname, '..', 'events');
-  if (fs.existsSync(distPath)) return distPath;
-  return path.join(process.cwd(), 'src', 'events');
+  const srcPath = path.join(process.cwd(), 'src', 'events');
+  const roots: string[] = [];
+  if (fs.existsSync(distPath)) roots.push(distPath);
+  if (fs.existsSync(srcPath) && srcPath !== distPath) roots.push(srcPath);
+  return roots;
 }
 
-export function loadEvents(client: Client, eventsPath = resolveDefaultEventsPath()) {
-  if (!fs.existsSync(eventsPath)) {
-    logger.warn('Events directory not found, creating...');
-    fs.mkdirSync(eventsPath, { recursive: true });
+function getAllFiles(dir: string): string[] {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) files.push(...getAllFiles(p));
+    else if (e.isFile() && e.name.endsWith('.js')) files.push(p);
+  }
+  return files;
+}
+
+function collectEventFiles(roots: string[]) {
+  const seenRelative = new Set<string>();
+  const files: string[] = [];
+
+  for (const root of roots) {
+    for (const filePath of getAllFiles(root)) {
+      const relative = path.relative(root, filePath).replace(/\\/g, '/');
+      if (seenRelative.has(relative)) continue;
+      seenRelative.add(relative);
+      files.push(filePath);
+    }
+  }
+
+  return files;
+}
+
+export function loadEvents(client: Client, eventsPath?: string | string[]) {
+  const roots = Array.isArray(eventsPath)
+    ? eventsPath.filter((p) => fs.existsSync(p))
+    : eventsPath
+      ? (fs.existsSync(eventsPath) ? [eventsPath] : [])
+      : resolveDefaultEventRoots();
+
+  if (roots.length === 0) {
+    logger.warn('No events directories found to load.');
     return;
   }
 
-  const eventFiles = fs.readdirSync(eventsPath).filter((file) => file.endsWith('.js'));
+  const eventFiles = collectEventFiles(roots);
   const handlersByEvent = new Map<string, { onceHandlers: Array<{ file: string; execute: (...args: any[]) => unknown }>; onHandlers: Array<{ file: string; execute: (...args: any[]) => unknown }> }>();
 
-  for (const file of eventFiles) {
-    const filePath = path.join(eventsPath, file);
+  for (const filePath of eventFiles) {
+    const file = path.basename(filePath);
     let event: RuntimeEvent;
 
     try {
