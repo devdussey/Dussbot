@@ -1,3 +1,4 @@
+const path = require('node:path');
 const { Events, PermissionsBitField, EmbedBuilder, ModalBuilder, ActionRowBuilder, TextInputBuilder, TextInputStyle, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } = require('discord.js');
 const securityLogger = require('../utils/securityLogger');
 const antiNukeManager = require('../utils/antiNukeManager');
@@ -16,10 +17,6 @@ const boosterManager = require('../utils/boosterRoleManager');
 const boosterStore = require('../utils/boosterRoleStore');
 const boosterConfigStore = require('../utils/boosterRoleConfigStore');
 const { setDefaultColour, toHex6 } = require('../utils/guildColourStore');
-const vanityRoleCommand = require('../commands/vanityrole');
-const helpCommand = require('../commands/help');
-const storeConfigCommand = require('../commands/storeconfig');
-const autorespondCommand = require('../commands/autorespond');
 const roleCleanManager = require('../utils/roleCleanManager');
 const sacrificeNominationStore = require('../utils/sacrificeNominationStore');
 const rupeeStore = require('../utils/rupeeStore');
@@ -29,6 +26,63 @@ const { executeCommandSafely } = require('../utils/commandExecutionGuard');
 
 const MAX_ERROR_STACK = 3500;
 const COMMAND_FAILURE_ALERT_CHANNEL_ID = (process.env.COMMAND_FAILURE_ALERT_CHANNEL_ID || '').trim();
+const OPTIONAL_COMMAND_MODULE_CACHE = new Map();
+const OPTIONAL_COMMAND_MODULE_WARNED = new Set();
+
+function resolveOptionalCommandModule(commandName) {
+    if (OPTIONAL_COMMAND_MODULE_CACHE.has(commandName)) {
+        return OPTIONAL_COMMAND_MODULE_CACHE.get(commandName);
+    }
+
+    const candidates = [
+        path.join(__dirname, '..', 'commands', commandName),
+        path.join(process.cwd(), 'dist', 'commands', commandName),
+        path.join(process.cwd(), 'src', 'commands', commandName),
+    ];
+
+    let lastError = null;
+    for (const modulePath of candidates) {
+        try {
+            const loaded = require(modulePath);
+            OPTIONAL_COMMAND_MODULE_CACHE.set(commandName, loaded);
+            return loaded;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    OPTIONAL_COMMAND_MODULE_CACHE.set(commandName, null);
+    if (!OPTIONAL_COMMAND_MODULE_WARNED.has(commandName)) {
+        OPTIONAL_COMMAND_MODULE_WARNED.add(commandName);
+        const detail = lastError?.message ? String(lastError.message) : String(lastError || 'unknown error');
+        console.warn(`Optional command module "${commandName}" is unavailable: ${detail}`);
+    }
+    return null;
+}
+
+function getHelpCommandModule() {
+    return resolveOptionalCommandModule('help');
+}
+
+function getStoreConfigCommandModule() {
+    return resolveOptionalCommandModule('storeconfig');
+}
+
+function getAutorespondCommandModule() {
+    return resolveOptionalCommandModule('autorespond');
+}
+
+function getVanityRoleCommandModule() {
+    return resolveOptionalCommandModule('vanityrole');
+}
+
+function getHelpCategoryIdPrefix() {
+    const helpCommand = getHelpCommandModule();
+    if (typeof helpCommand?.HELP_CATEGORY_ID_PREFIX === 'string' && helpCommand.HELP_CATEGORY_ID_PREFIX.trim()) {
+        return helpCommand.HELP_CATEGORY_ID_PREFIX;
+    }
+    return 'help-category';
+}
 
 function truncate(value, max = 1024, fallback = 'Unknown') {
     if (value === undefined || value === null) return fallback;
@@ -544,6 +598,11 @@ module.exports = {
         // Handle select menus
         if (interaction.isStringSelectMenu()) {
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('autorespond:list:')) {
+                const autorespondCommand = getAutorespondCommandModule();
+                if (typeof autorespondCommand?.handleSelectMenu !== 'function') {
+                    try { await interaction.reply({ content: 'Autorespond tools are unavailable right now. Please try again later.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
                 try {
                     const handled = await autorespondCommand.handleSelectMenu(interaction);
                     if (handled) return;
@@ -554,6 +613,11 @@ module.exports = {
                 }
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
+                const storeConfigCommand = getStoreConfigCommandModule();
+                if (typeof storeConfigCommand?.handleStoreStringSelect !== 'function') {
+                    try { await interaction.reply({ content: 'Store tools are unavailable right now. Please try again later.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
                 try {
                     const handled = await storeConfigCommand.handleStoreStringSelect(interaction);
                     if (handled) return;
@@ -563,10 +627,16 @@ module.exports = {
                     return;
                 }
             }
-            if (typeof interaction.customId === 'string' && interaction.customId.startsWith(`${helpCommand.HELP_CATEGORY_ID_PREFIX}:`)) {
-                const ownerId = interaction.customId.slice(`${helpCommand.HELP_CATEGORY_ID_PREFIX}:`.length).trim();
+            const helpCategoryIdPrefix = getHelpCategoryIdPrefix();
+            if (typeof interaction.customId === 'string' && interaction.customId.startsWith(`${helpCategoryIdPrefix}:`)) {
+                const ownerId = interaction.customId.slice(`${helpCategoryIdPrefix}:`.length).trim();
                 if (ownerId && interaction.user.id !== ownerId) {
                     try { await interaction.reply({ content: 'This menu is not for you.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
+                const helpCommand = getHelpCommandModule();
+                if (typeof helpCommand?.buildHelpEmbed !== 'function' || typeof helpCommand?.buildHelpComponents !== 'function') {
+                    try { await interaction.reply({ content: 'Help menu is unavailable right now. Please try again later.', ephemeral: true }); } catch (_) {}
                     return;
                 }
                 try {
@@ -983,6 +1053,11 @@ module.exports = {
 
         if (interaction.isUserSelectMenu()) {
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
+                const storeConfigCommand = getStoreConfigCommandModule();
+                if (typeof storeConfigCommand?.handleStoreUserSelect !== 'function') {
+                    try { await interaction.reply({ content: 'Store tools are unavailable right now. Please try again later.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
                 try {
                     const handled = await storeConfigCommand.handleStoreUserSelect(interaction);
                     if (handled) return;
@@ -1128,6 +1203,11 @@ module.exports = {
                 return;
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
+                const storeConfigCommand = getStoreConfigCommandModule();
+                if (typeof storeConfigCommand?.handleStoreButton !== 'function') {
+                    try { await interaction.reply({ content: 'Store tools are unavailable right now. Please try again later.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
                 try {
                     const handled = await storeConfigCommand.handleStoreButton(interaction);
                     if (handled) return;
@@ -1138,6 +1218,11 @@ module.exports = {
                 }
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('autorespond:list:')) {
+                const autorespondCommand = getAutorespondCommandModule();
+                if (typeof autorespondCommand?.handleButton !== 'function') {
+                    try { await interaction.reply({ content: 'Autorespond tools are unavailable right now. Please try again later.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
                 try {
                     const handled = await autorespondCommand.handleButton(interaction);
                     if (handled) return;
@@ -1405,6 +1490,11 @@ module.exports = {
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('autorespond:list:editmodal:')) {
+                const autorespondCommand = getAutorespondCommandModule();
+                if (typeof autorespondCommand?.handleModalSubmit !== 'function') {
+                    try { await interaction.reply({ content: 'Autorespond tools are unavailable right now. Please try again later.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
                 try {
                     const handled = await autorespondCommand.handleModalSubmit(interaction);
                     if (handled) return;
@@ -1415,6 +1505,11 @@ module.exports = {
                 }
             }
             if (typeof interaction.customId === 'string' && interaction.customId.startsWith('store:')) {
+                const storeConfigCommand = getStoreConfigCommandModule();
+                if (typeof storeConfigCommand?.handleStoreModalSubmit !== 'function') {
+                    try { await interaction.reply({ content: 'Store tools are unavailable right now. Please try again later.', ephemeral: true }); } catch (_) {}
+                    return;
+                }
                 try {
                     const handled = await storeConfigCommand.handleStoreModalSubmit(interaction);
                     if (handled) return;
@@ -1470,7 +1565,8 @@ module.exports = {
                 try { await interaction.deferReply({ ephemeral: true }); } catch (_) {}
 
                 try {
-                    if (typeof vanityRoleCommand.handleVanityRoleModalSubmit === 'function') {
+                    const vanityRoleCommand = getVanityRoleCommandModule();
+                    if (typeof vanityRoleCommand?.handleVanityRoleModalSubmit === 'function') {
                         await vanityRoleCommand.handleVanityRoleModalSubmit(interaction, roleId);
                     } else {
                         await interaction.editReply({ content: 'Vanity role setup is unavailable right now.' });
