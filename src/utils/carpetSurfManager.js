@@ -15,7 +15,30 @@ const { formatCurrencyAmount } = require('./currencyName');
 
 const ROUND_DURATION_MS = 15_000;
 const REWARD_AMOUNT = 1;
-const ASSET_ROOT = path.join(__dirname, '..', 'assets', 'carpetsurf');
+function getAssetRootCandidates() {
+  const fromModuleDir = path.join(__dirname, '..', 'assets', 'carpetsurf');
+  const fromSrcRoot = path.join(process.cwd(), 'src', 'assets', 'carpetsurf');
+  const fromDistRoot = path.join(process.cwd(), 'dist', 'assets', 'carpetsurf');
+  const fromRepoRoot = path.join(process.cwd(), 'assets', 'carpetsurf');
+  const fromEnv = process.env.CARPETSURF_ASSET_ROOT ? path.resolve(process.env.CARPETSURF_ASSET_ROOT) : null;
+  return [...new Set([fromEnv, fromModuleDir, fromSrcRoot, fromDistRoot, fromRepoRoot].filter(Boolean))];
+}
+
+function resolveAssetRoot() {
+  const candidates = getAssetRootCandidates();
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0] || path.join(process.cwd(), 'src', 'assets', 'carpetsurf');
+}
+
+function formatAssetPathForMessage(targetPath) {
+  const rel = path.relative(process.cwd(), targetPath);
+  if (!rel || rel.startsWith('..')) return targetPath;
+  return rel.replace(/\\/g, '/');
+}
+
+const ASSET_ROOT = resolveAssetRoot();
 const CORRECT_UNMARKED_DIR = path.join(ASSET_ROOT, 'correct', 'unmarked');
 const CORRECT_MARKED_DIR = path.join(ASSET_ROOT, 'correct', 'marked');
 const INCORRECT_DIR = path.join(ASSET_ROOT, 'incorrect');
@@ -155,10 +178,10 @@ async function runRound(client, guildId) {
   const correctMarkedFiles = listImageFiles(CORRECT_MARKED_DIR);
   const incorrectFiles = listImageFiles(INCORRECT_DIR);
   if (!correctUnmarkedFiles.length) {
-    return { ok: false, error: 'No images found in src/assets/carpetsurf/correct/unmarked.' };
+    return { ok: false, error: `No images found in ${formatAssetPathForMessage(CORRECT_UNMARKED_DIR)}.` };
   }
   if (incorrectFiles.length < 3) {
-    return { ok: false, error: 'At least 3 images are required in src/assets/carpetsurf/incorrect.' };
+    return { ok: false, error: `At least 3 images are required in ${formatAssetPathForMessage(INCORRECT_DIR)}.` };
   }
 
   const correctUnmarkedFile = pickRandom(correctUnmarkedFiles);
