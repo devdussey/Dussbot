@@ -6,7 +6,6 @@ data/
 dist/
 *.log
 .DS_Store
-.npmrc
 .env
 .npmrc
 tests/
