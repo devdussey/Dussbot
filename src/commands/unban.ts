@@ -59,14 +59,28 @@ const command: SlashCommandModule = {
     try {
       const auditReason = `By ${interaction.user.tag} (${interaction.user.id}) | ${reason}`.slice(0, 512);
       await interaction.guild.members.unban(user.id, auditReason);
-      await interaction.editReply({ content: `Unbanned ${user.tag} successfully.` });
+      let logSent = false;
+      let publicSent = false;
       try {
-        await modlog.log(interaction, 'User Unbanned', {
-          target: `${user.tag} (${user.id})`,
+        const result = await modlog.logAction(interaction, {
+          action: 'Unban',
+          verb: 'unbanned',
+          targetUser: user,
           reason,
-          color: 0x57f287,
         });
+        logSent = Boolean(result?.logSent);
+        publicSent = Boolean(result?.publicSent);
       } catch (_) {}
+
+      if (logSent && publicSent) {
+        await interaction.deleteReply().catch(() => {});
+      } else {
+        const missing = [
+          !logSent ? 'mod log channel' : null,
+          !publicSent ? 'public response channel' : null,
+        ].filter(Boolean).join(' and ');
+        await interaction.editReply({ content: `Unbanned ${user.tag} successfully, but I could not post to the ${missing}.` });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       const embed = buildModActionEmbed(interaction, {

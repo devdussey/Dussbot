@@ -70,14 +70,28 @@ const command: SlashCommandModule = {
     const auditReason = `By ${interaction.user.tag} (${interaction.user.id}) | ${reason}`.slice(0, 512);
     try {
       await member.timeout(null, auditReason);
-      await interaction.editReply({ content: `Unmuted ${user.tag} successfully.` });
+      let logSent = false;
+      let publicSent = false;
       try {
-        await modlog.log(interaction, 'Member Unmuted', {
-          target: `${user.tag} (${user.id})`,
+        const result = await modlog.logAction(interaction, {
+          action: 'Unmute',
+          verb: 'unmuted',
+          targetUser: user,
           reason,
-          color: 0x57f287,
         });
+        logSent = Boolean(result?.logSent);
+        publicSent = Boolean(result?.publicSent);
       } catch (_) {}
+
+      if (logSent && publicSent) {
+        await interaction.deleteReply().catch(() => {});
+      } else {
+        const missing = [
+          !logSent ? 'mod log channel' : null,
+          !publicSent ? 'public response channel' : null,
+        ].filter(Boolean).join(' and ');
+        await interaction.editReply({ content: `Unmuted ${user.tag} successfully, but I could not post to the ${missing}.` });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       const embed = buildModActionEmbed(interaction, {

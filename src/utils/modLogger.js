@@ -1,4 +1,5 @@
 const store = require('./modLogStore');
+const { EmbedBuilder } = require('discord.js');
 const { resolveEmbedColour } = require('./guildColourStore');
 const logSender = require('./logSender');
 const { buildLogEmbed } = require('./logEmbedFactory');
@@ -66,6 +67,62 @@ async function sendPublicReply(interaction, embed) {
   }
 }
 
+function getMention(userLike) {
+  if (!userLike) return 'Unknown User';
+  if (typeof userLike === 'string') return userLike;
+  if (userLike.id) return `<@${userLike.id}>`;
+  return String(userLike);
+}
+
+function getAvatarUrl(userLike, size = 256) {
+  if (!userLike || typeof userLike === 'string') return null;
+  if (typeof userLike.displayAvatarURL === 'function') {
+    return userLike.displayAvatarURL({ extension: 'png', size });
+  }
+  if (typeof userLike.avatarURL === 'function') {
+    return userLike.avatarURL({ extension: 'png', size });
+  }
+  return null;
+}
+
+function buildModActionLogEmbed(interaction, options = {}) {
+  const {
+    action = 'Action',
+    verb = 'actioned',
+    targetUser = null,
+    reason = 'No reason provided',
+    duration = null,
+  } = options;
+
+  const actor = interaction?.user || null;
+  const targetMention = getMention(targetUser);
+  const actorMention = getMention(actor);
+  const reasonText = String(reason || 'No reason provided').slice(0, 1000);
+  const lines = [
+    `**${String(action)}**`,
+    `${targetMention} has been ${String(verb)} by ${actorMention} for ${reasonText}`,
+  ];
+  if (duration) {
+    lines.push('', `Duration: (${String(duration).slice(0, 120)})`);
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('Mod Action')
+    .setDescription(lines.join('\n'))
+    .setColor(resolveEmbedColour(interaction?.guildId))
+    .setTimestamp();
+
+  const modAvatar = getAvatarUrl(actor, 128);
+  embed.setFooter({
+    text: `Date & Time: ${new Date().toLocaleString()}`,
+    ...(modAvatar ? { iconURL: modAvatar } : {}),
+  });
+
+  const targetAvatar = getAvatarUrl(targetUser, 256);
+  if (targetAvatar) embed.setThumbnail(targetAvatar);
+  return embed;
+}
+
 function buildMarkerFields(interaction) {
   const fields = [];
   if (interaction.guild) {
@@ -93,4 +150,11 @@ async function log(interaction, title, options = {}) {
   await sendPublicReply(interaction, embed);
 }
 
-module.exports = { log };
+async function logAction(interaction, options = {}) {
+  const embed = buildModActionLogEmbed(interaction, options);
+  const logSent = await send(interaction, embed, 'moderation');
+  const publicSent = await sendPublicReply(interaction, embed);
+  return { logSent, publicSent };
+}
+
+module.exports = { log, logAction };
