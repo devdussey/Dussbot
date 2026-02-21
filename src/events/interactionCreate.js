@@ -427,6 +427,7 @@ module.exports = {
                 const cmdName = interaction.commandName;
                 const isAdmin = interaction.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
                 const isGuildOwner = interaction.guild?.ownerId === interaction.user.id;
+                const isBotOwner = isOwner(interaction.user.id);
                 if (OWNER_COMMANDS.has(cmdName) && !isOwner(interaction.user.id)) {
                     try { await interaction.reply({ content: 'Only the bot owner can run this command.', ephemeral: true }); } catch (_) {}
                     try { await securityLogger.logPermissionDenied(interaction, cmdName, 'User is not a bot owner'); } catch (_) {}
@@ -440,7 +441,7 @@ module.exports = {
                     }
                     const modRoleId = await modLogStore.getModeratorRole(interaction.guildId);
                     const hasModRole = Boolean(modRoleId && interaction.member?.roles?.cache?.has(modRoleId));
-                    if (!hasModRole && !isAdmin) {
+                    if (!hasModRole && !isAdmin && !isGuildOwner && !isBotOwner) {
                         const message = modRoleId
                             ? 'The configured moderator role is required to run this command.'
                             : 'No moderator role is configured; ask an admin to run /modconfig.';

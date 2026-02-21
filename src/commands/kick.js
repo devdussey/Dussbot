@@ -25,7 +25,7 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: false });
+    await interaction.deferReply({ ephemeral: true });
 
     // Permission checks
     const me = interaction.guild.members.me;
@@ -82,7 +82,12 @@ module.exports = {
           { name: 'Target', value: `${user.tag} (${user.id})`, inline: false },
         ],
       });
-      await interaction.editReply({ embeds: [embed] });
+      try {
+        await interaction.followUp({ embeds: [embed], ephemeral: false });
+        try { await interaction.deleteReply(); } catch (_) {}
+      } catch (_) {
+        await interaction.editReply({ embeds: [embed] });
+      }
         try { await modlog.log(interaction, 'User Kicked', {
           target: `${user.tag} (${user.id})`,
           reason,

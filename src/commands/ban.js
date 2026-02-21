@@ -33,7 +33,7 @@ module.exports = {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: false });
+    await interaction.deferReply({ ephemeral: true });
 
     const me = interaction.guild.members.me;
     if (!me.permissions.has(PermissionsBitField.Flags.BanMembers)) {
@@ -91,7 +91,12 @@ module.exports = {
           { name: 'Prune Days', value: String(pruneDays), inline: true },
         ],
       });
-      await interaction.editReply({ embeds: [embed] });
+      try {
+        await interaction.followUp({ embeds: [embed], ephemeral: false });
+        try { await interaction.deleteReply(); } catch (_) {}
+      } catch (_) {
+        await interaction.editReply({ embeds: [embed] });
+      }
         try { await modlog.log(interaction, 'User Banned', {
           target: `${user.tag} (${user.id})`,
           reason,
