@@ -59,7 +59,11 @@ function hasTsTooling() {
 async function ensureTsTooling() {
   if (hasTsTooling()) return;
   console.log('[bootstrap] TypeScript tooling missing; installing local build deps...');
-  await runProcess(getNpmBinary(), ['install', '--no-save', 'typescript', '@types/node'], 'install typescript tooling');
+  await runProcess(
+    getNpmBinary(),
+    ['install', '--no-save', '--no-package-lock', 'typescript', '@types/node'],
+    'install typescript tooling',
+  );
 }
 
 function runDeployCommands() {
