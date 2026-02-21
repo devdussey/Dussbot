@@ -16,6 +16,25 @@ const EVENT_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   timeStyle: 'medium',
 });
 const WEBHOOK_AUDIT_CACHE = new Map();
+const INTEGRATION_AUDIT_CACHE = new Map();
+const INTEGRATION_FALLBACK_CACHE = new Map();
+const AUDIT_EVENT_WINDOW_MS = 20_000;
+const AUDIT_CACHE_TTL_MS = 5 * 60 * 1000;
+const AUDIT_CACHE_MAX_SIZE = 1000;
+const INTEGRATION_FALLBACK_THROTTLE_MS = 5_000;
+const INTEGRATION_DEBUG_ENABLED = /^(1|true|yes|on)$/i
+  .test(String(process.env.LOG_INTEGRATION_DEBUG || '').trim());
+
+function debugIntegration(guild, message, details = null) {
+  if (!INTEGRATION_DEBUG_ENABLED) return;
+  const guildLabel = guild?.id || 'unknown-guild';
+  const prefix = `[logDispatcher][integration][${guildLabel}] ${message}`;
+  if (details && typeof details === 'object') {
+    console.info(prefix, details);
+    return;
+  }
+  console.info(prefix);
+}
 
 function formatUserTag(user, fallback = 'Unknown') {
   if (!user) return fallback;
@@ -73,7 +92,7 @@ async function findRecentAuditEntry(guild, type, targetId) {
     return logs.entries.find(entry => {
       if (targetId && entry?.target?.id && String(entry.target.id) !== String(targetId)) return false;
       if (!entry?.createdTimestamp) return false;
-      return (now - entry.createdTimestamp) <= 20_000;
+      return (now - entry.createdTimestamp) <= AUDIT_EVENT_WINDOW_MS;
     }) || null;
   } catch (_) {
     return null;
@@ -212,18 +231,26 @@ function diffChannelOverwrites(oldChannel, newChannel, maxLines = 8) {
   return changes;
 }
 
-function markWebhookAudit(entry) {
+function markAuditEntry(cache, entry) {
   if (!entry?.id) return false;
   const id = String(entry.id);
-  if (WEBHOOK_AUDIT_CACHE.has(id)) return false;
-  WEBHOOK_AUDIT_CACHE.set(id, Date.now());
-  if (WEBHOOK_AUDIT_CACHE.size > 1000) {
-    const cutoff = Date.now() - (5 * 60 * 1000);
-    for (const [cacheId, seenAt] of WEBHOOK_AUDIT_CACHE.entries()) {
-      if (seenAt < cutoff) WEBHOOK_AUDIT_CACHE.delete(cacheId);
+  if (cache.has(id)) return false;
+  cache.set(id, Date.now());
+  if (cache.size > AUDIT_CACHE_MAX_SIZE) {
+    const cutoff = Date.now() - AUDIT_CACHE_TTL_MS;
+    for (const [cacheId, seenAt] of cache.entries()) {
+      if (seenAt < cutoff) cache.delete(cacheId);
     }
   }
   return true;
+}
+
+function markWebhookAudit(entry) {
+  return markAuditEntry(WEBHOOK_AUDIT_CACHE, entry);
+}
+
+function markIntegrationAudit(entry) {
+  return markAuditEntry(INTEGRATION_AUDIT_CACHE, entry);
 }
 
 function buildRoleEmbed(action, role, color, actor = 'System', reason = null, extraFields = []) {
@@ -562,26 +589,105 @@ async function handleGuildUnavailable(guild) {
   await safeLog(guild, 'system', embed);
 }
 
-async function handleIntegration(action, integration) {
-  const guild = integration.guild;
+async function handleIntegrationsUpdate(guild) {
   if (!guild) return;
-  const embed = buildLogEmbed({
-    action: `Integration ${action}`,
-    target: `Integration: ${integration.name} (${integration.id})`,
-    actor: 'System',
-    reason: `Type: ${integration.type}`,
-    color: action === 'created' ? 0x57f287 : action === 'deleted' ? 0xed4245 : 0xf39c12,
-  });
-  await safeLog(guild, 'integration', embed);
-}
+  let me = guild.members?.me;
+  if (!me) {
+    try { me = await guild.members.fetchMe(); } catch (_) { me = null; }
+  }
+  const now = Date.now();
+  const canViewAudit = Boolean(me?.permissions?.has(PermissionsBitField.Flags.ViewAuditLog));
+  debugIntegration(guild, 'GuildIntegrationsUpdate detected', { canViewAudit });
 
-async function handleIntegrationsUpdate(guild, integrations) {
-  if (!guild || !integrations?.cache?.size) return;
   try {
-    for (const integration of integrations.cache.values()) {
-      await handleIntegration('updated', integration);
+    if (canViewAudit) {
+      const [createLogs, updateLogs, deleteLogs] = await Promise.all([
+        guild.fetchAuditLogs({ type: AuditLogEvent.IntegrationCreate, limit: 6 }),
+        guild.fetchAuditLogs({ type: AuditLogEvent.IntegrationUpdate, limit: 6 }),
+        guild.fetchAuditLogs({ type: AuditLogEvent.IntegrationDelete, limit: 6 }),
+      ]);
+
+      const candidates = [];
+      for (const entry of createLogs.entries.values()) {
+        if (!entry?.createdTimestamp || (now - entry.createdTimestamp) > AUDIT_EVENT_WINDOW_MS) continue;
+        candidates.push({ entry, action: 'created', color: 0x57f287 });
+      }
+      for (const entry of updateLogs.entries.values()) {
+        if (!entry?.createdTimestamp || (now - entry.createdTimestamp) > AUDIT_EVENT_WINDOW_MS) continue;
+        candidates.push({ entry, action: 'updated', color: 0xf39c12 });
+      }
+      for (const entry of deleteLogs.entries.values()) {
+        if (!entry?.createdTimestamp || (now - entry.createdTimestamp) > AUDIT_EVENT_WINDOW_MS) continue;
+        candidates.push({ entry, action: 'deleted', color: 0xed4245 });
+      }
+      debugIntegration(guild, 'Audit candidates collected', {
+        create: createLogs.entries.size,
+        update: updateLogs.entries.size,
+        delete: deleteLogs.entries.size,
+        matched: candidates.length,
+      });
+
+      candidates.sort((a, b) => (Number(b.entry?.createdTimestamp) || 0) - (Number(a.entry?.createdTimestamp) || 0));
+      const selected = candidates.find(candidate => markIntegrationAudit(candidate.entry)) || null;
+      if (selected) {
+        debugIntegration(guild, 'Using audit path', {
+          action: selected.action,
+          auditId: selected.entry?.id || null,
+          targetId: selected.entry?.target?.id || null,
+        });
+        const targetName = selected.entry?.target?.name || 'Unknown';
+        const targetId = selected.entry?.target?.id || 'unknown';
+        const integrationType = selected.entry?.target?.type
+          || selected.entry?.changes?.find(change => change?.key === 'type')?.new
+          || selected.entry?.changes?.find(change => change?.key === 'type')?.old
+          || 'Unknown';
+        const reason = [
+          `Type: ${integrationType}`,
+          selected.entry?.reason ? `Reason: ${selected.entry.reason}` : null,
+        ].filter(Boolean).join('\n');
+        const embed = buildLogEmbed({
+          action: `Integration ${selected.action}`,
+          target: `Integration: ${targetName} (${targetId})`,
+          actor: selected.entry?.executor || 'System',
+          reason,
+          color: selected.color,
+        });
+        await safeLog(guild, 'integration', embed);
+        return;
+      }
+      debugIntegration(guild, 'No unused audit entry matched; falling back');
     }
+
+    // Fallback when audit data is unavailable: emit one throttled generic event so integration changes are still visible.
+    const lastFallback = INTEGRATION_FALLBACK_CACHE.get(guild.id) || 0;
+    if ((now - lastFallback) < INTEGRATION_FALLBACK_THROTTLE_MS) {
+      debugIntegration(guild, 'Fallback path throttled', { msSinceLast: now - lastFallback });
+      return;
+    }
+    INTEGRATION_FALLBACK_CACHE.set(guild.id, now);
+
+    let countValue = 'Unknown';
+    try {
+      const integrations = await guild.fetchIntegrations();
+      if (typeof integrations?.size === 'number') countValue = String(integrations.size);
+    } catch (_) {}
+    debugIntegration(guild, 'Using fallback path', { countValue, canViewAudit });
+
+    const fallbackEmbed = buildLogEmbed({
+      action: 'Integration Updated',
+      target: `Server: ${guild.name} (${guild.id})`,
+      actor: 'System',
+      reason: canViewAudit
+        ? 'An integration changed, but no recent audit entry was matched.'
+        : 'An integration changed. Grant View Audit Log to include actor and integration details.',
+      color: 0xf39c12,
+      extraFields: [
+        { name: 'Current Integrations', value: countValue, inline: true },
+      ],
+    });
+    await safeLog(guild, 'integration', fallbackEmbed);
   } catch (err) {
+    debugIntegration(guild, 'Integration logging failed', { error: err?.message || String(err) });
     console.error('Failed to log integration updates:', err);
   }
 }
@@ -605,12 +711,12 @@ async function findRecentWebhookAudit(guild, channelId) {
 
     const createEntry = createLogs.entries.find(entry =>
       entry?.createdTimestamp
-      && (now - entry.createdTimestamp) <= 20_000
+      && (now - entry.createdTimestamp) <= AUDIT_EVENT_WINDOW_MS
       && matchWebhookChannel(entry, channelId),
     ) || null;
     const deleteEntry = deleteLogs.entries.find(entry =>
       entry?.createdTimestamp
-      && (now - entry.createdTimestamp) <= 20_000
+      && (now - entry.createdTimestamp) <= AUDIT_EVENT_WINDOW_MS
       && matchWebhookChannel(entry, channelId),
     ) || null;
 
@@ -751,8 +857,8 @@ function registerHandlers(client) {
   client.on(Events.GuildUpdate, (oldGuild, newGuild) => handleGuildUpdate(oldGuild, newGuild));
   client.on(Events.GuildCreate, guild => handleGuildCreate(guild));
   client.on(Events.GuildDelete, guild => handleGuildDelete(guild));
-  client.on(Events.GuildIntegrationsUpdate, (guild, integrations) => {
-    void handleIntegrationsUpdate(guild, integrations);
+  client.on(Events.GuildIntegrationsUpdate, guild => {
+    void handleIntegrationsUpdate(guild);
   });
   client.on(Events.WebhooksUpdate, channel => {
     void handleWebhooksUpdate(channel);

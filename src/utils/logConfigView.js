@@ -11,7 +11,7 @@ const {
 
 const logChannelTypeStore = require('./logChannelTypeStore');
 const { applyDefaultColour } = require('./guildColourStore');
-const { getLogKeyLabel, getFallbackKey } = require('./logEvents');
+const { getLogKeyLabel, getFallbackKey, isValidLogKey } = require('./logEvents');
 
 const DEFAULT_COLOR = 0x5865f2;
 const OVERVIEW_GROUP_ID = 'overview';
@@ -21,64 +21,125 @@ const ROUTE_LABEL_OVERRIDES = Object.freeze({
   member_untimeout: 'User Unmuted',
 });
 
-const LOG_GROUPS = Object.freeze([
+const RAW_LOG_GROUPS = Object.freeze([
   {
     id: 'message',
     label: 'Message Events',
-    keys: ['message_create', 'message_edit', 'message_delete'],
+    keys: ['message', 'message_create', 'message_edit', 'message_delete', 'messages_purged'],
   },
   {
     id: 'user',
     label: 'User Events',
-    keys: ['member_join', 'member_leave', 'member_boost'],
+    keys: ['member', 'member_join', 'member_leave', 'member_boost'],
   },
   {
     id: 'invites',
     label: 'Invites',
-    keys: ['invite_create', 'invite_delete', 'invite_used'],
+    keys: ['invite', 'invite_create', 'invite_delete', 'invite_used'],
   },
   {
     id: 'mod_actions',
     label: 'Mod Actions',
-    keys: ['member_ban', 'member_unban', 'member_kick', 'member_timeout', 'member_untimeout'],
+    keys: ['moderation', 'member_ban', 'member_unban', 'member_kick', 'member_timeout', 'member_untimeout'],
   },
   {
     id: 'emoji_stickers',
     label: 'Emoji and Stickers',
-    keys: ['emoji_sticker_add', 'emoji_sticker_delete', 'emoji_sticker_edit'],
+    keys: ['emoji', 'emoji_sticker_add', 'emoji_sticker_delete', 'emoji_sticker_edit'],
   },
   {
     id: 'rupee',
     label: 'Currency Events',
-    keys: ['rupee_spend', 'rupee_earned', 'rupee_given'],
+    keys: ['economy', 'rupee_spend', 'rupee_earned', 'rupee_given'],
+  },
+  {
+    id: 'commands',
+    label: 'Command Logs',
+    keys: ['command', 'command_error'],
   },
   {
     id: 'security',
     label: 'Security Events',
-    keys: ['antinuke_enabled', 'antinuke_disabled', 'antinuke_edited', 'antinuke_triggered', 'messages_purged'],
+    keys: [
+      'security',
+      'antinuke_enabled',
+      'antinuke_disabled',
+      'antinuke_edited',
+      'antinuke_triggered',
+      'automod',
+      'restraining_order_violation',
+    ],
   },
   {
-    id: 'bots_integrations',
-    label: 'Bots and Integrations',
-    keys: ['bot_join', 'bot_action', 'webhook_create', 'webhook_delete'],
+    id: 'bots',
+    label: 'Bots',
+    keys: [
+      'bot',
+      'bot_action',
+      'bot_join',
+      'bot_leave',
+      'bot_message_create',
+      'bot_message_delete',
+      'bot_message_edit',
+      'bot_moderation',
+    ],
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    keys: ['integration', 'webhook_create', 'webhook_delete'],
   },
   {
     id: 'server',
-    label: 'Server',
+    label: 'Server Events',
     keys: [
       'server',
+      'channel',
       'role_create',
       'role_update',
       'role_delete',
+      'role',
       'channel_create',
       'channel_update',
       'channel_delete',
       'category_create',
       'category_update',
       'category_delete',
+      'voice',
+      'system',
     ],
   },
 ]);
+
+function normalizeLogGroups(groups) {
+  const uniqueById = new Set();
+  const claimedKeys = new Set();
+  const normalized = [];
+
+  for (const group of groups) {
+    if (!group?.id || uniqueById.has(group.id)) continue;
+    uniqueById.add(group.id);
+
+    const keys = [];
+    for (const key of group.keys || []) {
+      if (!isValidLogKey(key)) continue;
+      if (claimedKeys.has(key)) continue;
+      claimedKeys.add(key);
+      keys.push(key);
+    }
+
+    if (!keys.length) continue;
+    normalized.push({
+      id: group.id,
+      label: group.label || group.id,
+      keys,
+    });
+  }
+
+  return Object.freeze(normalized);
+}
+
+const LOG_GROUPS = normalizeLogGroups(RAW_LOG_GROUPS);
 
 const OVERVIEW_DESCRIPTION = [
   'Below is the current status of logging event groups.',
