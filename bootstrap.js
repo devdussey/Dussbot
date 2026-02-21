@@ -4,6 +4,8 @@ const { spawn } = require('node:child_process');
 
 const DIST_ENTRY = path.join(__dirname, 'dist', 'index.js');
 const SRC_DIR = path.join(__dirname, 'src');
+const LOCAL_TSC = path.join(__dirname, 'node_modules', 'typescript', 'bin', 'tsc');
+const LOCAL_NODE_TYPES = path.join(__dirname, 'node_modules', '@types', 'node', 'package.json');
 
 function getNpmBinary() {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -50,6 +52,16 @@ function shouldBuildTs() {
   return srcTsMtime > distMtime;
 }
 
+function hasTsTooling() {
+  return fs.existsSync(LOCAL_TSC) && fs.existsSync(LOCAL_NODE_TYPES);
+}
+
+async function ensureTsTooling() {
+  if (hasTsTooling()) return;
+  console.log('[bootstrap] TypeScript tooling missing; installing local build deps...');
+  await runProcess(getNpmBinary(), ['install', '--no-save', 'typescript', '@types/node'], 'install typescript tooling');
+}
+
 function runDeployCommands() {
   const deployScript = path.join(__dirname, 'scripts', 'deploy-commands.js');
   return runProcess(process.execPath, [deployScript], 'deploy-commands');
@@ -57,20 +69,29 @@ function runDeployCommands() {
 
 async function buildTsIfNeeded() {
   if (!shouldBuildTs()) return;
+  await ensureTsTooling();
   console.log('[bootstrap] building TypeScript (npm run build:ts)...');
   await runProcess(getNpmBinary(), ['run', 'build:ts'], 'build:ts');
 }
 
-function resolveBotEntry() {
-  if (fs.existsSync(DIST_ENTRY)) return DIST_ENTRY;
+function resolveBotEntry(forceSrcRuntime = false) {
+  if (!forceSrcRuntime && fs.existsSync(DIST_ENTRY)) return DIST_ENTRY;
   return path.join(__dirname, 'src', 'index.js');
 }
 
 async function main() {
+  let forceSrcRuntime = false;
   try {
-    await buildTsIfNeeded();
+    try {
+      await buildTsIfNeeded();
+    } catch (error) {
+      forceSrcRuntime = true;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[bootstrap] TypeScript build failed; falling back to src runtime:', message);
+    }
+
     await runDeployCommands();
-    require(resolveBotEntry());
+    require(resolveBotEntry(forceSrcRuntime));
   } catch (error) {
     console.error('[bootstrap] startup failed:', error);
     process.exit(1);
