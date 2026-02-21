@@ -131,6 +131,24 @@ function getSummary(guildId, userId) {
   };
 }
 
+function listUserSummaries(guildId, { minCoins = 0 } = {}) {
+  if (!guildId) return [];
+  const store = loadStore();
+  const guild = ensureGuild(store, guildId);
+  const min = Number.isFinite(Number(minCoins)) ? Math.max(0, Number(minCoins)) : 0;
+  return Object.keys(guild.users)
+    .map((userId) => ({
+      userId,
+      ...getSummary(guildId, userId),
+    }))
+    .filter((entry) => entry.coins >= min)
+    .sort((a, b) => {
+      if (b.coins !== a.coins) return b.coins - a.coins;
+      if (b.lifetimeEarned !== a.lifetimeEarned) return b.lifetimeEarned - a.lifetimeEarned;
+      return String(a.userId).localeCompare(String(b.userId));
+    });
+}
+
 function getPrayStatus(guildId, userId, now = Date.now()) {
   const rec = ensureRecord(guildId, userId);
   const cooldownMs = getPrayCooldownMs();
@@ -159,11 +177,24 @@ async function recordPrayer(guildId, userId, reward, now = Date.now()) {
   return { balance: rec.coins, lastPrayAt: rec.lastPrayAt };
 }
 
+async function resetUser(guildId, userId) {
+  if (!guildId || !userId) return getSummary(guildId, userId);
+  const rec = ensureRecord(guildId, userId);
+  rec.coins = 0;
+  rec.lifetimeEarned = 0;
+  rec.lifetimeSpent = 0;
+  rec.lastPrayAt = null;
+  await saveStore();
+  return getSummary(guildId, userId);
+}
+
 module.exports = {
   addCoins,
   spendCoins,
   getBalance,
   getSummary,
+  listUserSummaries,
   getPrayStatus,
   recordPrayer,
+  resetUser,
 };

@@ -6,6 +6,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -26,12 +27,14 @@ function requireFromSrcIfNeeded(modulePath) {
 
 const smiteConfigStore = requireFromSrcIfNeeded('../utils/smiteConfigStore');
 const logChannelTypeStore = requireFromSrcIfNeeded('../utils/logChannelTypeStore');
+const coinStore = requireFromSrcIfNeeded('../utils/coinStore');
 const { resolveEmbedColour } = requireFromSrcIfNeeded('../utils/guildColourStore');
 const { SHOP_ITEMS } = requireFromSrcIfNeeded('./storeconfig');
 const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = requireFromSrcIfNeeded('../utils/currencyName');
 
 const HORSE_RACE_WIN_RUPEES = 1;
 const SESSION_TIMEOUT_MS = 10 * 60_000;
+const USER_DISPLAY_MAX_OPTIONS = 25;
 const STORE_ITEM_LOOKUP = new Map<string, any>((SHOP_ITEMS || []).map(item => [String(item.id), item]));
 
 function parseRoleId(raw) {
@@ -200,18 +203,278 @@ function buildButtons(baseId, enabled, disabled = false) {
   ];
 }
 
+function formatDateTime(value) {
+  if (!value) return 'Never';
+  const ts = Date.parse(value);
+  if (!Number.isFinite(ts)) return 'Unknown';
+  const unix = Math.floor(ts / 1000);
+  return `<t:${unix}:F> (<t:${unix}:R>)`;
+}
+
+async function buildUserDisplayState(interaction, selectedUserId) {
+  const allEntries = coinStore.listUserSummaries(interaction.guildId, { minCoins: 0 });
+  const eligibleEntries = allEntries.filter(entry => Number(entry?.coins) > 0);
+
+  const selectableUsers = [];
+  let totalEligible = 0;
+
+  for (const entry of eligibleEntries) {
+    const userId = String(entry?.userId || '');
+    if (!userId) continue;
+
+    let member = interaction.guild.members.cache.get(userId);
+    if (!member) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        member = await interaction.guild.members.fetch(userId);
+      } catch (_) {
+        member = null;
+      }
+    }
+    if (!member || member.user?.bot) continue;
+
+    totalEligible += 1;
+    if (selectableUsers.length < USER_DISPLAY_MAX_OPTIONS) {
+      selectableUsers.push({ userId, member, summary: entry });
+    }
+  }
+
+  const selectedEntry = selectedUserId
+    ? eligibleEntries.find(entry => String(entry?.userId) === String(selectedUserId))
+    : null;
+
+  let selectedMember = null;
+  if (selectedEntry?.userId) {
+    selectedMember = interaction.guild.members.cache.get(selectedEntry.userId);
+    if (!selectedMember) {
+      try {
+        selectedMember = await interaction.guild.members.fetch(selectedEntry.userId);
+      } catch (_) {
+        selectedMember = null;
+      }
+    }
+  }
+
+  return {
+    totalTracked: allEntries.length,
+    totalEligible,
+    truncatedCount: Math.max(0, totalEligible - selectableUsers.length),
+    selectableUsers,
+    selectedEntry: selectedMember?.user?.bot ? null : selectedEntry,
+    selectedMember: selectedMember?.user?.bot ? null : selectedMember,
+  };
+}
+
+function buildUserDisplayEmbed(interaction, state) {
+  const currencyWord = formatCurrencyWord(interaction.guildId, 2, { lowercase: true });
+  const base = new EmbedBuilder()
+    .setColor(resolveEmbedColour(interaction.guildId, 0x00f0ff))
+    .setTitle('Economy User Display')
+    .setTimestamp();
+
+  if (!state.selectedEntry || !state.selectedMember) {
+    let description = `Select a member with tracked ${currencyWord} to view and manage their profile.`;
+    description += `\n\nEligible members: **${state.totalEligible}**`;
+    if (state.truncatedCount > 0) {
+      description += `\nShowing top **${USER_DISPLAY_MAX_OPTIONS}** by balance (${state.truncatedCount} more not shown).`;
+    }
+    if (state.totalTracked > state.totalEligible) {
+      description += `\nTracked users with zero balance or missing membership: **${state.totalTracked - state.totalEligible}**.`;
+    }
+
+    return base.setDescription(description);
+  }
+
+  const member = state.selectedMember;
+  const summary = state.selectedEntry;
+  const createdUnix = member.user?.createdTimestamp ? Math.floor(member.user.createdTimestamp / 1000) : null;
+  const joinedUnix = member.joinedTimestamp ? Math.floor(member.joinedTimestamp / 1000) : null;
+  const netFlow = Number(summary.lifetimeEarned || 0) - Number(summary.lifetimeSpent || 0);
+
+  return base
+    .setTitle(`Economy User Display - ${member.displayName}`)
+    .setDescription(`Managing <@${member.id}>`)
+    .addFields(
+      { name: 'Current Balance', value: `**${formatCurrencyAmount(interaction.guildId, summary.coins, { lowercase: true })}**`, inline: true },
+      { name: 'Lifetime Earned', value: formatCurrencyAmount(interaction.guildId, summary.lifetimeEarned, { lowercase: true }), inline: true },
+      { name: 'Lifetime Spent', value: formatCurrencyAmount(interaction.guildId, summary.lifetimeSpent, { lowercase: true }), inline: true },
+      { name: 'Net Flow', value: formatCurrencyAmount(interaction.guildId, netFlow, { lowercase: true }), inline: true },
+      { name: 'Last Blessing Claim', value: formatDateTime(summary.lastPrayAt), inline: false },
+      { name: 'Joined Server', value: joinedUnix ? `<t:${joinedUnix}:F> (<t:${joinedUnix}:R>)` : 'Unknown', inline: false },
+      { name: 'Account Created', value: createdUnix ? `<t:${createdUnix}:F> (<t:${createdUnix}:R>)` : 'Unknown', inline: false },
+    );
+}
+
+function buildUserDisplayComponents(baseId, state, selectedUserId, disabled = false) {
+  const options = state.selectableUsers.map((entry) => ({
+    label: String(entry.member.displayName || entry.member.user?.username || entry.userId).slice(0, 100),
+    value: entry.userId,
+    description: formatCurrencyAmount(entry.member.guild.id, entry.summary.coins, { lowercase: true }).slice(0, 100),
+    default: String(entry.userId) === String(selectedUserId),
+  }));
+
+  if (!options.length) {
+    options.push({
+      label: 'No eligible users',
+      value: 'none',
+      description: 'No members currently have currency.',
+      default: true,
+    });
+  }
+
+  const userMenu = new StringSelectMenuBuilder()
+    .setCustomId(`${baseId}:select`)
+    .setPlaceholder('Select a member with currency')
+    .setDisabled(disabled || !state.selectableUsers.length)
+    .addOptions(options);
+
+  const hasSelected = Boolean(state.selectedEntry && state.selectedMember);
+  const resetButton = new ButtonBuilder()
+    .setCustomId(`${baseId}:reset`)
+    .setLabel('Reset Currency')
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(disabled || !hasSelected);
+
+  const giveButton = new ButtonBuilder()
+    .setCustomId(`${baseId}:give`)
+    .setLabel('Give Currency')
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(disabled || !hasSelected);
+
+  return [
+    new ActionRowBuilder().addComponents(userMenu),
+    new ActionRowBuilder().addComponents(resetButton, giveButton),
+  ];
+}
+
+async function runUserDisplayPanel(interaction) {
+  const baseId = `economyconfig:userdisplay:${interaction.id}`;
+  let selectedUserId = null;
+
+  const render = async (disabled = false) => {
+    const state = await buildUserDisplayState(interaction, selectedUserId);
+    if (!state.selectedEntry || !state.selectedMember) {
+      selectedUserId = null;
+    }
+    const embed = buildUserDisplayEmbed(interaction, state);
+    const components = buildUserDisplayComponents(baseId, state, selectedUserId, disabled);
+    return { state, embed, components };
+  };
+
+  const initialView = await render(false);
+  const reply = await interaction.editReply({
+    embeds: [initialView.embed],
+    components: initialView.components,
+  });
+
+  const collector = reply.createMessageComponentCollector({ time: SESSION_TIMEOUT_MS });
+
+  collector.on('collect', async (componentInteraction) => {
+    if (componentInteraction.user.id !== interaction.user.id) {
+      await componentInteraction.reply({ content: 'This configuration panel belongs to someone else.', ephemeral: true });
+      return;
+    }
+
+    if (componentInteraction.customId === `${baseId}:select`) {
+      const picked = componentInteraction.values?.[0];
+      selectedUserId = picked === 'none' ? null : picked;
+      const nextView = await render(false);
+      await componentInteraction.update({ embeds: [nextView.embed], components: nextView.components });
+      return;
+    }
+
+    if (componentInteraction.customId === `${baseId}:reset`) {
+      if (!selectedUserId) {
+        await componentInteraction.reply({ content: 'Select a user first.', ephemeral: true });
+        return;
+      }
+
+      await coinStore.resetUser(interaction.guildId, selectedUserId);
+      const nextView = await render(false);
+      await componentInteraction.update({ embeds: [nextView.embed], components: nextView.components });
+      return;
+    }
+
+    if (componentInteraction.customId === `${baseId}:give`) {
+      if (!selectedUserId) {
+        await componentInteraction.reply({ content: 'Select a user first.', ephemeral: true });
+        return;
+      }
+
+      const modalId = `${baseId}:modal:give:${componentInteraction.id}`;
+      const modal = new ModalBuilder()
+        .setCustomId(modalId)
+        .setTitle('Give Currency')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('give_amount')
+              .setLabel('Amount to give')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder('Whole number, e.g. 25'),
+          ),
+        );
+
+      await componentInteraction.showModal(modal);
+
+      let submission;
+      try {
+        submission = await componentInteraction.awaitModalSubmit({
+          time: 180_000,
+          filter: (i) => i.customId === modalId && i.user.id === interaction.user.id,
+        });
+      } catch (_) {
+        return;
+      }
+
+      const amount = parsePositiveInteger(submission.fields.getTextInputValue('give_amount'), { min: 1, max: 1_000_000 });
+      if (!amount) {
+        await replyToModal(submission, { content: 'Please provide a whole number greater than 0.', ephemeral: true });
+        return;
+      }
+
+      await coinStore.addCoins(interaction.guildId, selectedUserId, amount);
+      const nextView = await render(false);
+      await interaction.editReply({ embeds: [nextView.embed], components: nextView.components });
+      await replyToModal(submission, {
+        content: `Added ${formatCurrencyAmount(interaction.guildId, amount, { lowercase: true })}.`,
+        ephemeral: true,
+      });
+    }
+  });
+
+  collector.on('end', async () => {
+    try {
+      const finalView = await render(true);
+      await interaction.editReply({
+        embeds: [finalView.embed],
+        components: finalView.components,
+      });
+    } catch (_) {}
+  });
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('economyconfig')
-    .setDescription('Configure economy settings for this server')
+    .setDescription('Configure economy settings or manage user currency')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
-    .addBooleanOption(opt =>
-      opt
-        .setName('enabled')
-        .setDescription('Turn economy rewards on or off before opening the config view')
-        .setRequired(false),
-    ),
+    .addSubcommand(sub =>
+      sub
+        .setName('settings')
+        .setDescription('Open the economy settings panel')
+        .addBooleanOption(opt =>
+          opt
+            .setName('enabled')
+            .setDescription('Turn economy rewards on or off before opening the config view')
+            .setRequired(false),
+        ))
+    .addSubcommand(sub =>
+      sub
+        .setName('userdisplay')
+        .setDescription('View and manage currency for members with a tracked balance')),
 
   async execute(interaction) {
     if (!interaction.inGuild()) {
@@ -219,12 +482,17 @@ module.exports = {
     }
 
     await interaction.deferReply({ ephemeral: true });
+    const subcommand = interaction.options.getSubcommand(false) || 'settings';
 
     const canManageGuild = interaction.member.permissions?.has(PermissionsBitField.Flags.ManageGuild);
     const isAdmin = interaction.member.permissions?.has(PermissionsBitField.Flags.Administrator);
     const isGuildOwner = interaction.guild?.ownerId === interaction.user.id;
     if (!canManageGuild && !isAdmin && !isGuildOwner) {
       return interaction.editReply({ content: 'You need Manage Server, Administrator, or server owner access to configure the economy.' });
+    }
+    if (subcommand === 'userdisplay') {
+      await runUserDisplayPanel(interaction);
+      return;
     }
 
     const baseId = `economyconfig:${interaction.id}`;
