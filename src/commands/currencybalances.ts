@@ -149,6 +149,12 @@ const command: SlashCommandModule = {
         return i.reply({ content: 'This menu is not for you.', ephemeral: true });
       }
 
+      try {
+        await i.deferUpdate();
+      } catch (_) {
+        return;
+      }
+
       if (i.customId === prevId) pageIndex = Math.max(0, pageIndex - 1);
       if (i.customId === nextId) pageIndex = Math.min(pageIndex + 1, totalPages - 1);
 
@@ -169,10 +175,10 @@ const command: SlashCommandModule = {
         nextId,
       });
 
-      await i.update({
+      await interaction.editReply({
         embeds: [next.embed],
         components: nextRow ? [nextRow] : [],
-      });
+      }).catch(() => {});
     });
 
     collector.on('end', () => {
