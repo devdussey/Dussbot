@@ -4,7 +4,6 @@ const messageLogStore = require('../utils/userMessageLogStore');
 const coinStore = require('../utils/coinStore');
 const { getRupeeCost } = require('../utils/economyConfig');
 const { resolveEmbedColour } = require('../utils/guildColourStore');
-const { isOwner } = require('../utils/ownerIds');
 const { isCategoryEnabled, shouldReplyEphemeral, areRepliesPublic } = require('../utils/botConfigStore');
 const { formatCurrencyWord, getCurrencyPlural } = require('../utils/currencyName');
 
@@ -185,7 +184,7 @@ module.exports = {
       .setRequired(false))
     .addUserOption((option) => option
       .setName('user')
-      .setDescription('Analyse another member (owners only)')
+      .setDescription('Analyse another member')
       .setRequired(false))
     .addBooleanOption((option) => option
       .setName('public')
@@ -213,25 +212,6 @@ module.exports = {
     }
 
     const targetUser = interaction.options.getUser('user') || interaction.user;
-    const isBotOwner = isOwner(interaction.user.id);
-    let isGuildOwner = false;
-    if (interaction.guild && interaction.guild.ownerId) {
-      isGuildOwner = interaction.guild.ownerId === interaction.user.id;
-    }
-    if (!isGuildOwner && interaction.guild && interaction.guild.fetchOwner) {
-      try {
-        const owner = await interaction.guild.fetchOwner();
-        if (owner && owner.id === interaction.user.id) {
-          isGuildOwner = true;
-        }
-      } catch (_) {
-        // ignore errors; permissions fallback will handle failures
-      }
-    }
-
-    if (targetUser.id !== interaction.user.id && !isBotOwner && !isGuildOwner) {
-      return interaction.editReply({ content: 'Only the bot owner or the guild owner can analyse other members.' });
-    }
 
     const subjectUser = targetUser;
     const subjectLabel = subjectUser?.tag || subjectUser?.username || subjectUser?.globalName || subjectUser?.id || 'the user';
