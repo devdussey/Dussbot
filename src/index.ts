@@ -1,11 +1,23 @@
+import path from 'node:path';
 import { Client, GatewayIntentBits, Collection, Partials } from 'discord.js';
 import { loadCommands } from './handlers/commandHandler';
 import { loadEvents } from './handlers/eventHandler';
 
-const logger = require('./utils/logger')('Bot');
+function requireFromSrcIfNeeded(modulePath: string) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require(modulePath);
+  } catch (_) {
+    const srcPath = path.join(process.cwd(), 'src', modulePath.replace(/^\.\//, ''));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require(srcPath);
+  }
+}
+
+const logger = requireFromSrcIfNeeded('./utils/logger')('Bot');
 
 require('dotenv').config();
-require('./utils/embedColourEnforcer');
+requireFromSrcIfNeeded('./utils/embedColourEnforcer');
 
 type RuntimeCommand = {
   data: { name: string };

@@ -2,7 +2,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Client } from 'discord.js';
 
-const logger = require('../utils/logger')('CommandHandler');
+function requireFromSrcIfNeeded(modulePath: string) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require(modulePath);
+  } catch (_) {
+    const srcPath = path.join(process.cwd(), 'src', modulePath.replace(/^\.\.\//, ''));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require(srcPath);
+  }
+}
+
+const logger = requireFromSrcIfNeeded('../utils/logger')('CommandHandler');
 
 type RuntimeCommand = {
   data: { name: string };

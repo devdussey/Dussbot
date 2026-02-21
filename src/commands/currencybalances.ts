@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -10,9 +11,20 @@ import {
 } from 'discord.js';
 import type { SlashCommandModule } from '../types/runtime';
 
-const communalStore = require('../utils/communalStore');
-const { resolveEmbedColour } = require('../utils/guildColourStore');
-const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = require('../utils/currencyName');
+function requireFromSrcIfNeeded(modulePath: string) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require(modulePath);
+  } catch (_) {
+    const srcPath = path.join(process.cwd(), 'src', modulePath.replace(/^\.\.\//, ''));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require(srcPath);
+  }
+}
+
+const communalStore = requireFromSrcIfNeeded('../utils/communalStore');
+const { resolveEmbedColour } = requireFromSrcIfNeeded('../utils/guildColourStore');
+const { getCurrencyName, formatCurrencyAmount, formatCurrencyWord } = requireFromSrcIfNeeded('../utils/currencyName');
 
 type BalanceEntry = {
   userId?: string;

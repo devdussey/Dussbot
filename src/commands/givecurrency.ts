@@ -1,12 +1,24 @@
+import path from 'node:path';
 import { EmbedBuilder, PermissionsBitField, SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
 import type { SlashCommandModule } from '../types/runtime';
 
-const cmdLogger = require('../utils/logger')('donate');
-const communalStore = require('../utils/communalStore');
-const { resolveEmbedColour } = require('../utils/guildColourStore');
-const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
-const logSender = require('../utils/logSender');
-const { formatCurrencyAmount, formatCurrencyWord, getCurrencyPlural } = require('../utils/currencyName');
+function requireFromSrcIfNeeded(modulePath: string) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require(modulePath);
+  } catch (_) {
+    const srcPath = path.join(process.cwd(), 'src', modulePath.replace(/^\.\.\//, ''));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require(srcPath);
+  }
+}
+
+const cmdLogger = requireFromSrcIfNeeded('../utils/logger')('donate');
+const communalStore = requireFromSrcIfNeeded('../utils/communalStore');
+const { resolveEmbedColour } = requireFromSrcIfNeeded('../utils/guildColourStore');
+const { buildRupeeEventEmbed } = requireFromSrcIfNeeded('../utils/rupeeLogEmbed');
+const logSender = requireFromSrcIfNeeded('../utils/logSender');
+const { formatCurrencyAmount, formatCurrencyWord, getCurrencyPlural } = requireFromSrcIfNeeded('../utils/currencyName');
 
 const command: SlashCommandModule = {
   data: new SlashCommandBuilder()
