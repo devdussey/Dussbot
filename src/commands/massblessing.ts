@@ -1,11 +1,24 @@
+const path = require('node:path');
 const { SlashCommandBuilder, PermissionsBitField, EmbedBuilder } = require('discord.js');
-const rupeeStore = require('../utils/rupeeStore');
-const { resolveEmbedColour } = require('../utils/guildColourStore');
-const { buildRupeeEventEmbed } = require('../utils/rupeeLogEmbed');
-const logSender = require('../utils/logSender');
-const { formatCurrencyAmount, formatCurrencyWord, getCurrencyPlural } = require('../utils/currencyName');
+const srcDirForThisModule = __dirname.includes(`${path.sep}dist${path.sep}`)
+  ? __dirname.replace(`${path.sep}dist${path.sep}`, `${path.sep}src${path.sep}`)
+  : path.join(process.cwd(), 'src', 'commands');
 
-const cmdLogger = require('../utils/logger')('massblessing');
+function requireFromSrcIfNeeded(modulePath) {
+  try {
+    return require(modulePath);
+  } catch (_) {
+    return require(path.resolve(srcDirForThisModule, modulePath));
+  }
+}
+
+const rupeeStore = requireFromSrcIfNeeded('../utils/rupeeStore');
+const { resolveEmbedColour } = requireFromSrcIfNeeded('../utils/guildColourStore');
+const { buildRupeeEventEmbed } = requireFromSrcIfNeeded('../utils/rupeeLogEmbed');
+const logSender = requireFromSrcIfNeeded('../utils/logSender');
+const { formatCurrencyAmount, formatCurrencyWord, getCurrencyPlural } = requireFromSrcIfNeeded('../utils/currencyName');
+
+const cmdLogger = requireFromSrcIfNeeded('../utils/logger')('massblessing');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -92,4 +105,6 @@ module.exports = {
     } catch (_) {}
   },
 };
+
+export {};
 
