@@ -26,6 +26,35 @@ function runProcess(command, args, label) {
   });
 }
 
+function runProcessCapture(command, args, label) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      reject(new Error(`${label} exited with code ${code}`));
+    });
+  });
+}
+
 function getNewestTsMtimeMs(dir) {
   let newest = 0;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -83,9 +112,36 @@ function resolveBotEntry(forceSrcRuntime = false) {
   return path.join(__dirname, 'src', 'index.js');
 }
 
+async function restorePackageFilesIfNeeded() {
+  if (process.env.DISABLE_GIT_AUTOCLEAN === '1') return;
+  if (!fs.existsSync(path.join(__dirname, '.git'))) return;
+
+  try {
+    const { stdout } = await runProcessCapture(
+      'git',
+      ['status', '--porcelain', '--', 'package.json', 'package-lock.json'],
+      'git status',
+    );
+
+    if (!stdout.trim()) return;
+
+    console.log('[bootstrap] restoring package.json and package-lock.json to HEAD...');
+    await runProcess(
+      'git',
+      ['restore', '--', 'package.json', 'package-lock.json'],
+      'git restore package files',
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[bootstrap] package file auto-restore skipped:', message);
+  }
+}
+
 async function main() {
   let forceSrcRuntime = false;
   try {
+    await restorePackageFilesIfNeeded();
+
     try {
       await buildTsIfNeeded();
     } catch (error) {
