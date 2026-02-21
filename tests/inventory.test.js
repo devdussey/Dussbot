@@ -1,78 +1,131 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const inventory = require('../src/commands/inventory');
-const tokenStore = require('../src/utils/messageTokenStore');
+const balance = require('../src/commands/currencybalances');
 const rupeeStore = require('../src/utils/rupeeStore');
-const smiteConfigStore = require('../src/utils/smiteConfigStore');
-const coinStore = require('../src/utils/coinStore');
 
-function createInteraction() {
+function createInteraction({ subcommand = 'leaderboard', targetUser = null } = {}) {
   let reply;
   return {
     inGuild: () => true,
     guildId: 'guild',
+    id: 'interaction-id',
+    guild: {
+      members: {
+        cache: new Map(),
+        fetch: () => Promise.resolve(null),
+      },
+    },
     user: { id: 'user', username: 'Tester' },
+    options: {
+      getSubcommand: () => subcommand,
+      getUser: () => targetUser,
+    },
     deferReply: () => Promise.resolve(),
-    editReply: (data) => {
+    reply: (data) => {
       reply = data;
       return Promise.resolve(data);
+    },
+    editReply: (data) => {
+      reply = data;
+      return Promise.resolve({
+        ...data,
+        createMessageComponentCollector: () => ({
+          on: () => {},
+        }),
+      });
     },
     getReply: () => reply,
   };
 }
 
-test('inventory shows coin balance, item counts, and prayer status', async () => {
-  const originalSmiteBalance = tokenStore.getBalance;
+test('balance personal shows caller balance and rank', async () => {
   const originalRupeeBalance = rupeeStore.getBalance;
-  const originalIsEnabled = smiteConfigStore.isEnabled;
-  const originalCoinSummary = coinStore.getSummary;
-  const originalPrayStatus = coinStore.getPrayStatus;
+  const originalList = rupeeStore.listUserBalances;
 
-  tokenStore.getBalance = () => 3;
-  rupeeStore.getBalance = () => 1;
-  smiteConfigStore.isEnabled = () => true;
-  coinStore.getSummary = () => ({ coins: 321.5, lifetimeEarned: 0, lifetimeSpent: 0, lastPrayAt: null });
-  coinStore.getPrayStatus = () => ({ canPray: false, cooldownMs: 3_600_000, nextAvailableAt: Date.now() + 3_600_000 });
+  rupeeStore.getBalance = () => 5;
+  rupeeStore.listUserBalances = () => ([
+    { userId: 'user', tokens: 5 },
+    { userId: 'u2', tokens: 2 },
+  ]);
 
   try {
-    const interaction = createInteraction();
-    await inventory.execute(interaction);
+    const interaction = createInteraction({ subcommand: 'personal' });
+    await balance.execute(interaction);
 
     const reply = interaction.getReply();
-    assert(reply, 'expected inventory command to edit the reply');
+    assert(reply, 'expected balance command to reply');
 
     const embedBuilder = reply.embeds && reply.embeds[0];
-    assert(embedBuilder, 'expected an embed in the inventory response');
+    assert(embedBuilder, 'expected an embed in the balance response');
 
     const embed = typeof embedBuilder.toJSON === 'function' ? embedBuilder.toJSON() : embedBuilder;
 
-    assert.equal(embed.title, "Tester's Divine Inventory");
-    assert.match(embed.description, /Spend coins in \/store to expand your arsenal\./);
+    assert.match(embed.title, /Rupee Balance/);
+    assert.match(embed.description, /<@user> currently has \*\*5 rupees\*\*/);
 
-    const [coinsField, smiteField, judgementField, prayerField] = embed.fields;
-    assert(coinsField, 'expected coins field');
-    assert.match(coinsField.value, /Balance:\*\* 321\.5/);
-    assert.match(coinsField.value, /Coins are the divine currency/);
-
-    assert(smiteField, 'expected smite field');
-    assert.match(smiteField.value, /Owned:\*\* 3/);
-    assert.match(smiteField.value, /Cost:\*\* 200/);
-    assert.match(smiteField.value, /Smite rewards are currently \*\*enabled\*\*/);
-
-    assert(judgementField, 'expected rupee field');
-    assert.match(judgementField.value, /Owned:\*\* 1/);
-    assert.match(judgementField.value, /Cost:\*\* 500/);
-    assert.match(judgementField.value, /unlock the powerful \/analysis command/);
-    assert.match(judgementField.value, /\/donate/);
-
-    assert(prayerField, 'expected prayer field');
-    assert.match(prayerField.value, /Already blessed. You can pray again in 1 hour\./);
+    const rankField = embed.fields.find((field) => field.name === 'Leaderboard Rank');
+    assert(rankField, 'expected leaderboard rank field');
+    assert.match(rankField.value, /#1 of 2/);
   } finally {
-    tokenStore.getBalance = originalSmiteBalance;
     rupeeStore.getBalance = originalRupeeBalance;
-    smiteConfigStore.isEnabled = originalIsEnabled;
-    coinStore.getSummary = originalCoinSummary;
-    coinStore.getPrayStatus = originalPrayStatus;
+    rupeeStore.listUserBalances = originalList;
+  }
+});
+
+test('balance user shows unranked users with zero balance', async () => {
+  const originalRupeeBalance = rupeeStore.getBalance;
+  const originalList = rupeeStore.listUserBalances;
+
+  rupeeStore.getBalance = (_guildId, userId) => (userId === 'target' ? 0 : 3);
+  rupeeStore.listUserBalances = () => ([
+    { userId: 'user', tokens: 3 },
+  ]);
+
+  try {
+    const interaction = createInteraction({
+      subcommand: 'user',
+      targetUser: { id: 'target', username: 'Target' },
+    });
+    await balance.execute(interaction);
+
+    const reply = interaction.getReply();
+    assert(reply, 'expected balance command to reply');
+
+    const embedBuilder = reply.embeds && reply.embeds[0];
+    const embed = typeof embedBuilder.toJSON === 'function' ? embedBuilder.toJSON() : embedBuilder;
+
+    assert.match(embed.description, /<@target> currently has \*\*0 rupees\*\*/);
+    const rankField = embed.fields.find((field) => field.name === 'Leaderboard Rank');
+    assert(rankField, 'expected leaderboard rank field');
+    assert.match(rankField.value, /Unranked/);
+  } finally {
+    rupeeStore.getBalance = originalRupeeBalance;
+    rupeeStore.listUserBalances = originalList;
+  }
+});
+
+test('balance leaderboard renders leaderboard view', async () => {
+  const originalList = rupeeStore.listUserBalances;
+
+  rupeeStore.listUserBalances = () => ([
+    { userId: 'u2', tokens: 5 },
+    { userId: 'u1', tokens: 2 },
+  ]);
+
+  try {
+    const interaction = createInteraction({ subcommand: 'leaderboard' });
+    await balance.execute(interaction);
+
+    const reply = interaction.getReply();
+    assert(reply, 'expected balance command to edit reply for leaderboard');
+    const embedBuilder = reply.embeds && reply.embeds[0];
+    const embed = typeof embedBuilder.toJSON === 'function' ? embedBuilder.toJSON() : embedBuilder;
+    assert.match(embed.title, /Rupee Leaderboard/);
+    const leaderboardField = embed.fields.find((field) => field.name === 'Leaderboard');
+    assert(leaderboardField, 'expected leaderboard field');
+    assert.match(leaderboardField.value, /1\. <@u2>/);
+  } finally {
+    rupeeStore.listUserBalances = originalList;
   }
 });

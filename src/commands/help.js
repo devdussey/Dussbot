@@ -79,8 +79,9 @@ const categories = {
     { cmd: '/imagefilter', desc: 'Apply a GIF filter edit (currently: Load) to an uploaded image, URL, or user avatar.', perm: null },
   ],
   'Economy System and Games': [
-    { cmd: '/inventory', desc: 'View your coins and server currency.', perm: null },
-    { cmd: '/balance', desc: 'View the server currency leaderboard.', perm: null },
+    { cmd: '/balance leaderboard', desc: 'View the server currency leaderboard.', perm: null },
+    { cmd: '/balance personal', desc: 'View your personal server currency balance.', perm: null },
+    { cmd: '/balance user', desc: 'View another member\'s server currency balance.', perm: null },
     { cmd: 'Store Panels', desc: 'Spend currency using the configured store panel messages.', perm: null },
     { cmd: '/storeconfig add/remove/post', desc: 'Enable or remove specific store items, and post enabled item panels.', perm: 'Administrator' },
     { cmd: '/economyconfig', desc: 'Configure economy rewards, currency name, store prices, immunity role, and economy channels.', perm: 'Manage Server' },

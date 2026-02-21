@@ -90,6 +90,46 @@ async function buildLeaderboardEmbed({
   return { embed, totalPages, pageIndex: safePage };
 }
 
+function getUserRank(entries: BalanceEntry[], userId: string | undefined) {
+  if (!Array.isArray(entries) || !userId) return null;
+  const idx = entries.findIndex((entry) => entry?.userId === userId);
+  return idx >= 0 ? idx + 1 : null;
+}
+
+function buildUserBalanceEmbed({
+  guildId,
+  user,
+  entries,
+}: {
+  guildId: string;
+  user: { id: string };
+  entries: BalanceEntry[];
+}) {
+  const balance = communalStore.getBalance(guildId, user.id);
+  const rank = getUserRank(entries, user.id);
+
+  const embed = new EmbedBuilder()
+    .setColor(resolveEmbedColour(guildId, 0x2ecc71))
+    .setTitle(`💎 ${getCurrencyName(guildId)} Balance`)
+    .setDescription(`<@${user.id}> currently has **${formatCurrencyAmount(guildId, balance, { lowercase: true })}**.`);
+
+  if (rank) {
+    embed.addFields({
+      name: 'Leaderboard Rank',
+      value: `#${rank} of ${entries.length}`,
+      inline: true,
+    });
+  } else {
+    embed.addFields({
+      name: 'Leaderboard Rank',
+      value: 'Unranked (no tracked balance yet).',
+      inline: true,
+    });
+  }
+
+  return embed;
+}
+
 function buildPagerRow({ pageIndex, totalPages, prevId, nextId }: { pageIndex: number; totalPages: number; prevId: string; nextId: string }) {
   if (totalPages <= 1) return null;
   const prev = new ButtonBuilder()
@@ -110,12 +150,52 @@ function buildPagerRow({ pageIndex, totalPages, prevId, nextId }: { pageIndex: n
 const command: SlashCommandModule = {
   data: new SlashCommandBuilder()
     .setName('balance')
-    .setDescription('View the currency leaderboard')
-    .setDMPermission(false),
+    .setDescription('View server currency balances')
+    .setDMPermission(false)
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('leaderboard')
+        .setDescription('View the server currency leaderboard'))
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('personal')
+        .setDescription('View your personal balance'))
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('user')
+        .setDescription('View another user balance')
+        .addUserOption((opt) =>
+          opt
+            .setName('target')
+            .setDescription('User to inspect')
+            .setRequired(true))),
 
   async execute(interaction: ChatInputCommandInteraction) {
     if (!interaction.inGuild() || !interaction.guildId) {
       return interaction.reply({ content: 'Use this command in a server.', ephemeral: true });
+    }
+
+    const subcommand = interaction.options.getSubcommand(false) || 'leaderboard';
+
+    if (subcommand === 'personal') {
+      const entries = communalStore.listUserBalances(interaction.guildId, { minTokens: 0 });
+      const embed = buildUserBalanceEmbed({
+        guildId: interaction.guildId,
+        user: interaction.user,
+        entries,
+      });
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (subcommand === 'user') {
+      const target = interaction.options.getUser('target', true);
+      const entries = communalStore.listUserBalances(interaction.guildId, { minTokens: 0 });
+      const embed = buildUserBalanceEmbed({
+        guildId: interaction.guildId,
+        user: target,
+        entries,
+      });
+      return interaction.reply({ embeds: [embed] });
     }
 
     await interaction.deferReply();

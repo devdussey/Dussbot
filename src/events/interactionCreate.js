@@ -308,7 +308,6 @@ const COMMAND_CATEGORY_MAP = {
     reactionrole: 'admin',
 
     // Economy
-    inventory: 'economy',
     economyconfig: 'economy',
     balance: 'economy',
     storeconfig: 'economy',

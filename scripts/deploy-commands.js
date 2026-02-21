@@ -26,7 +26,7 @@ function applyGuildCurrencyOverrides(commandJson, guildId) {
     const pluralText = toSentenceCaseLower(currencyPlural);
 
     if (commandJson.name === 'balance') {
-        commandJson.description = trimDescription(`View the ${pluralText} leaderboard`);
+        commandJson.description = trimDescription(`View server ${pluralText} balances`);
         return commandJson;
     }
 
