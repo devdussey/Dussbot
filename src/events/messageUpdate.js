@@ -25,35 +25,51 @@ function formatDateTime(date) {
   }
 }
 
+function buildAttachmentInfo(message) {
+  const attachments = Array.from(message?.attachments?.values?.() || []);
+  const lines = [];
+  let previewImageUrl = null;
+  for (const att of attachments) {
+    if (!att) continue;
+    const label = truncate(att.name || 'attachment', 80);
+    lines.push(att.url ? `[${label}](${att.url})` : label);
+    const contentType = (att.contentType || '').toLowerCase();
+    if (!previewImageUrl && att.url && contentType.startsWith('image/')) {
+      previewImageUrl = att.url;
+    }
+    if (lines.length >= 10) break;
+  }
+  return { lines, previewImageUrl };
+}
+
 function buildEditedEmbed(oldMessage, newMessage) {
   const editedAt = newMessage.editedAt || new Date();
-  const postedAt = newMessage.createdAt || oldMessage?.createdAt || new Date(newMessage.createdTimestamp || Date.now());
+  const avatarUrl = newMessage.author?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null;
   const originalContent = truncate(oldMessage?.content);
   const editedContent = truncate(newMessage?.content);
-  const authorMention = newMessage.author?.id ? `<@${newMessage.author.id}>` : formatUser(newMessage.author);
+  const authorMention = newMessage.author?.id
+    ? `<@${newMessage.author.id}> (${newMessage.author.id})`
+    : formatUser(newMessage.author);
+  const attachmentInfo = buildAttachmentInfo(newMessage);
 
   const embed = new EmbedBuilder()
     .setTitle('Message Edited')
-    .setDescription(
-      `${authorMention} has edited a message.\n` +
-      `Original: ${truncate(oldMessage?.content, 900)}\n` +
-      `Edited: ${truncate(newMessage?.content, 900)}`
-    )
     .setColor(YELLOW)
     .setTimestamp(editedAt)
     .addFields(
-      { name: 'Message Author', value: formatUser(newMessage.author), inline: false },
-      { name: 'Edited By', value: formatUser(newMessage.author), inline: false },
-      { name: 'Channel', value: `<#${newMessage.channel.id}> (${newMessage.channel.id})`, inline: true },
-      { name: 'Message ID', value: newMessage.id, inline: true },
-      { name: 'Posted At', value: formatDateTime(postedAt), inline: true },
-      { name: 'Original Content', value: originalContent, inline: false },
-      { name: 'Edited Content', value: editedContent, inline: false },
+      { name: 'Content', value: `${originalContent}\n- ${authorMention}`, inline: false },
+      { name: 'Edited Message', value: editedContent, inline: false },
+      { name: 'Channel', value: `<#${newMessage.channel.id}>`, inline: false },
     )
-    .setFooter({ text: `Edited at ${formatDateTime(editedAt)}` });
+    .setFooter({ text: `Edited at ${formatDateTime(editedAt)}`, iconURL: avatarUrl || undefined });
 
-  const avatarUrl = newMessage.author?.displayAvatarURL?.({ extension: 'png', size: 256 });
   if (avatarUrl) embed.setThumbnail(avatarUrl);
+  if (attachmentInfo.lines.length) {
+    embed.addFields({ name: 'Image', value: attachmentInfo.lines.join('\n').slice(0, 1024), inline: false });
+  }
+  if (attachmentInfo.previewImageUrl) {
+    embed.setImage(attachmentInfo.previewImageUrl);
+  }
 
   return embed;
 }

@@ -109,23 +109,7 @@ const command: SlashCommandModule = {
       const auditReason = `By ${interaction.user.tag} (${interaction.user.id}) | ${reason}`.slice(0, 512);
       await memberToMute.timeout(durationMs, auditReason);
 
-      const embed = buildModActionEmbed(interaction, {
-        title: 'Member Muted',
-        targetUser: user,
-        reason,
-        color: 0xffcc00,
-        extraFields: [
-          { name: 'Target', value: `${user.tag} (${user.id})`, inline: false },
-          { name: 'Duration', value: durationStr, inline: true },
-        ],
-      });
-
-      try {
-        await interaction.followUp({ embeds: [embed], ephemeral: false });
-        try { await interaction.deleteReply(); } catch (_) {}
-      } catch (_) {
-        await interaction.editReply({ embeds: [embed] });
-      }
+      await interaction.editReply({ content: `Muted ${user.tag} successfully.` });
       try {
         await modlog.log(interaction, 'Member Timed Out', {
           target: `${user.tag} (${user.id})`,

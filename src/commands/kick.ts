@@ -84,22 +84,7 @@ const command: SlashCommandModule = {
       const auditReason = `By ${interaction.user.tag} (${interaction.user.id}) | ${reason}`.slice(0, 512);
       await memberToKick.kick(auditReason);
 
-      const embed = buildModActionEmbed(interaction, {
-        title: 'Member Kicked',
-        targetUser: user,
-        reason,
-        color: 0xffa500,
-        extraFields: [
-          { name: 'Target', value: `${user.tag} (${user.id})`, inline: false },
-        ],
-      });
-
-      try {
-        await interaction.followUp({ embeds: [embed], ephemeral: false });
-        try { await interaction.deleteReply(); } catch (_) {}
-      } catch (_) {
-        await interaction.editReply({ embeds: [embed] });
-      }
+      await interaction.editReply({ content: `Kicked ${user.tag} successfully.` });
       try {
         await modlog.log(interaction, 'User Kicked', {
           target: `${user.tag} (${user.id})`,

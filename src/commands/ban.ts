@@ -99,23 +99,7 @@ const command: SlashCommandModule = {
         reason: auditReason,
       });
 
-      const embed = buildModActionEmbed(interaction, {
-        title: 'Member Banned',
-        targetUser: user,
-        reason,
-        color: 0xff0000,
-        extraFields: [
-          { name: 'Target', value: `${user.tag} (${user.id})`, inline: false },
-          { name: 'Prune Days', value: String(pruneDays), inline: true },
-        ],
-      });
-
-      try {
-        await interaction.followUp({ embeds: [embed], ephemeral: false });
-        try { await interaction.deleteReply(); } catch (_) {}
-      } catch (_) {
-        await interaction.editReply({ embeds: [embed] });
-      }
+      await interaction.editReply({ content: `Banned ${user.tag} successfully.` });
       try {
         await modlog.log(interaction, 'User Banned', {
           target: `${user.tag} (${user.id})`,

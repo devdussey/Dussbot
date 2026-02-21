@@ -55,6 +55,7 @@ function isImageAttachment(att) {
 function collectAttachmentInfo(message) {
   const lines = [];
   const files = [];
+  let previewImageUrl = null;
   const attachments = Array.from(message?.attachments?.values?.() || []);
   for (const att of attachments) {
     if (!att) continue;
@@ -62,11 +63,12 @@ function collectAttachmentInfo(message) {
     if (att.url) lines.push(`[${label}](${att.url})`);
     else lines.push(label);
     if (isImageAttachment(att) && att.url) {
+      if (!previewImageUrl) previewImageUrl = att.url;
       files.push({ attachment: att.url, name: att.name || `attachment-${att.id || files.length + 1}.png` });
     }
     if (lines.length >= 10) break;
   }
-  return { lines, files };
+  return { lines, files, previewImageUrl };
 }
 
 function delay(ms) {
@@ -120,27 +122,32 @@ async function resolveDeleteExecutor(guild, message) {
 }
 
 function buildDeletedEmbed({ message, content, deleterText, attachmentInfo, contentSource, deletedAt }) {
+  const avatarUrl = message.author?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null;
+  const mention = message.author?.id ? `<@${message.author.id}> (${message.author.id})` : formatUser(message.author || 'Unknown');
   const embed = new EmbedBuilder()
     .setTitle('Message Deleted')
     .setColor(RED)
     .setTimestamp(deletedAt)
     .addFields(
-      { name: 'User', value: formatUser(message.author || 'Unknown'), inline: false },
-      { name: 'Deleted By', value: deleterText || 'Unknown', inline: false },
-      { name: 'Channel', value: `<#${message.channel.id}> (${message.channel.id})`, inline: true },
-      { name: 'Message ID', value: message.id || 'Unknown', inline: true },
-      { name: 'Content', value: content, inline: false },
-      { name: 'Attachments', value: attachmentInfo.lines.length ? attachmentInfo.lines.join('\n').slice(0, 1024) : 'None', inline: false },
+      { name: 'Content', value: `${content}\n- ${mention}`, inline: false },
+      { name: 'Channel', value: `<#${message.channel.id}>`, inline: false },
     )
-    .setFooter({ text: `Deleted at ${formatDateTime(deletedAt)}` });
+    .setFooter({ text: `Deleted at ${formatDateTime(deletedAt)}`, iconURL: avatarUrl || undefined });
 
+  if (deleterText && deleterText !== 'Unknown') {
+    embed.addFields({ name: 'Deleted By', value: deleterText, inline: false });
+  }
+  if (attachmentInfo.lines.length) {
+    embed.addFields({ name: 'Image', value: attachmentInfo.lines.join('\n').slice(0, 1024), inline: false });
+  }
   if (contentSource && contentSource !== 'live') {
-    embed.addFields({ name: 'Content Source', value: contentSource, inline: true });
+    embed.addFields({ name: 'Content Source', value: contentSource, inline: false });
   }
 
-  const thumbTarget = message.author;
-  const avatarUrl = thumbTarget?.displayAvatarURL?.({ extension: 'png', size: 256 });
   if (avatarUrl) embed.setThumbnail(avatarUrl);
+  if (attachmentInfo.previewImageUrl) {
+    embed.setImage(attachmentInfo.previewImageUrl);
+  }
 
   return embed;
 }

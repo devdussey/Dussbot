@@ -1,6 +1,5 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const logSender = require('../utils/logSender');
-const { buildLogEmbed } = require('../utils/logEmbedFactory');
 const { BOT_LOG_KEYS, BOT_ACTION_COLORS, buildBotLogEmbed } = require('../utils/botLogEmbed');
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.apng', '.heic'];
@@ -149,6 +148,7 @@ function formatDateTime(date) {
 function buildAttachmentInfo(message) {
   const lines = [];
   const files = [];
+  let previewImageUrl = null;
   const attachments = Array.from(message.attachments?.values?.() || []);
 
   for (const att of attachments) {
@@ -161,57 +161,39 @@ function buildAttachmentInfo(message) {
       lines.push(name);
     }
     if (classified && (classified.type === 'image' || classified.type === 'gif') && att.url) {
+      if (!previewImageUrl) previewImageUrl = att.url;
       files.push({ attachment: att.url, name: att.name || `attachment-${att.id || files.length + 1}.png` });
     }
     if (lines.length >= 10) break;
   }
 
-  return { lines, files };
+  return { lines, files, previewImageUrl };
 }
 
 function buildCreatedEmbed(message, attachmentInfo) {
   const createdAt = message.createdAt || new Date(message.createdTimestamp || Date.now());
+  const avatarUrl = message.author?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null;
   const content = truncate(message.content || '*No content*', 1024) || '*No content*';
+  const mention = message.author?.id ? `<@${message.author.id}> (${message.author.id})` : formatUser(message.author);
   const embed = new EmbedBuilder()
     .setTitle('Message Created')
     .setColor(BRIGHT_GREEN)
     .setTimestamp(createdAt)
     .addFields(
-      { name: 'User', value: formatUser(message.author), inline: false },
-      { name: 'Channel', value: `<#${message.channel.id}> (${message.channel.id})`, inline: true },
-      { name: 'Message ID', value: message.id, inline: true },
-      { name: 'Content', value: content, inline: false },
-      { name: 'Attachments', value: attachmentInfo.lines.length ? attachmentInfo.lines.join('\n').slice(0, 1024) : 'None', inline: false },
+      { name: 'Content', value: `${content}\n- ${mention}`, inline: false },
+      { name: 'Channel', value: `<#${message.channel.id}>`, inline: false },
     )
-    .setFooter({ text: `Created at ${formatDateTime(createdAt)}` });
+    .setFooter({ text: `Created at ${formatDateTime(createdAt)}`, iconURL: avatarUrl || undefined });
 
-  const avatarUrl = message.author?.displayAvatarURL?.({ extension: 'png', size: 256 });
   if (avatarUrl) embed.setThumbnail(avatarUrl);
+  if (attachmentInfo.lines.length) {
+    embed.addFields({ name: 'Image', value: attachmentInfo.lines.join('\n').slice(0, 1024), inline: false });
+  }
+  if (attachmentInfo.previewImageUrl) {
+    embed.setImage(attachmentInfo.previewImageUrl);
+  }
 
   return embed;
-}
-
-function buildMediaEmbed(message, mediaItems, stickerItems) {
-  const summary = formatMediaSummary(mediaItems, stickerItems);
-  const caption = truncate((message.content || '').trim(), 800);
-  const reasonParts = [];
-  if (summary) reasonParts.push(`Posted ${summary}`);
-  if (caption) reasonParts.push(`Caption: ${caption}`);
-  const messageLink = message.url ? `[Jump to message](${message.url})` : 'Unavailable';
-
-  return buildLogEmbed({
-    action: 'Media Posted',
-    target: message.author,
-    actor: message.author,
-    reason: reasonParts.join('\n') || 'Media posted',
-    color: 0x5865f2,
-    extraFields: [
-      { name: 'Channel', value: `<#${message.channel.id}> (${message.channel.id})`, inline: true },
-      { name: 'Message ID', value: message.id, inline: true },
-      { name: 'Message Link', value: messageLink, inline: false },
-      { name: 'Media', value: formatMediaDetails(mediaItems, stickerItems), inline: false },
-    ],
-  });
 }
 
 module.exports = {
@@ -247,7 +229,6 @@ module.exports = {
         return;
       }
 
-      const { mediaItems, stickerItems } = collectMediaFromMessage(message);
       const attachmentInfo = buildAttachmentInfo(message);
       const embed = buildCreatedEmbed(message, attachmentInfo);
 
@@ -258,16 +239,6 @@ module.exports = {
         client: message.client,
         files: attachmentInfo.files,
       });
-
-      if (mediaItems.length || stickerItems.length) {
-        const mediaEmbed = buildMediaEmbed(message, mediaItems, stickerItems);
-        await logSender.sendLog({
-          guildId: message.guild.id,
-          logType: 'media_posted',
-          embed: mediaEmbed,
-          client: message.client,
-        });
-      }
     } catch (err) {
       console.error('messageLog.MessageCreate error:', err);
     }

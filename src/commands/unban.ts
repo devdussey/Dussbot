@@ -59,22 +59,7 @@ const command: SlashCommandModule = {
     try {
       const auditReason = `By ${interaction.user.tag} (${interaction.user.id}) | ${reason}`.slice(0, 512);
       await interaction.guild.members.unban(user.id, auditReason);
-      const embed = buildModActionEmbed(interaction, {
-        title: 'Member Unbanned',
-        targetUser: user,
-        reason,
-        color: 0x57f287,
-        extraFields: [
-          { name: 'Target', value: `${user.tag} (${user.id})`, inline: false },
-        ],
-      });
-
-      try {
-        await interaction.followUp({ embeds: [embed], ephemeral: false });
-        try { await interaction.deleteReply(); } catch (_) {}
-      } catch (_) {
-        await interaction.editReply({ embeds: [embed] });
-      }
+      await interaction.editReply({ content: `Unbanned ${user.tag} successfully.` });
       try {
         await modlog.log(interaction, 'User Unbanned', {
           target: `${user.tag} (${user.id})`,

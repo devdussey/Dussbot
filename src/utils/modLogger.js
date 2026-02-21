@@ -54,6 +54,18 @@ async function send(interaction, embed, logKey = 'moderation') {
   return false;
 }
 
+async function sendPublicReply(interaction, embed) {
+  const channel = interaction?.channel;
+  if (!channel || !channel.isTextBased?.()) return false;
+  try {
+    await channel.send({ embeds: [embed] });
+    return true;
+  } catch (err) {
+    console.error(`Failed to send public moderation reply in channel ${channel?.id || 'unknown'}`, err);
+    return false;
+  }
+}
+
 function buildMarkerFields(interaction) {
   const fields = [];
   if (interaction.guild) {
@@ -78,6 +90,7 @@ async function log(interaction, title, options = {}) {
     extraFields: equipFields,
   });
   await send(interaction, embed, logKey || 'moderation');
+  await sendPublicReply(interaction, embed);
 }
 
 module.exports = { log };
