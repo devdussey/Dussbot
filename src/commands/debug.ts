@@ -15,8 +15,18 @@ function requireFromSrcIfNeeded(modulePath: string) {
 }
 
 const { resolveEmbedColour } = requireFromSrcIfNeeded('../utils/guildColourStore');
+const { loadCommands } = requireFromSrcIfNeeded('../handlers/commandHandler');
+const { loadEvents } = requireFromSrcIfNeeded('../handlers/eventHandler');
 
 type Issue = { severity: 'error' | 'warning'; message: string };
+type RuntimeRootType = 'commands' | 'events';
+type RefreshReport = {
+  commandFiles: number;
+  eventFiles: number;
+  clearedCacheEntries: number;
+  reloadedEventNames: number;
+  loadedCommandCount: number;
+};
 
 function collectJavaScriptFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -31,6 +41,107 @@ function collectJavaScriptFiles(dir: string): string[] {
     if (entry.isFile() && entry.name.endsWith('.js')) files.push(target);
   }
   return files;
+}
+
+function collectJavaScriptFilesFromRoots(roots: string[]): string[] {
+  const seen = new Set<string>();
+  const files: string[] = [];
+
+  for (const root of roots) {
+    for (const file of collectJavaScriptFiles(root)) {
+      const normalized = path.normalize(file);
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      files.push(normalized);
+    }
+  }
+
+  return files;
+}
+
+function resolveRuntimeRoots(type: RuntimeRootType): string[] {
+  const distPath = path.join(process.cwd(), 'dist', type);
+  const srcPath = path.join(process.cwd(), 'src', type);
+  const allowSrcFallback = process.env.ALLOW_SRC_FALLBACK === '1';
+
+  if (fs.existsSync(distPath)) {
+    if (allowSrcFallback && fs.existsSync(srcPath) && srcPath !== distPath) {
+      return [distPath, srcPath];
+    }
+    return [distPath];
+  }
+
+  if (fs.existsSync(srcPath)) {
+    return [srcPath];
+  }
+
+  return [];
+}
+
+function collectEventNames(eventFiles: string[]): string[] {
+  const names = new Set<string>();
+
+  for (const file of eventFiles) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const eventModule = require(file);
+      const eventName = typeof eventModule?.name === 'string' ? eventModule.name.trim() : '';
+      if (eventName) names.add(eventName);
+    } catch (_) {
+      // Skip invalid event files during refresh discovery.
+    }
+  }
+
+  return Array.from(names);
+}
+
+function clearRequireCache(files: string[]): number {
+  let cleared = 0;
+
+  for (const file of files) {
+    let resolved = file;
+    try {
+      resolved = require.resolve(file);
+    } catch (_) {
+      resolved = file;
+    }
+
+    if (require.cache[resolved]) {
+      delete require.cache[resolved];
+      cleared += 1;
+    }
+  }
+
+  return cleared;
+}
+
+function runRuntimeRefresh(client: Client): RefreshReport {
+  const commandRoots = resolveRuntimeRoots('commands');
+  const eventRoots = resolveRuntimeRoots('events');
+  const commandFiles = collectJavaScriptFilesFromRoots(commandRoots);
+  const eventFiles = collectJavaScriptFilesFromRoots(eventRoots);
+  const eventNames = collectEventNames(eventFiles);
+
+  for (const eventName of eventNames) {
+    client.removeAllListeners(eventName as any);
+  }
+
+  const clearedCacheEntries = clearRequireCache([...commandFiles, ...eventFiles]);
+
+  if (typeof (client as any).commands?.clear === 'function') {
+    (client as any).commands.clear();
+  }
+
+  loadCommands(client);
+  loadEvents(client);
+
+  return {
+    commandFiles: commandFiles.length,
+    eventFiles: eventFiles.length,
+    clearedCacheEntries,
+    reloadedEventNames: eventNames.length,
+    loadedCommandCount: (client as any).commands?.size || 0,
+  };
 }
 
 function runCommandDiagnostics(client: Client) {
@@ -114,7 +225,16 @@ function runCommandDiagnostics(client: Client) {
 const command: SlashCommandModule = {
   data: new SlashCommandBuilder()
     .setName('debug')
-    .setDescription('Run admin diagnostics against command modules and client command state')
+    .setDescription('Run admin diagnostics or refresh command/event handlers')
+    .addStringOption((option) =>
+      option
+        .setName('mode')
+        .setDescription('Select debug mode')
+        .addChoices(
+          { name: 'diagnostics', value: 'diagnostics' },
+          { name: 'refresh', value: 'refresh' },
+        ),
+    )
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .setDMPermission(false),
 
@@ -129,6 +249,33 @@ const command: SlashCommandModule = {
     }
 
     await interaction.deferReply({ ephemeral: true });
+
+    const mode = interaction.options.getString('mode') || 'diagnostics';
+    if (mode === 'refresh') {
+      try {
+        const report = runRuntimeRefresh(interaction.client);
+        const embed = new EmbedBuilder()
+          .setTitle('Debug Refresh Complete')
+          .setColor(resolveEmbedColour(interaction.guildId, 0x57f287))
+          .setDescription(
+            [
+              `Mode: **refresh**`,
+              `Command files scanned: **${report.commandFiles}**`,
+              `Event files scanned: **${report.eventFiles}**`,
+              `Event names reloaded: **${report.reloadedEventNames}**`,
+              `Require cache entries cleared: **${report.clearedCacheEntries}**`,
+              `Commands currently loaded: **${report.loadedCommandCount}**`,
+            ].join('\n'),
+          )
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+      } catch (err: any) {
+        const message = err?.message ? String(err.message) : 'unknown error';
+        await interaction.editReply({ content: `Refresh failed: ${message}` });
+      }
+      return;
+    }
 
     const report = runCommandDiagnostics(interaction.client);
     const color = report.errorCount > 0

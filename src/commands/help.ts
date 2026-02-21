@@ -17,7 +17,7 @@ const HELP_CATEGORY_ID_PREFIX = 'help-category';
 /** @type {Record<string, HelpCommand[]>} */
 const categories = {
   'Moderation': [
-    { cmd: '/banlist', desc: 'List current bans in the server.', perm: 'Ban Members' },
+    { cmd: '/banlist', desc: 'List current banned users in the server.', perm: 'Ban Members' },
     { cmd: '/mute', desc: 'Timeout a member for a set duration (reason required).', perm: 'Moderate Members' },
     { cmd: '/kick', desc: 'Remove a member from the server (reason required).', perm: 'Kick Members' },
     { cmd: '/ban', desc: 'Ban a member with optional prune window (reason required).', perm: 'Ban Members' },
@@ -25,15 +25,15 @@ const categories = {
     { cmd: '/unmute', desc: 'Remove a timeout with a reason.', perm: 'Moderate Members' },
   ],
   Administration: [
-    { cmd: '/modconfig', desc: 'Configure the moderator role and mod log channel.', perm: 'Manage Server' },
-    { cmd: '/role create/delete/edit/clean', desc: 'Manage roles and clean empty roles.', perm: 'Administrator' },
-    { cmd: '/boosterroleconfig', desc: 'Post the booster role configuration panel.', perm: 'Manage Server' },
-    { cmd: '/channel create/edit/sync', desc: 'Create, rename, or sync channel permissions to category.', perm: 'Administrator' },
-    { cmd: '/autoroles add/remove/list/clear', desc: 'Manage automatic role assignment for joins.', perm: 'Manage Roles' },
+    { cmd: '/modconfig', desc: 'Configure the moderator role and mod action log channel.', perm: 'Manage Server' },
+    { cmd: '/role create/delete/edit/clean', desc: 'Role Management.', perm: 'Administrator' },
+    { cmd: '/boosterroleconfig', desc: 'Booster Role Configurations.', perm: 'Manage Server' },
+    { cmd: '/channel create/edit/sync', desc: 'Channel Management.', perm: 'Administrator' },
+    { cmd: '/autoroles add/remove/list/clear', desc: 'Automatic Role Assignments.', perm: 'Manage Roles' },
     { cmd: '/confessconfig', desc: 'Post the anonymous confession panel.', perm: 'Manage Server' },
     { cmd: '/suggestconfig', desc: 'Post the anonymous suggestion panel.', perm: 'Manage Server' },
     { cmd: '/sacrificeconfig', desc: 'Post the communal sacrifice panel.', perm: 'Administrator' },
-    { cmd: '/autorespond toggle/add/remove/list', desc: 'Configure keyword-based automated replies.', perm: 'Administrator' },
+    { cmd: '/autorespond toggle/add/remove/list', desc: 'Autoresponder Management.', perm: 'Administrator' },
     { cmd: '/automessage create/delete/list', desc: 'Schedule recurring server messages.', perm: 'Manage Server' },
     { cmd: '/stickymessage set/clear/view', desc: 'Configure delayed sticky messages per channel.', perm: 'Administrator' },
     { cmd: '/say', desc: 'Send a custom bot message to a selected channel.', perm: 'Administrator' },
@@ -49,7 +49,7 @@ const categories = {
     { cmd: '/embed create/quick', desc: 'Build embeds through guided tools.', perm: 'Administrator' },
     { cmd: '/botsettings', desc: 'View bot settings and change default embed colour.', perm: 'Administrator' },
     { cmd: '/economyconfig', desc: 'Configure economy rewards, currency name, store prices, immunity role, and economy channels.', perm: 'Manage Server' },
-    { cmd: '/debug', desc: 'Run admin diagnostics for command and client health.', perm: 'Administrator' },
+    { cmd: '/debug', desc: 'Run diagnostics or refresh command/event handlers.', perm: 'Administrator' },
   ],
   Configurations: [
     { cmd: '/modconfig', desc: 'Configure the moderator role and mod log channel.', perm: 'Manage Server' },
@@ -76,7 +76,7 @@ const categories = {
     { cmd: '/image removebg image/gif', desc: 'Remove image background (non-premium servers: 1 use/day).', perm: 'Premium server for unlimited' },
     { cmd: '/image enlarge emoji/sticker/media', desc: 'Upscale emojis, stickers, and media.', perm: null },
     { cmd: '/image resize', desc: 'Resize an image by percentage or fixed pixel presets.', perm: null },
-    { cmd: '/imagefilter', desc: 'Apply a GIF filter edit (currently: Load) to an uploaded image, URL, or user avatar.', perm: null },
+    { cmd: '/imagefilter', desc: 'Apply a GIF filter edit to an uploaded image, URL, or user avatar.', perm: null },
   ],
   'Economy System and Games': [
     { cmd: '/balance leaderboard', desc: 'View the server currency leaderboard.', perm: null },
@@ -88,7 +88,7 @@ const categories = {
     { cmd: '/blessing', desc: 'Claim your daily blessing currency.', perm: 'Administrator' },
     { cmd: '/casino horserace', desc: 'Start a horse race lobby with join/leave queue and prize payouts.', perm: null },
     { cmd: '/wordrush start', desc: 'Start a WordRush lobby.', perm: null },
-    { cmd: '/casino roulette', desc: 'Start an American roulette round with configurable bets.', perm: null },
+    { cmd: '/casino roulette', desc: 'Start an roulette round with configurable bets.', perm: null },
   ],
   'Utilities and Bot Info': [
     { cmd: '/avatar', desc: 'Display user avatar and download links.', perm: null },
@@ -96,18 +96,18 @@ const categories = {
     { cmd: '/serverlogo', desc: 'Display and download server icon.', perm: null },
     { cmd: '/wordstats [view] [search] [word] [user]', desc: 'Word/message leaderboards and word/user searches from wordstatsconfig data.', perm: null },
     { cmd: '/botinfo', desc: 'View bot instance and uptime info.', perm: null },
-    { cmd: '/premium', desc: 'View Premium features and support server access.', perm: null },
+    { cmd: '/premium', desc: 'Coming Soon.', perm: null },
   ],
 };
 
 /** @type {Record<string, CategoryMeta>} */
 const categoryMeta = {
-  'Moderation': { blurb: 'Basic Moderation Commands and Clear Logging' },
+  'Moderation': { blurb: 'Moderation Commands and Action Logging' },
   Administration: { blurb: 'Commands to make administration tasks simple and easy. Also includes bot feature configurations.' },
   Configurations: { blurb: 'Server and bot setup commands, including feature and system configuration.' },
   'AI': { blurb: 'Components of the bot that require AI such as transcription.' },
   'Economy System and Games': { blurb: 'Server currency is earned from user activity and can be spent on economy features and store items.' },
-  'Utilities and Bot Info': { blurb: 'Quick Commands for bot information and utilities.' },
+  'Utilities and Bot Info': { blurb: 'Bot information and utility commands.' },
 };
 
 /**
