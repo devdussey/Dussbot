@@ -65,20 +65,78 @@ function getAllCommandFiles(dir) {
     return files;
 }
 
+function getAllSourceCommandFiles(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const files = [];
+    for (const e of entries) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) {
+            files.push(...getAllSourceCommandFiles(p));
+            continue;
+        }
+        if (!e.isFile()) continue;
+        if (e.name.endsWith('.d.ts')) continue;
+        if (e.name.endsWith('.ts') || e.name.endsWith('.js')) files.push(p);
+    }
+    return files;
+}
+
+function getModuleId(rootDir, filePath) {
+    const rel = path.relative(rootDir, filePath).replace(/\\/g, '/');
+    const ext = path.extname(rel);
+    return rel.slice(0, -ext.length);
+}
+
+function validateDistCommands(distCommandsDir, srcCommandsDir) {
+    if (!fs.existsSync(distCommandsDir)) {
+        return { ok: false, missing: ['<dist/commands missing>'] };
+    }
+
+    const sourceFiles = fs.existsSync(srcCommandsDir) ? getAllSourceCommandFiles(srcCommandsDir) : [];
+    if (sourceFiles.length === 0) return { ok: true, missing: [] };
+
+    const sourceIds = new Set(sourceFiles.map((filePath) => getModuleId(srcCommandsDir, filePath)));
+    const builtIds = new Set(getAllCommandFiles(distCommandsDir).map((filePath) => getModuleId(distCommandsDir, filePath)));
+    const missing = Array.from(sourceIds).filter((id) => !builtIds.has(id));
+    return { ok: missing.length === 0, missing };
+}
+
 function resolveCommandsDir() {
     if (process.env.COMMANDS_DIR) {
         return process.env.COMMANDS_DIR;
     }
 
     const distCommandsDir = path.join(__dirname, '..', 'dist', 'commands');
+    const srcCommandsDir = path.join(__dirname, '..', 'src', 'commands');
     if (fs.existsSync(distCommandsDir)) {
+        const validation = validateDistCommands(distCommandsDir, srcCommandsDir);
+        if (!validation.ok) {
+            const sample = validation.missing.slice(0, 5).join(', ');
+            logger.error(
+                `dist/commands is incomplete (${validation.missing.length} missing module(s): ` +
+                `${sample}${validation.missing.length > 5 ? ', ...' : ''}).`,
+            );
+            logger.error('Refusing to deploy a partial command set. Run `npm run build:ts` first.');
+            return null;
+        }
         return distCommandsDir;
     }
 
-    return path.join(__dirname, '..', 'src', 'commands');
+    const srcJsFiles = fs.existsSync(srcCommandsDir) ? getAllCommandFiles(srcCommandsDir) : [];
+    if (srcJsFiles.length > 0) {
+        logger.warn('dist/commands not found; using src/commands JS modules.');
+        return srcCommandsDir;
+    }
+
+    logger.error('No deployable command modules found (dist/commands missing and src/commands has no .js files).');
+    logger.error('Run `npm run build:ts` before deploying commands.');
+    return null;
 }
 
 const commandsDir = resolveCommandsDir();
+if (!commandsDir) {
+    process.exit(1);
+}
 const commands = [];
 const files = getAllCommandFiles(commandsDir);
 const nameToFile = new Map();
