@@ -8,7 +8,7 @@
     "start": "node scripts/deploy-commands.js && node src/index.js",
     "dev": "node --watch src/index.js",
     "build": "node scripts/deploy-commands.js",
-    "test": "node --test",
+    "test": "npm run build:ts && node --test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:watch": "tsc -p tsconfig.json --noEmit --watch",
     "build:ts": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",

@@ -29,8 +29,21 @@ function resolveDefaultCommandRoots() {
   const distPath = path.join(__dirname, '..', 'commands');
   const srcPath = path.join(process.cwd(), 'src', 'commands');
   const roots: string[] = [];
-  if (fs.existsSync(distPath)) roots.push(distPath);
-  if (fs.existsSync(srcPath) && srcPath !== distPath) roots.push(srcPath);
+  const allowSrcFallback = process.env.ALLOW_SRC_FALLBACK === '1';
+
+  if (fs.existsSync(distPath)) {
+    roots.push(distPath);
+    if (allowSrcFallback && fs.existsSync(srcPath) && srcPath !== distPath) {
+      roots.push(srcPath);
+    }
+    return roots;
+  }
+
+  if (fs.existsSync(srcPath)) {
+    logger.warn('dist commands directory not found; falling back to src commands.');
+    roots.push(srcPath);
+  }
+
   return roots;
 }
 

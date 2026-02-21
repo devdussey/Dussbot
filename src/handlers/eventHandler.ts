@@ -38,8 +38,21 @@ function resolveDefaultEventRoots() {
   const distPath = path.join(__dirname, '..', 'events');
   const srcPath = path.join(process.cwd(), 'src', 'events');
   const roots: string[] = [];
-  if (fs.existsSync(distPath)) roots.push(distPath);
-  if (fs.existsSync(srcPath) && srcPath !== distPath) roots.push(srcPath);
+  const allowSrcFallback = process.env.ALLOW_SRC_FALLBACK === '1';
+
+  if (fs.existsSync(distPath)) {
+    roots.push(distPath);
+    if (allowSrcFallback && fs.existsSync(srcPath) && srcPath !== distPath) {
+      roots.push(srcPath);
+    }
+    return roots;
+  }
+
+  if (fs.existsSync(srcPath)) {
+    logger.warn('dist events directory not found; falling back to src events.');
+    roots.push(srcPath);
+  }
+
   return roots;
 }
 

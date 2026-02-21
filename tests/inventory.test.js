@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const balance = require('../src/commands/currencybalances');
-const rupeeStore = require('../src/utils/rupeeStore');
+const balance = require('../dist/commands/currencybalances');
+const rupeeStore = require('../dist/utils/rupeeStore');
 
 function createInteraction({ subcommand = 'leaderboard', targetUser = null } = {}) {
   let reply;

@@ -6,7 +6,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 
 function runDeploy(dir) {
-  return spawnSync('node', [path.join(__dirname, '..', 'deploy-commands.js'), '--dry-run'], {
+  return spawnSync('node', [path.join(__dirname, '..', 'scripts', 'deploy-commands.js'), '--dry-run'], {
     env: {
       ...process.env,
       DRY_RUN: '1',

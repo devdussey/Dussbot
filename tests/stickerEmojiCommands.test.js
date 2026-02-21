@@ -49,7 +49,7 @@ function createBaseInteraction({ subcommand, stringOptions = {}, attachmentOptio
 }
 
 test('sticker add resolves attachment proxy URL and sends discord.js-compatible file payload', async () => {
-  const stickerPath = require.resolve('../src/commands/sticker');
+  const stickerPath = require.resolve('../dist/commands/sticker');
   const originalFetch = globalThis.fetch;
   const fetchUrls = [];
 
@@ -70,7 +70,7 @@ test('sticker add resolves attachment proxy URL and sends discord.js-compatible 
   };
 
   delete require.cache[stickerPath];
-  const sticker = require('../src/commands/sticker');
+  const sticker = require('../dist/commands/sticker');
 
   const createdPayloads = [];
   const { interaction, state } = createBaseInteraction({
@@ -129,7 +129,7 @@ test('sticker add resolves attachment proxy URL and sends discord.js-compatible 
 });
 
 test('emoji add accepts attachment proxy URL input', async () => {
-  const emoji = require('../src/commands/emoji');
+  const emoji = require('../dist/commands/emoji');
   const createCalls = [];
 
   const { interaction, state } = createBaseInteraction({

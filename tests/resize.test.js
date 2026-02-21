@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const image = require('../src/commands/image');
+const image = require('../dist/commands/image');
 
 function createInteraction({ attachment = null, url = null, percentage = null, pixels = null } = {}) {
   let deferred = false;

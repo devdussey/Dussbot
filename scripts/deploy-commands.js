@@ -65,7 +65,20 @@ function getAllCommandFiles(dir) {
     return files;
 }
 
-const commandsDir = process.env.COMMANDS_DIR || path.join(__dirname, '..', 'src', 'commands');
+function resolveCommandsDir() {
+    if (process.env.COMMANDS_DIR) {
+        return process.env.COMMANDS_DIR;
+    }
+
+    const distCommandsDir = path.join(__dirname, '..', 'dist', 'commands');
+    if (fs.existsSync(distCommandsDir)) {
+        return distCommandsDir;
+    }
+
+    return path.join(__dirname, '..', 'src', 'commands');
+}
+
+const commandsDir = resolveCommandsDir();
 const commands = [];
 const files = getAllCommandFiles(commandsDir);
 const nameToFile = new Map();
