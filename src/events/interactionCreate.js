@@ -351,6 +351,7 @@ const COMMAND_CATEGORY_MAP = {
     debug: 'admin',
     emoji: 'admin',
     embed: 'admin',
+    owner: 'admin',
     donate: 'admin',
     massblessing: 'admin',
     purge: 'admin',
@@ -403,7 +404,7 @@ function canManageBotSettings(interaction) {
 }
 
 const MODERATOR_COMMANDS = new Set(['ban', 'banlist', 'kick', 'mute', 'unban', 'unmute']);
-const OWNER_COMMANDS = new Set([]);
+const OWNER_COMMANDS = new Set(['owner']);
 const ADMIN_COMMANDS = new Set([
   'analysis',
   'antinuke',
